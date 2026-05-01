@@ -1,6 +1,8 @@
 package org.example.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
@@ -17,7 +19,11 @@ import java.util.Map;
 @Service
 public class TripAssistantService {
 
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private static final Logger logger = LoggerFactory.getLogger(TripAssistantService.class);
+
+    private final HttpClient httpClient = HttpClient.newBuilder()
+        .version(HttpClient.Version.HTTP_1_1)
+        .build();
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${app.agent.base-url:http://localhost:8000/api/trip/plan}")
@@ -40,10 +46,12 @@ public class TripAssistantService {
 
         try {
             String requestBody = objectMapper.writeValueAsString(payload);
+            logger.info("Agent request payload: {}", requestBody);
             HttpRequest request = HttpRequest.newBuilder(URI.create(agentBaseUrl))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(requestBody))
-                    .build();
+                .header("Content-Type", "application/json")
+                .header("Accept", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(requestBody, java.nio.charset.StandardCharsets.UTF_8))
+                .build();
 
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() >= 200 && response.statusCode() < 300) {
@@ -51,6 +59,7 @@ public class TripAssistantService {
                 Map<String, Object> data = objectMapper.readValue(response.body(), Map.class);
                 return data;
             }
+            logger.warn("Agent error status: {}, body: {}", response.statusCode(), response.body());
             return fallbackPlan(query, file, "Agent returned HTTP " + response.statusCode());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
