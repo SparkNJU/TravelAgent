@@ -1,0 +1,127 @@
+完全理解！课程作业**重点在功能实现**，存储确实不需要这么复杂，我们可以大幅简化，把精力放在核心的 Agent 工具调用、对话流程上。
+
+# 简化版架构设计（课程作业专用）
+## 一、整体架构总览（极简版）
+```
+┌─────────────────────────────────────────┐
+│ 前端层 (Vue3 + TypeScript + Vite)      │
+│  - 对话UI、流式渲染、文件上传           │
+└───────────────┬─────────────────────────┘
+                │ HTTP
+┌───────────────▼─────────────────────────┐
+│ 业务后端层 (SpringBoot 3.x)             │
+│  - 用户管理、会话管理、消息持久化        │
+│  - 文件元数据管理、转发请求到Agent       │
+└───────────────┬─────────────────────────┘
+                │ HTTP/SSE
+┌───────────────▼─────────────────────────┐
+│ Agent服务层 (FastAPI + LangChain)       │
+│  - LLM通信、工具调用、本地文件操作       │
+│  - 流式输出、报告生成                    │
+└───────────────┬─────────────────────────┘
+                │
+┌───────────────▼─────────────────────────┐
+│ 存储层 (极简)                            │
+│  - MySQL: 用户、会话、消息、文件元数据   │
+│  - 本地文件系统: Agent workspace、用户文件│
+└─────────────────────────────────────────┘
+```
+
+---
+
+## 二、存储简化方案（二选一）
+### 方案A：本地文件系统（最简单，推荐）
+- **MySQL**：保存用户、会话、消息、文件元数据（文件名、大小、本地路径）
+- **本地目录**：在服务器上创建一个 `workspace` 文件夹，Agent 直接在里面读写文件，用户上传的文件也存在这里
+  - `workspace/user_files/`：用户上传的文件
+  - `workspace/agent_output/`：Agent 生成的文件和报告
+  - `workspace/temp/`：临时文件
+- **优点**：零配置，Agent 操作文件就像操作本地文件夹一样简单，不需要任何云服务或对象存储
+
+---
+
+## 三、技术栈简化
+### 3.1 去掉的组件
+- ❌ Redis（不需要缓存，直接查MySQL）
+- ❌ MinIO（用本地目录或OSS代替）
+- ❌ API网关（前端直接连后端）
+- ❌ 复杂的限流、权限控制（课程作业可以简化）
+
+### 3.2 保留的核心技术栈
+| 层级 | 技术栈 |
+|------|--------|
+| **前端** | Vue3 + TypeScript + Vite + Element Plus |
+| **SpringBoot后端** | SpringBoot 3.x + Spring Security（简化版） + MyBatis-Plus + MySQL |
+| **FastAPI Agent** | FastAPI |
+| **存储** | MySQL + 本地文件系统 |
+
+---
+
+## 四、数据库表简化（MySQL）
+只保留核心表，去掉不必要的字段：
+### 1. users（用户表）
+```sql
+CREATE TABLE users (
+    user_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    username VARCHAR(50) UNIQUE NOT NULL,
+    password VARCHAR(255) NOT NULL, -- 简单存储，课程作业不用hash也可以
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 2. sessions（会话表）
+```sql
+CREATE TABLE sessions (
+    session_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 3. messages（消息表）
+```sql
+CREATE TABLE messages (
+    message_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    session_id BIGINT NOT NULL,
+    role VARCHAR(20) NOT NULL, -- user/assistant/tool
+    content TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+### 4. files（文件表）
+```sql
+CREATE TABLE files (
+    file_id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    session_id BIGINT,
+    filename VARCHAR(255) NOT NULL,
+    local_path VARCHAR(500) NOT NULL, -- 本地路径或OSS路径
+    file_size BIGINT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+```
+
+---
+
+## 五、核心功能重点（课程作业得分点）
+把精力放在这些地方，存储简化不影响功能展示：
+1. **前端对话UI**：流式渲染、Markdown显示、文件上传
+2. **SpringBoot后端**：用户登录、会话管理、消息保存、转发请求到Agent
+3. **FastAPI Agent**：
+   - 与大模型通信（豆包/OpenAI API）
+   - 工具调用（文件读写、简单的数据库查询、报告生成）
+   - SSE流式输出
+4. **完整流程**：用户发消息 → 后端保存 → Agent处理 → 流式返回前端 → 展示结果
+
+---
+
+## 六、部署简化
+不用Docker Compose，直接本地运行：
+1. **启动MySQL**：本地安装MySQL，创建数据库，执行建表SQL
+2. **启动Agent**：`cd agent && pip install -r requirements.txt && uvicorn main:app --host 0.0.0.0 --port 8000`
+3. **启动后端**：IDEA运行SpringBoot，或 `java -jar backend.jar`
+4. **启动前端**：`cd frontend && npm install && npm run dev`
+
+---
