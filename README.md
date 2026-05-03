@@ -1,92 +1,109 @@
-# 02迭代二
+# 02 迭代二 - 多智能体旅行规划平台
 
+本仓库包含一个可本地联调的完整系统：
+- `frontend`：Vue 3 + Vite 前端页面（登录、注册、AI 规划工作台）
+- `backend`：Spring Boot 后端 API（用户、目的地、规划、Agent 桥接）
+- `agent`：FastAPI 智能体服务（解析输入、联网搜索、生成 Markdown 行程）
 
+## 1. 仓库结构
 
-## Getting started
-
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
-
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-- [ ] [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-- [ ] [Add files using the command line](https://docs.gitlab.com/ee/gitlab-basics/add-file.html#add-a-file-using-the-command-line) or push an existing Git repository with the following command:
-
-```
-cd existing_repo
-git remote add origin http://172.29.4.49/2026seiii-030-multi_agents/02.git
-git branch -M master
-git push -uf origin master
+```text
+02/
+	README.md                 # 当前文档（总览 + 快速启动）
+	frontend/                 # 前端工程
+	backend/                  # Java 后端工程
+	agent/                    # Python Agent 工程
+	StudyAgent-main/          # 其他实验目录（本次联调不依赖）
 ```
 
-## Integrate with your tools
+## 2. 架构关系
 
-- [ ] [Set up project integrations](http://172.29.4.49/2026seiii-030-multi_agents/02/-/settings/integrations)
+请求链路如下：
 
-## Collaborate with your team
+1. 浏览器访问 `frontend`（默认 `http://localhost:5173`）
+2. 前端通过 Vite 代理把 `/api/*` 转发到 `backend`（`http://localhost:8080`）
+3. `backend` 在 `TripAssistantService` 中调用 `agent` 接口（默认 `http://localhost:8000/api/trip/plan`）
+4. `agent` 返回规划结果（标题、目的地、天数、Markdown、图片、来源）
 
-- [ ] [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-- [ ] [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-- [ ] [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-- [ ] [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-- [ ] [Automatically merge when pipeline succeeds](https://docs.gitlab.com/ee/user/project/merge_requests/merge_when_pipeline_succeeds.html)
+## 3. 环境要求
 
-## Test and Deploy
+- Node.js：`^20.19.0 || >=22.12.0`
+- npm：建议 `>=10`
+- Java：`17`
+- Maven：可直接使用仓库自带 `mvnw.cmd`
+- Python：建议 `3.10+`
+- MySQL：建议 `8.x`
 
-Use the built-in continuous integration in GitLab.
+## 4. 推荐启动顺序（开发联调）
 
-- [ ] [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/index.html)
-- [ ] [Analyze your code for known vulnerabilities with Static Application Security Testing(SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-- [ ] [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-- [ ] [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-- [ ] [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+从仓库根目录 `02` 打开 4 个终端，按顺序执行。
 
-***
+### Step 1. 初始化数据库
 
-# Editing this README
+先在 MySQL 执行建库脚本：
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thank you to [makeareadme.com](https://www.makeareadme.com/) for this template.
+```sql
+SOURCE backend/sql/init-database.sql;
+```
 
-## Suggestions for a good README
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+脚本会创建 `travel_planning_db`。
 
-## Name
-Choose a self-explaining name for your project.
+### Step 2. 启动 Agent
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+```powershell
+cd agent
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+$env:SERPER_API_KEY="your_serper_key"
+uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+说明：
+- 不设置 `SERPER_API_KEY` 也能运行，但不会联网搜索图片/网页来源。
+- 健康检查：`http://localhost:8000/health`
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+### Step 3. 启动 Backend
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```powershell
+cd backend
+.\mvnw.cmd spring-boot:run
+```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+说明：
+- 数据库连接在 `backend/src/main/resources/application.properties`
+- 需要确认账号密码和本地 MySQL 一致（默认是 `root/123456`）
+- 当前配置 `spring.jpa.hibernate.ddl-auto=create-drop`，重启会重建表并清空数据
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+### Step 4. 启动 Frontend
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+```powershell
+cd frontend
+npm install
+npm run dev
+```
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+默认访问：`http://localhost:5173`
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+## 5. 快速验证联调是否成功
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+1. 打开前端，先注册新用户
+2. 登录后进入首页，再进入 AI 规划工作台
+3. 输入需求（如“东京 5 天，美食+城市观光”）并提交
+4. 页面成功展示行程卡片、Markdown 内容，且可看到图片/来源（有 `SERPER_API_KEY` 时）
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+如果 Agent 未启动，后端会返回降级草案（不是 500 崩溃），便于前端继续调试。
 
-## License
-For open source projects, say how it is licensed.
+## 6. 分模块文档
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+- 前端说明：`frontend/README.md`
+- 后端说明：`backend/README.md`
+- Agent 说明：`agent/README.md`
+
+## 7. 常见问题
+
+- 端口冲突：检查 `5173`、`8080`、`8000` 是否被占用
+- 数据库连接失败：确认 MySQL 已启动且 `application.properties` 凭据正确
+- 前端接口 404/502：确认后端已启动，且 `frontend/vite.config.js` 的 `/api` 代理仍指向 `8080`
+- Agent 无联网结果：确认 `SERPER_API_KEY` 已设置且有效
+
