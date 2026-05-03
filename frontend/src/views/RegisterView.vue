@@ -176,28 +176,32 @@ const handleRegister = async () => {
   justify-content: center;
   align-items: center;
   min-height: 100vh;
-  background-color: #f5f7fa;
-  padding: 20px;
+  background: linear-gradient(135deg, var(--color-gray-50) 0%, var(--color-white) 100%);
+  padding: var(--space-5);
 }
 
 .register-box {
-  background: white;
-  padding: 40px;
-  border-radius: 8px;
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+  background: var(--color-white);
+  padding: var(--space-10) var(--space-8);
+  border-radius: var(--radius-2xl);
+  box-shadow: var(--shadow-lg);
   width: 100%;
   max-width: 400px;
   text-align: center;
 }
 
-h2 {
+.register-box h2 {
   margin-top: 0;
-  color: #333;
+  margin-bottom: var(--space-2);
+  font-size: 24px;
+  font-weight: 700;
+  color: var(--color-gray-900);
+  letter-spacing: -0.02em;
 }
 
 .subtitle {
-  color: #666;
-  margin-bottom: 30px;
+  color: var(--color-gray-500);
+  margin-bottom: var(--space-8);
   font-size: 14px;
 }
 
@@ -206,13 +210,13 @@ h2 {
 }
 
 .form-group {
-  margin-bottom: 18px;
+  margin-bottom: var(--space-4);
 }
 
 label {
   display: block;
-  margin-bottom: 8px;
-  color: #333;
+  margin-bottom: var(--space-2);
+  color: var(--color-gray-700);
   font-weight: 600;
   font-size: 14px;
 }
@@ -222,23 +226,31 @@ input[type="email"],
 input[type="tel"],
 input[type="password"] {
   width: 100%;
-  padding: 10px;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-  font-size: 16px;
+  padding: 12px var(--space-4);
+  border: 1px solid var(--color-gray-200);
+  border-radius: var(--radius-md);
+  font-size: 15px;
+  font-family: var(--font-sans);
   box-sizing: border-box;
+  background: var(--color-white);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+input::placeholder {
+  color: var(--color-gray-400);
 }
 
 input[type="text"]:focus,
 input[type="email"]:focus,
 input[type="tel"]:focus,
 input[type="password"]:focus {
-  border-color: #4CAF50;
+  border-color: var(--color-primary);
   outline: none;
+  box-shadow: 0 0 0 3px var(--color-primary-lighter);
 }
 
 .terms {
-  margin-bottom: 20px;
+  margin-bottom: var(--space-5);
   font-size: 13px;
 }
 
@@ -246,68 +258,78 @@ input[type="password"]:focus {
   display: flex;
   align-items: center;
   margin-bottom: 0;
-  font-weight: normal;
+  font-weight: 500;
   cursor: pointer;
+  color: var(--color-gray-600);
 }
 
 .terms input[type="checkbox"] {
-  margin-right: 8px;
+  margin-right: var(--space-2);
   cursor: pointer;
   width: auto;
+  accent-color: var(--color-primary);
 }
 
 .register-btn {
   width: 100%;
-  padding: 12px;
-  background-color: #4CAF50;
-  color: white;
+  padding: 14px;
+  background-color: var(--color-primary);
+  color: var(--color-white);
   border: none;
-  border-radius: 4px;
+  border-radius: var(--radius-full);
   font-size: 16px;
+  font-weight: 600;
+  font-family: var(--font-sans);
   cursor: pointer;
-  transition: background-color 0.3s;
-  margin-bottom: 20px;
+  transition: all var(--transition-fast);
+  box-shadow: var(--shadow-primary);
 }
 
 .register-btn:hover:not(:disabled) {
-  background-color: #45a049;
+  background-color: var(--color-primary-dark);
+  transform: translateY(-1px);
+}
+
+.register-btn:active:not(:disabled) {
+  transform: translateY(0);
 }
 
 .register-btn:disabled {
-  background-color: #9acb9c;
+  background-color: var(--color-gray-300);
   cursor: not-allowed;
+  box-shadow: none;
 }
+
 .error-text {
-  color: #f44336;
+  color: var(--color-error);
   font-size: 14px;
-  margin-bottom: 15px;
+  margin-bottom: var(--space-4);
   text-align: center;
 }
 
 .success-text {
-  color: #4caf50;
+  color: var(--color-success);
   font-size: 14px;
-  margin-bottom: 15px;
+  margin-bottom: var(--space-4);
   text-align: center;
 }
 
 .login-link {
   text-align: center;
-  margin-top: 20px;
-  color: #666;
+  margin-top: var(--space-5);
+  color: var(--color-gray-500);
   font-size: 14px;
 }
 
 .login-link a {
-  color: #4CAF50;
+  color: var(--color-primary);
   text-decoration: none;
-  font-weight: bold;
-  margin-left: 8px;
-  transition: all 0.2s;
+  font-weight: 600;
+  margin-left: var(--space-2);
+  transition: color var(--transition-fast);
 }
 
 .login-link a:hover {
-  color: #45a049;
-  text-decoration: underline;
+  color: var(--color-primary-dark);
 }
 </style>

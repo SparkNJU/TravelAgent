@@ -66,102 +66,135 @@ const handleLogout = () => {
 <style scoped>
 .home-shell {
   min-height: 100vh;
-  background: linear-gradient(180deg, #f3f7ff 0%, #f8fafc 100%);
-  padding: 28px;
-  color: #162033;
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: linear-gradient(135deg, var(--color-white) 0%, var(--color-gray-50) 100%);
+  padding: var(--space-6);
 }
 
 .topbar {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  gap: 16px;
-  padding: 24px 28px;
-  background: rgba(255, 255, 255, 0.9);
-  border: 1px solid rgba(148, 163, 184, 0.2);
-  border-radius: 20px;
-  box-shadow: 0 10px 30px rgba(15, 23, 42, 0.06);
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  background: var(--color-white);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--shadow-sm);
 }
 
 .topbar h1 {
   margin: 0;
-  font-size: 28px;
+  font-size: 26px;
+  font-weight: 700;
+  color: var(--color-gray-900);
+  letter-spacing: -0.03em;
 }
 
 .topbar p {
-  margin: 6px 0 0;
-  color: #64748b;
+  margin: var(--space-1) 0 0;
+  color: var(--color-gray-500);
+  font-size: 14px;
 }
 
 .user-area {
   display: flex;
   align-items: center;
-  gap: 12px;
+  gap: var(--space-3);
 }
 
 .ghost-btn,
 .secondary-btn,
 .primary-btn {
   border: none;
-  border-radius: 999px;
-  padding: 12px 18px;
+  border-radius: var(--radius-full);
+  padding: 10px 20px;
   cursor: pointer;
   font-weight: 600;
+  font-size: 14px;
   text-decoration: none;
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  transition: all var(--transition-fast);
 }
 
 .ghost-btn,
 .secondary-btn {
-  background: #eef2ff;
-  color: #334155;
+  background: var(--color-gray-100);
+  color: var(--color-gray-700);
+}
+
+.ghost-btn:hover,
+.secondary-btn:hover {
+  background: var(--color-gray-200);
 }
 
 .primary-btn {
-  background: linear-gradient(135deg, #2563eb, #7c3aed);
-  color: white;
+  background: var(--color-primary);
+  color: var(--color-white);
+  box-shadow: var(--shadow-primary);
+}
+
+.primary-btn:hover {
+  background: var(--color-primary-dark);
+  transform: translateY(-1px);
 }
 
 .home-grid {
   display: grid;
-  grid-template-columns: 2fr 1fr;
-  gap: 20px;
-  margin-top: 24px;
+  grid-template-columns: 5fr 2fr;
+  gap: var(--space-5);
+  margin-top: var(--space-5);
 }
 
 .hero-card,
 .info-card {
-  background: white;
-  border-radius: 24px;
-  padding: 28px;
-  border: 1px solid rgba(148, 163, 184, 0.16);
-  box-shadow: 0 12px 30px rgba(15, 23, 42, 0.05);
+  background: var(--color-white);
+  border-radius: var(--radius-2xl);
+  padding: var(--space-8);
+  box-shadow: var(--shadow-sm);
 }
 
 .hero-card h2 {
   margin-top: 0;
-  font-size: 30px;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--color-gray-900);
+  letter-spacing: -0.02em;
 }
 
-.hero-card p,
-.info-card li {
-  color: #475569;
+.hero-card p {
+  color: var(--color-gray-600);
   line-height: 1.8;
+  font-size: 15px;
+}
+
+.info-card h3 {
+  font-size: 16px;
+  font-weight: 600;
+  color: var(--color-gray-900);
+  margin-bottom: var(--space-4);
+}
+
+.info-card li {
+  color: var(--color-gray-600);
+  line-height: 2;
+  font-size: 14px;
+}
+
+.info-card ul {
+  padding-left: var(--space-4);
+  margin: 0;
+}
+
+.info-card li::marker {
+  color: var(--color-primary);
 }
 
 .actions {
   display: flex;
-  gap: 12px;
+  gap: var(--space-3);
   flex-wrap: wrap;
-  margin-top: 20px;
-}
-
-.info-card ul {
-  padding-left: 18px;
-  margin: 0;
+  margin-top: var(--space-6);
 }
 
 @media (max-width: 900px) {

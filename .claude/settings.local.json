@@ -1,0 +1,13 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npm run *)",
+      "Bash(xxd main.css)",
+      "Bash(node -e \"console.log\\(process.version\\)\")",
+      "Bash(xxd base.css)",
+      "Bash(node -e \"const pkg=require\\('./package.json'\\); console.log\\(JSON.stringify\\({deps:pkg.dependencies,dev:pkg.devDependencies},null,2\\)\\)\")",
+      "Bash(npm install *)",
+      "Bash(npx vite *)"
+    ]
+  }
+}
