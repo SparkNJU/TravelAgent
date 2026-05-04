@@ -57,7 +57,6 @@
           <h2>旅行计划工作台</h2>
           <p>输入旅行需求，上传参考文件，获取渲染后的规划结果</p>
         </div>
-        <router-link to="/" class="back-link">返回首页</router-link>
       </header>
 
       <div class="page-grid">
@@ -390,14 +389,15 @@ onMounted(() => {
 <style scoped>
 .assistant-page {
   min-height: 100vh;
-  padding: 28px;
+  padding: 0;
   color: #111827;
-  font-family: 'Space Grotesk', 'Noto Sans SC', 'Segoe UI', sans-serif;
+  font-family: 'PingFang SC', 'Microsoft YaHei', 'Space Grotesk', sans-serif;
   overflow-x: hidden;
   background:
-    radial-gradient(circle at top left, rgba(14, 165, 233, 0.12), transparent 45%),
-    radial-gradient(circle at 20% 20%, rgba(251, 146, 60, 0.16), transparent 50%),
-    linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 45%),
+    radial-gradient(circle at 80% 20%, rgba(124, 58, 237, 0.06), transparent 50%),
+    radial-gradient(circle at bottom right, rgba(59, 130, 246, 0.05), transparent 40%),
+    linear-gradient(180deg, #f8fafc 0%, #f0f4ff 100%);
 }
 
 .page-shell {
@@ -420,7 +420,12 @@ onMounted(() => {
   justify-content: space-between;
   align-items: center;
   gap: 16px;
-  margin-bottom: 20px;
+  margin-bottom: 24px;
+  padding: 20px 24px;
+  background: rgba(255, 255, 255, 0.8);
+  border-radius: 20px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  backdrop-filter: blur(10px);
 }
 
 .page-header h2 {
@@ -428,11 +433,16 @@ onMounted(() => {
   font-size: 28px;
   font-weight: 700;
   letter-spacing: -0.02em;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
 }
 
 .page-header p {
   margin: 6px 0 0;
   color: #64748b;
+  font-size: 14px;
 }
 
 .page-grid {
@@ -447,7 +457,6 @@ onMounted(() => {
   gap: 20px;
 }
 
-.back-link,
 .primary-btn,
 .secondary-btn {
   border: none;
@@ -458,7 +467,6 @@ onMounted(() => {
   font-weight: 600;
 }
 
-.back-link,
 .secondary-btn {
   background: #eef2ff;
   color: #334155;
@@ -474,21 +482,26 @@ onMounted(() => {
   filter: brightness(1.02);
 }
 
-.secondary-btn:hover,
-.back-link:hover {
+.secondary-btn:hover {
   background: #e0e7ff;
 }
 
-.composer-section,
+.composer-section {
+  background: white;
+  border-radius: 24px;
+  padding: 28px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: 0 4px 24px rgba(15, 23, 42, 0.04);
+}
+
 .result-section,
 .source-section,
 .image-section {
-  padding: 18px 0;
-  border-bottom: 1px solid rgba(148, 163, 184, 0.22);
-}
-
-.composer-section {
-  padding-top: 0;
+  background: white;
+  border-radius: 20px;
+  padding: 24px;
+  border: 1px solid rgba(148, 163, 184, 0.15);
+  box-shadow: 0 4px 20px rgba(15, 23, 42, 0.03);
 }
 
 .composer-form {
@@ -539,8 +552,19 @@ textarea {
 }
 
 .result-section {
-  padding-right: 12px;
   min-width: 0;
+  position: relative;
+}
+
+.result-section::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 4px;
+  background: linear-gradient(90deg, #2563eb, #7c3aed);
+  border-radius: 20px 20px 0 0;
 }
 
 .result-aside {
@@ -585,29 +609,39 @@ textarea {
 }
 
 .tag {
-  background: #0f172a;
-  color: #f8fafc;
-  padding: 6px 12px;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  color: white;
+  padding: 6px 14px;
   border-radius: 999px;
   font-size: 12px;
   font-weight: 600;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.3);
 }
 
 .tag.soft {
-  background: #e0f2fe;
-  color: #0369a1;
+  background: rgba(37, 99, 235, 0.1);
+  color: #2563eb;
+  box-shadow: none;
 }
 
 .result-highlight {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-  gap: 14px;
-  margin-bottom: 18px;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
 .highlight-card {
-  padding: 10px 12px;
-  border-left: 3px solid rgba(148, 163, 184, 0.35);
+  padding: 16px 20px;
+  background: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+  border-radius: 16px;
+  border-left: 4px solid #2563eb;
+  transition: all 0.3s ease;
+}
+
+.highlight-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.08);
 }
 
 .label {
@@ -637,22 +671,59 @@ textarea {
 .markdown-body h1,
 .markdown-body h2,
 .markdown-body h3 {
-  margin-top: 18px;
-  margin-bottom: 10px;
+  margin-top: 24px;
+  margin-bottom: 14px;
   font-weight: 700;
+  color: #0f172a;
+}
+
+.markdown-body h1 {
+  font-size: 24px;
+  padding-bottom: 12px;
+  border-bottom: 2px solid #e2e8f0;
+}
+
+.markdown-body h2 {
+  font-size: 20px;
+  color: #1e293b;
+}
+
+.markdown-body h3 {
+  font-size: 16px;
 }
 
 .markdown-body ul,
 .markdown-body ol {
-  padding-left: 20px;
+  padding-left: 24px;
+  margin: 12px 0;
+}
+
+.markdown-body li {
+  margin-bottom: 8px;
 }
 
 .markdown-body blockquote {
-  border-left: 3px solid #38bdf8;
-  margin: 12px 0;
-  padding-left: 12px;
+  border-left: 4px solid #2563eb;
+  margin: 16px 0;
+  padding: 12px 16px;
   color: #475569;
-  background: #f1f5f9;
+  background: linear-gradient(90deg, rgba(37, 99, 235, 0.05) 0%, transparent 100%);
+  border-radius: 0 12px 12px 0;
+}
+
+.markdown-body strong {
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.markdown-body a {
+  color: #2563eb;
+  text-decoration: none;
+  font-weight: 500;
+}
+
+.markdown-body a:hover {
+  text-decoration: underline;
 }
 
 .image-list,
@@ -698,16 +769,17 @@ textarea {
   top: 0;
   left: 0;
   bottom: 0;
-  width: 240px;
+  width: 260px;
   display: flex;
   flex-direction: column;
   gap: 16px;
   padding: 20px 16px;
-  background: rgba(248, 250, 252, 0.96);
-  border-right: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(255, 255, 255, 0.98);
+  border-right: 1px solid rgba(148, 163, 184, 0.15);
   overflow-y: auto;
   transition: width 0.2s ease;
   z-index: 10;
+  box-shadow: 4px 0 24px rgba(15, 23, 42, 0.04);
 }
 
 .history-sidebar.collapsed {
@@ -818,19 +890,21 @@ textarea {
   gap: 8px;
   border: none;
   background: transparent;
-  border-radius: 10px;
-  padding: 8px 8px 28px 4px;
+  border-radius: 14px;
+  padding: 12px 12px 32px 12px;
   text-align: left;
-  transition: background-color 0.2s ease;
+  transition: all 0.2s ease;
   position: relative;
 }
 
 .history-item:hover {
-  background: rgba(226, 232, 240, 0.4);
+  background: rgba(238, 242, 255, 0.6);
+  transform: translateX(4px);
 }
 
 .history-item.active {
-  background: rgba(191, 219, 254, 0.4);
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.1) 0%, rgba(124, 58, 237, 0.08) 100%);
+  border: 1px solid rgba(37, 99, 235, 0.2);
 }
 
 .history-title {
