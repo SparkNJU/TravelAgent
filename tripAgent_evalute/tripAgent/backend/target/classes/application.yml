@@ -1,0 +1,44 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: tripagent-backend
+  datasource:
+    url: jdbc:h2:./data/tripagent;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+
+agent:
+  base-url: http://localhost:8000
+
+logging:
+  level:
+    root: info
+
+eval:
+  export:
+    cleanup:
+      enabled: true
+      retention-days: 7
+      interval-ms: 3600000
+    monitor:
+      failure-rate-alert-threshold: 0.3
+      retry-rate-alert-threshold: 0.2
+      pending-alert-minutes: 10
