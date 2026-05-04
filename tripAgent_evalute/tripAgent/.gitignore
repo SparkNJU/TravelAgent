@@ -1,0 +1,29 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# Node
+node_modules/
+frontend/node_modules/
+frontend/dist/
+
+# Java
+backend/.gradle/
+backend/build/
+backend/target/
+
+# Python
+__pycache__/
+*.pyc
+agent/.venv/
+
+# Env
+.env
+.env.*
+frontend/.env.local
+agent/.env
+
+# IDE
+.vscode/
+.idea/
+*.iml
