@@ -1,0 +1,42 @@
+# OS
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.iml
+
+# Logs
+*.log
+
+# Env files
+.env
+.env.*
+*.local
+
+# Java / Spring Boot
+backend/target/
+**/target/
+*.class
+
+# Frontend / Vite
+frontend/node_modules/
+frontend/dist/
+frontend/.vite/
+frontend/.eslintcache
+
+# Python / Agent
+StudyAgent-main
+StudyAgent-main/__pycache__/
+StudyAgent-main/.pytest_cache/
+StudyAgent-main/.mypy_cache/
+StudyAgent-main/.ruff_cache/
+StudyAgent-main/*.py[cod]
+StudyAgent-main/embedding_cache.json
+StudyAgent-main/tmp/
+
+# Archives / temp files
+*.zip
+*.tmp
+*.temp
