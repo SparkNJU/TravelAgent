@@ -52,38 +52,43 @@
     </aside>
 
     <div class="page-shell" :class="{ collapsed: isSidebarCollapsed }">
-      <header class="page-header">
-        <div>
-          <h2>旅行计划工作台</h2>
-          <p>输入旅行需求，上传参考文件，获取渲染后的规划结果</p>
-        </div>
-      </header>
-
       <div class="page-grid">
         <section class="main-column">
           <section class="composer-section">
+            <div class="composer-header">
+              <h2>智能旅行规划</h2>
+              <p>输入您的旅行需求，AI 将为您生成个性化行程方案</p>
+            </div>
             <form @submit.prevent="generatePlan" class="composer-form">
               <label class="field">
-                <span>你的需求</span>
+                <span class="field-label">旅行需求</span>
                 <textarea
                   v-model="query"
-                  rows="5"
+                  rows="4"
                   placeholder="例如：帮我做一个日本东京 5 天旅行计划，偏美食和城市观光，预算 10000 元。"
+                  class="query-textarea"
                 />
               </label>
 
               <label class="field">
-                <span>上传参考文件</span>
-                <input type="file" @change="handleFileChange" />
-                <small>支持常见文本 / 文档文件；如果解析失败，仍会基于需求生成计划。</small>
+                <span class="field-label">参考文件</span>
+                <label class="upload-btn-wrapper">
+                  <input type="file" @change="handleFileChange" />
+                  <span class="upload-btn"><span>+</span> {{ file ? file.name : '选择文件' }}</span>
+                </label>
+                <small>支持常见文本 / 文档文件</small>
               </label>
+
+              <div class="preset-tags">
+                <span class="preset-label">快速预设：</span>
+                <button class="preset-tag" type="button" @click="loadPreset('东京 5 天游')">东京 5 天</button>
+                <button class="preset-tag" type="button" @click="loadPreset('新加坡 4 天游，偏亲子和美食')">新加坡 4 天</button>
+              </div>
 
               <div class="actions">
                 <button class="primary-btn" type="submit" :disabled="loading">
                   {{ loading ? '生成中...' : '生成旅行计划' }}
                 </button>
-                <button class="secondary-btn" type="button" @click="loadPreset('东京 5 天游')">东京 5 天</button>
-                <button class="secondary-btn" type="button" @click="loadPreset('新加坡 4 天游，偏亲子和美食')">新加坡 4 天</button>
                 <button class="secondary-btn" type="button" @click="resetAll">清空</button>
               </div>
 
@@ -405,9 +410,11 @@ onMounted(() => {
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 20px;
+  gap: 16px;
   width: 100%;
   padding-left: 260px;
+  padding-top: 80px;
+  padding-bottom: 20px;
   transition: padding 0.2s ease;
 }
 
@@ -415,40 +422,10 @@ onMounted(() => {
   padding-left: 96px;
 }
 
-.page-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 16px;
-  margin-bottom: 24px;
-  padding: 20px 24px;
-  background: rgba(255, 255, 255, 0.8);
-  border-radius: 20px;
-  border: 1px solid rgba(148, 163, 184, 0.15);
-  backdrop-filter: blur(10px);
-}
-
-.page-header h2 {
-  margin: 0;
-  font-size: 28px;
-  font-weight: 700;
-  letter-spacing: -0.02em;
-  background: linear-gradient(135deg, #2563eb, #7c3aed);
-  -webkit-background-clip: text;
-  -webkit-text-fill-color: transparent;
-  background-clip: text;
-}
-
-.page-header p {
-  margin: 6px 0 0;
-  color: #64748b;
-  font-size: 14px;
-}
-
 .page-grid {
   display: grid;
   grid-template-columns: 1fr;
-  gap: 22px;
+  gap: 16px;
   width: 100%;
 }
 
@@ -489,9 +466,31 @@ onMounted(() => {
 .composer-section {
   background: white;
   border-radius: 24px;
-  padding: 28px;
+  padding: 24px;
   border: 1px solid rgba(148, 163, 184, 0.15);
   box-shadow: 0 4px 24px rgba(15, 23, 42, 0.04);
+}
+
+.composer-header {
+  margin-bottom: 20px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.composer-header h2 {
+  margin: 0 0 6px;
+  font-size: 22px;
+  font-weight: 700;
+  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+}
+
+.composer-header p {
+  margin: 0;
+  color: #64748b;
+  font-size: 14px;
 }
 
 .result-section,
@@ -511,11 +510,12 @@ onMounted(() => {
 
 .field {
   display: grid;
-  gap: 10px;
+  gap: 8px;
 }
 
-.field span {
+.field-label {
   font-weight: 600;
+  color: #334155;
 }
 
 textarea,
@@ -523,14 +523,78 @@ input[type='file'] {
   width: 100%;
 }
 
-textarea {
+.query-textarea {
   resize: vertical;
-  min-height: 130px;
-  border-radius: 18px;
-  border: 1px solid #cbd5e1;
+  min-height: 100px;
+  border-radius: 14px;
+  border: 2px solid #e2e8f0;
   padding: 14px;
   font-size: 15px;
-  background: #f8fafc;
+  background: #fafbfc;
+  transition: all 0.2s ease;
+}
+
+.query-textarea:focus {
+  outline: none;
+  border-color: #2563eb;
+  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
+}
+
+.upload-btn-wrapper {
+  display: inline-block;
+  cursor: pointer;
+}
+
+.upload-btn-wrapper input[type="file"] {
+  display: none;
+}
+
+.upload-btn {
+  background: linear-gradient(135deg, #ff6b6b, #ee5a9b);
+  color: white;
+  border: none;
+  border-radius: 999px;
+  padding: 10px 20px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  box-shadow: 0 4px 16px rgba(238, 90, 155, 0.3);
+}
+
+.upload-btn:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(238, 90, 155, 0.4);
+}
+
+.preset-tags {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.preset-label {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.preset-tag {
+  background: #f1f5f9;
+  border: 1px solid #e2e8f0;
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  color: #475569;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.preset-tag:hover {
+  background: #e0e7ff;
+  border-color: #2563eb;
+  color: #2563eb;
 }
 
 .actions {

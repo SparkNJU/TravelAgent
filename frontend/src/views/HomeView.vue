@@ -400,59 +400,49 @@ const quickPlan = (destination) => {
 /* 浮动卡片 */
 .hero-visual {
   position: relative;
-  height: 300px;
+  height: 320px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 20px;
+  padding: 20px;
 }
 
 .floating-card {
-  position: absolute;
   background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(10px);
   border-radius: 20px;
-  padding: 20px;
+  padding: 24px 16px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 8px;
+  justify-content: center;
+  gap: 10px;
   color: #1e293b;
-  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
-  animation: floatCard 4s ease-in-out infinite;
+  box-shadow: 0 12px 32px rgba(0, 0, 0, 0.12);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  transition: all 0.3s ease;
+}
+
+.floating-card:hover {
+  transform: translateY(-8px) scale(1.02);
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.18);
 }
 
 .card-icon {
-  font-size: 32px;
+  font-size: 40px;
 }
 
 .floating-card span {
-  font-size: 13px;
+  font-size: 14px;
   font-weight: 600;
-}
-
-.card-1 {
-  top: 20px;
-  left: 20px;
-  animation-delay: 0s;
-}
-
-.card-2 {
-  top: 80px;
-  right: 40px;
-  animation-delay: 0.5s;
-}
-
-.card-3 {
-  bottom: 60px;
-  left: 60px;
-  animation-delay: 1s;
-}
-
-.card-4 {
-  bottom: 20px;
-  right: 20px;
-  animation-delay: 1.5s;
+  color: #334155;
+  text-align: center;
 }
 
 @keyframes floatCard {
-  0%, 100% { transform: translateY(0) rotate(0deg); }
-  50% { transform: translateY(-15px) rotate(2deg); }
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-8px); }
 }
 
 /* 通用区块样式 */
