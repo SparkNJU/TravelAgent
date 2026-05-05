@@ -12,9 +12,11 @@ import org.example.backend.dto.ImageUploadResponse;
 import org.example.backend.dto.PlanToPostRequest;
 import org.example.backend.entity.Comment;
 import org.example.backend.entity.CommunityPost;
+import org.example.backend.entity.LikeRecord;
 import org.example.backend.entity.TravelPlan;
 import org.example.backend.repository.CommentRepository;
 import org.example.backend.repository.CommunityPostRepository;
+import org.example.backend.repository.LikeRecordRepository;
 import org.example.backend.repository.TravelPlanRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -40,6 +42,9 @@ public class CommunityService {
 
     @Autowired
     private CommentRepository commentRepository;
+
+    @Autowired
+    private LikeRecordRepository likeRecordRepository;
 
     // 直接创建 ObjectMapper 实例，不依赖 Spring 自动装配
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -225,15 +230,37 @@ public class CommunityService {
     }
 
     /**
-     * 点赞
+     * 点赞/取消点赞
      */
     @Transactional
-    public CommunityPostResponse likePost(Long id) {
-        CommunityPost post = postRepository.findById(id)
+    public CommunityPostResponse likePost(Long postId, Long userId) {
+        CommunityPost post = postRepository.findById(postId)
                 .orElseThrow(() -> new RuntimeException("帖子不存在"));
-        post.setLikes(post.getLikes() + 1);
+
+        Optional<LikeRecord> existingLike = likeRecordRepository.findByUserIdAndPostId(userId, postId);
+
+        if (existingLike.isPresent()) {
+            // 已点赞，取消点赞
+            likeRecordRepository.delete(existingLike.get());
+            post.setLikes(post.getLikes() - 1);
+        } else {
+            // 未点赞，进行点赞
+            LikeRecord likeRecord = new LikeRecord();
+            likeRecord.setUserId(userId);
+            likeRecord.setPostId(postId);
+            likeRecordRepository.save(likeRecord);
+            post.setLikes(post.getLikes() + 1);
+        }
+
         CommunityPost updatedPost = postRepository.save(post);
         return convertToResponse(updatedPost);
+    }
+
+    /**
+     * 检查用户是否已点赞
+     */
+    public boolean isLiked(Long postId, Long userId) {
+        return likeRecordRepository.existsByUserIdAndPostId(userId, postId);
     }
 
     /**

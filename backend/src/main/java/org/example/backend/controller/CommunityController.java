@@ -177,17 +177,32 @@ public class CommunityController {
     }
 
     /**
-     * 点赞
+     * 点赞/取消点赞
      */
     @PostMapping("/posts/{id}/like")
-    public ResponseEntity<ApiResponse<CommunityPostResponse>> likePost(@PathVariable Long id) {
+    public ResponseEntity<ApiResponse<CommunityPostResponse>> likePost(
+            @PathVariable Long id,
+            @RequestParam Long userId) {
         try {
-            CommunityPostResponse response = communityService.likePost(id);
-            return ResponseEntity.ok(ApiResponse.success(response, "点赞成功"));
+            CommunityPostResponse response = communityService.likePost(id, userId);
+            boolean isLiked = communityService.isLiked(id, userId);
+            String message = isLiked ? "点赞成功" : "取消点赞成功";
+            return ResponseEntity.ok(ApiResponse.success(response, message));
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
                     .body(ApiResponse.error(e.getMessage()));
         }
+    }
+
+    /**
+     * 检查用户是否已点赞
+     */
+    @GetMapping("/posts/{id}/liked")
+    public ResponseEntity<ApiResponse<Boolean>> isLiked(
+            @PathVariable Long id,
+            @RequestParam Long userId) {
+        boolean liked = communityService.isLiked(id, userId);
+        return ResponseEntity.ok(ApiResponse.success(liked));
     }
 
     /**

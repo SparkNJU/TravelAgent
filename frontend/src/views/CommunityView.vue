@@ -2,20 +2,23 @@
   <div class="community-page">
     <!-- 搜索和分类区域 -->
     <header class="community-header">
-      <!-- 发布按钮 -->
-      <button class="upload-btn" @click="showUploadModal = true">
-        <span>+</span> 发布
-      </button>
-      
-      <!-- 搜索框 -->
-      <div class="search-bar">
-        <input 
-          type="text" 
-          v-model="searchQuery" 
-          placeholder="搜索旅行攻略、目的地..."
-          class="search-input"
-        />
-        <button class="search-btn" @click="handleSearch">搜索</button>
+      <!-- 搜索和发布区域 -->
+      <div class="search-row">
+        <!-- 搜索框 -->
+        <div class="search-bar">
+          <input 
+            type="text" 
+            v-model="searchQuery" 
+            placeholder="搜索旅行攻略、目的地..."
+            class="search-input"
+          />
+          <button class="search-btn" @click="handleSearch">搜索</button>
+        </div>
+        
+        <!-- 发布按钮 -->
+        <button class="upload-btn" @click="showUploadModal = true">
+          <span>+</span> 发布
+        </button>
       </div>
 
       <!-- 分类标签 -->
@@ -33,42 +36,12 @@
 
     <!-- 内容区域 -->
     <main class="content-area">
-      <!-- 精选推荐 -->
-      <section class="featured-section" v-if="activeCategory === 'all'">
-        <div class="section-header">
-          <h3>热门推荐</h3>
-          <span class="more-link">查看更多</span>
-        </div>
-        <div class="featured-grid">
-          <div 
-            v-for="post in featuredPosts" 
-            :key="post.id" 
-            class="featured-card"
-            @click="openPost(post)"
-          >
-            <div class="featured-image" :style="{ backgroundImage: `url(${post.images[0]})` }">
-              <div class="featured-overlay">
-                <span class="featured-title">{{ post.title }}</span>
-                <span class="featured-likes">{{ post.likes }} 喜欢</span>
-              </div>
-            </div>
-            <div class="featured-content">
-              <div class="user-info">
-                <span class="user-avatar">{{ post.avatar }}</span>
-                <span class="user-name">{{ post.nickname }}</span>
-              </div>
-              <p class="featured-desc">{{ post.description }}</p>
-              <div class="post-tags">
-                <span v-for="tag in post.tags" :key="tag" class="tag">#{{ tag }}</span>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
 
+
+      <!-- 分隔区域 -->
       <!-- 瀑布流内容 -->
       <div class="waterfall-container">
-        <div class="waterfall-column" v-for="(column, index) in 3" :key="index">
+        <div class="waterfall-column" v-for="(column, index) in 5" :key="index">
           <article 
             v-for="post in getPostsForColumn(index)" 
             :key="post.id" 
@@ -97,11 +70,7 @@
                 <div class="user-info">
                   <span class="user-avatar">{{ post.avatar }}</span>
                   <span class="user-name">{{ post.nickname }}</span>
-                </div>
-                <div class="post-stats">
-                  <span class="stat-item">{{ post.likes }} 喜欢</span>
-                  <span class="stat-item">{{ post.comments }} 评论</span>
-                  <span class="stat-item">{{ post.shares }} 分享</span>
+                  <span class="likes-count">{{ post.likes }} 喜欢</span>
                 </div>
               </div>
             </div>
@@ -186,13 +155,7 @@
     <div v-if="selectedPost" class="post-modal" @click="selectedPost = null">
       <div class="modal-content" @click.stop>
         <div class="modal-header">
-          <div class="user-info">
-            <span class="user-avatar large">{{ selectedPost.avatar }}</span>
-            <div>
-              <span class="user-name">{{ selectedPost.nickname }}</span>
-              <span class="user-bio">{{ selectedPost.bio }}</span>
-            </div>
-          </div>
+          <h3>{{ selectedPost.title }}</h3>
           <button class="close-btn" @click="selectedPost = null">关闭</button>
         </div>
         <div class="modal-images">
@@ -205,15 +168,34 @@
           />
         </div>
         <div class="modal-body">
-          <h3>{{ selectedPost.title }}</h3>
           <p>{{ selectedPost.description }}</p>
           <div class="post-tags">
             <span v-for="tag in selectedPost.tags" :key="tag" class="tag">#{{ tag }}</span>
           </div>
         </div>
+        <div class="modal-user-bar">
+          <div class="user-info">
+            <span class="user-avatar large">{{ selectedPost.avatar }}</span>
+            <div>
+              <span class="user-name">{{ selectedPost.nickname }}</span>
+              <span class="user-bio">{{ selectedPost.bio }}</span>
+            </div>
+          </div>
+          <div class="user-actions">
+            <button class="action-btn like-btn" @click="handleLike">
+              <span>点赞</span> {{ selectedPost.likes }}
+            </button>
+            <button class="action-btn comment-btn" @click="toggleComments">
+              <span>{{ showComments ? '收起' : '评论' }}</span> {{ selectedPost.comments }}
+            </button>
+            <button class="action-btn share-btn">
+              <span>分享</span> {{ selectedPost.shares }}
+            </button>
+          </div>
+        </div>
         
         <!-- 评论区域 -->
-        <div class="comments-section">
+        <div v-if="showComments" class="comments-section">
           <div class="comments-header">
             <h4>评论 ({{ selectedPost.comments }})</h4>
           </div>
@@ -243,18 +225,6 @@
             <button class="send-comment-btn" @click="submitComment">发送</button>
           </div>
         </div>
-        
-        <div class="modal-footer">
-          <button class="action-btn like-btn">
-            <span>点赞</span> {{ selectedPost.likes }}
-          </button>
-          <button class="action-btn comment-btn">
-            <span>评论</span> {{ selectedPost.comments }}
-          </button>
-          <button class="action-btn share-btn">
-            <span>分享</span> {{ selectedPost.shares }}
-          </button>
-        </div>
       </div>
     </div>
   </div>
@@ -267,6 +237,7 @@ const searchQuery = ref('')
 const activeCategory = ref('all')
 
 const categories = ref([
+  { id: 'recommend', name: '推荐' },
   { id: 'all', name: '全部' },
   { id: 'food', name: '美食' },
   { id: 'sight', name: '景点' },
@@ -284,6 +255,12 @@ const categories = ref([
 
 // 分类变化时加载对应分类的帖子
 const handleCategoryChange = async () => {
+  if (activeCategory.value === 'recommend') {
+    // 推荐分类显示热门帖子+普通帖子
+    allPosts.value = featuredPosts.value.concat(allPosts.value).slice(0, 20)
+    return
+  }
+  
   try {
     const response = await fetch(`http://localhost:8080/api/community/posts/category/${activeCategory.value}`)
     const result = await response.json()
@@ -479,6 +456,7 @@ const selectedPost = ref(null)
 const showUploadModal = ref(false)
 const comments = ref([])
 const newComment = ref('')
+const showComments = ref(false)
 
 // 从后端加载帖子
 const loadPosts = async () => {
@@ -640,7 +618,7 @@ const filteredPosts = computed(() => {
 })
 
 const getPostsForColumn = (columnIndex) => {
-  return filteredPosts.value.filter((_, index) => index % 3 === columnIndex)
+  return filteredPosts.value.filter((_, index) => index % 5 === columnIndex)
 }
 
 const handleSearch = async () => {
@@ -675,8 +653,14 @@ const openPost = async (post) => {
   selectedPost.value = post
   comments.value = []
   newComment.value = ''
+  showComments.value = false
   // 加载评论
   await loadComments(post.id)
+}
+
+// 切换评论显示/隐藏
+const toggleComments = () => {
+  showComments.value = !showComments.value
 }
 
 // 加载评论
@@ -738,6 +722,33 @@ const handleCommentKeydown = (e) => {
     submitComment()
   }
 }
+
+// 点赞
+const handleLike = async () => {
+  if (!selectedPost.value) return
+  
+  const userId = localStorage.getItem('userId') || 1
+  
+  try {
+    const response = await fetch(`http://localhost:8080/api/community/posts/${selectedPost.value.id}/like?userId=${userId}`, {
+      method: 'POST'
+    })
+    const result = await response.json()
+    if (result.code === 200) {
+      // 根据返回消息更新点赞状态
+      if (result.message === '点赞成功') {
+        selectedPost.value.likes++
+      } else {
+        selectedPost.value.likes--
+      }
+    } else {
+      alert('操作失败：' + result.message)
+    }
+  } catch (error) {
+    console.error('操作失败:', error)
+    alert('操作失败，请稍后重试')
+  }
+}
 </script>
 
 <style scoped>
@@ -757,6 +768,27 @@ const handleCommentKeydown = (e) => {
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
+/* 搜索行 */
+.search-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+/* 搜索框 */
+.search-bar {
+  flex: 1;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  background: white;
+  border-radius: 4px;
+  padding: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+  border: 1px solid #e2e8f0;
+}
+
 /* 发布按钮 */
 .upload-btn {
   background: linear-gradient(135deg, #ff6b6b, #ee5a9b);
@@ -770,26 +802,12 @@ const handleCommentKeydown = (e) => {
   align-items: center;
   gap: 6px;
   box-shadow: 0 4px 16px rgba(238, 90, 155, 0.3);
-  position: fixed;
-  right: 24px;
-  bottom: 24px;
-  z-index: 900;
+  white-space: nowrap;
 }
 
 .upload-btn:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(238, 90, 155, 0.4);
-}
-
-/* 搜索框 */
-.search-bar {
-  display: flex;
-  align-items: center;
-  background: white;
-  border-radius: 4px;
-  padding: 8px 14px;
-  margin-bottom: 16px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
 }
 
 .search-icon {
@@ -804,16 +822,18 @@ const handleCommentKeydown = (e) => {
   background: transparent;
   font-size: 14px;
   outline: none;
+  padding: 10px 14px;
 }
 
 .search-btn {
   background: #ff6b35;
   color: white;
   border: none;
-  border-radius: 4px;
-  padding: 6px 14px;
+  border-radius: 0 4px 4px 0;
+  padding: 10px 20px;
   font-weight: 600;
   cursor: pointer;
+  margin-left: -1px;
 }
 
 /* 分类标签 */
@@ -831,13 +851,13 @@ const handleCommentKeydown = (e) => {
 
 .tab-item {
   flex-shrink: 0;
-  background: rgba(255,255,255,0.9);
-  border: 1px solid rgba(255,255,255,0.8);
+  background: rgba(255,255,255,0.95);
+  border: 1px solid #e2e8f0;
   border-radius: 4px;
   padding: 8px 16px;
   font-size: 14px;
   font-weight: 500;
-  color: white;
+  color: #64748b;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -851,6 +871,28 @@ const handleCommentKeydown = (e) => {
 /* 精选推荐 */
 .featured-section {
   padding: 20px;
+}
+
+/* 分隔区域 */
+.section-divider {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px 20px;
+  margin: 8px 0;
+}
+
+.divider-line {
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(90deg, transparent, #e2e8f0, transparent);
+}
+
+.divider-title {
+  font-size: 16px;
+  font-weight: 600;
+  color: #64748b;
+  white-space: nowrap;
 }
 
 .section-header {
@@ -974,8 +1016,8 @@ const handleCommentKeydown = (e) => {
 /* 瀑布流 */
 .waterfall-container {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 16px;
+  grid-template-columns: repeat(5, 1fr);
+  gap: 12px;
   padding: 0 20px;
 }
 
@@ -1068,18 +1110,21 @@ const handleCommentKeydown = (e) => {
 }
 
 .post-footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
   margin-top: 12px;
   padding-top: 12px;
-  border-top: 1px solid rgba(148, 163, 184, 0.1);
+  border-top: 1px solid #f1f5f9;
 }
 
 .post-footer .user-info {
   display: flex;
   align-items: center;
   gap: 8px;
+}
+
+.likes-count {
+  font-size: 12px;
+  color: #64748b;
+  margin-left: auto;
 }
 
 .post-footer .user-avatar {
@@ -1122,7 +1167,7 @@ const handleCommentKeydown = (e) => {
 .modal-content {
   background: white;
   border-radius: 24px;
-  max-width: 600px;
+  max-width: 650px;
   width: 100%;
   max-height: 90vh;
   overflow-y: auto;
@@ -1136,9 +1181,22 @@ const handleCommentKeydown = (e) => {
   border-bottom: 1px solid rgba(148, 163, 184, 0.1);
 }
 
-.modal-header .user-info {
+.modal-user-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 16px;
+  border-top: 1px solid rgba(148, 163, 184, 0.1);
+}
+
+.modal-user-bar .user-info {
   display: flex;
   align-items: center;
+  gap: 12px;
+}
+
+.user-actions {
+  display: flex;
   gap: 12px;
 }
 
@@ -1156,7 +1214,9 @@ const handleCommentKeydown = (e) => {
 
 .modal-images {
   display: flex;
+  justify-content: center;
   overflow-x: auto;
+  padding: 16px 0;
 }
 
 .modal-image {
@@ -1279,6 +1339,7 @@ const handleCommentKeydown = (e) => {
   font-size: 13px;
   cursor: pointer;
   transition: all 0.3s ease;
+  color: #64748b; /* 添加灰色文字颜色 */
 }
 
 .tag-btn:hover {
@@ -1553,6 +1614,18 @@ const handleCommentKeydown = (e) => {
 }
 
 /* 响应式 */
+@media (max-width: 1200px) {
+  .waterfall-container {
+    grid-template-columns: repeat(4, 1fr);
+  }
+}
+
+@media (max-width: 960px) {
+  .waterfall-container {
+    grid-template-columns: repeat(3, 1fr);
+  }
+}
+
 @media (max-width: 768px) {
   .waterfall-container {
     grid-template-columns: repeat(2, 1fr);

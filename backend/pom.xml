@@ -27,7 +27,9 @@
         <url/>
     </scm>
     <properties>
-        <java.version>25</java.version>
+        <!-- Use a Java version that matches the system JDK (Java 8 is currently used by mvnw on this machine).
+             Spring Boot 4 requires Java 17+, so set to 17 which is commonly available. -->
+        <java.version>17</java.version>
     </properties>
     <dependencies>
         <dependency>
@@ -41,10 +43,6 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-jpa</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>com.fasterxml.jackson.core</groupId>
-            <artifactId>jackson-databind</artifactId>
         </dependency>
         <dependency>
             <groupId>com.mysql</groupId>
@@ -74,11 +72,15 @@
         <plugins>
             <plugin>
                 <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-clean-plugin</artifactId>
+                <version>3.3.2</version>
+            </plugin>
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
                 <artifactId>maven-compiler-plugin</artifactId>
-                <version>3.12.0</version>
+                <version>3.11.0</version>
                 <configuration>
-                    <source>${java.version}</source>
-                    <target>${java.version}</target>
+                    <release>${java.version}</release>
                 </configuration>
             </plugin>
             <plugin>

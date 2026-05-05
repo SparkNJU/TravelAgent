@@ -1,11 +1,11 @@
 <script setup>
 import { RouterView } from 'vue-router'
-import AppHeader from './components/AppHeader.vue'
+import AppSidebar from './components/AppSidebar.vue'
 </script>
 
 <template>
   <div class="app-container">
-    <AppHeader />
+    <AppSidebar />
     <main class="main-content">
       <RouterView />
     </main>
@@ -28,9 +28,12 @@ body {
 <style scoped>
 .app-container {
   min-height: 100vh;
+  display: flex;
 }
 
 .main-content {
-  min-height: calc(100vh - 60px);
+  flex: 1;
+  margin-left: 220px;
+  min-height: 100vh;
 }
 </style>
