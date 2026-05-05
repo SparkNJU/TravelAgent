@@ -1,36 +1,29 @@
 <script setup>
 import { RouterView } from 'vue-router'
-import AppHeader from './components/AppHeader.vue'
+import Sidebar from './components/Sidebar.vue'
 </script>
 
 <template>
-  <div class="app-container">
-    <AppHeader />
-    <main class="main-content">
+  <div class="app-layout">
+    <Sidebar />
+    <main class="main-area">
       <RouterView />
     </main>
   </div>
 </template>
 
-<style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
-
-body {
-  font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  background: #f8fafc;
-}
-</style>
-
 <style scoped>
-.app-container {
-  min-height: 100vh;
+.app-layout {
+  display: flex;
+  height: 100vh;
+  overflow: hidden;
 }
 
-.main-content {
-  min-height: calc(100vh - 60px);
+.main-area {
+  flex: 1;
+  margin-left: 72px;
+  height: 100vh;
+  overflow-y: auto;
+  overscroll-behavior: none;
 }
 </style>
