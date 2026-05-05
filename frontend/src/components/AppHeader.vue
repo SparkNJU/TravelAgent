@@ -1,31 +1,28 @@
 <template>
   <header class="app-header">
-    <div class="header-content">
-      <!-- Logo区域 -->
-      <div class="logo-area">
-        <span class="logo-icon">✈️</span>
+    <div class="header-inner">
+      <div class="logo">
+        <SvgIcon name="plane" :size="20" />
         <span class="logo-text">旅行计划助手</span>
       </div>
-
-      <!-- 导航链接 -->
-      <nav class="header-nav">
-        <router-link to="/" class="nav-item" :class="{ active: $route.path === '/' }">首页</router-link>
-        <router-link to="/community" class="nav-item" :class="{ active: $route.path === '/community' }">社区</router-link>
-        <router-link to="/ai-plan" class="nav-item" :class="{ active: $route.path === '/ai-plan' }">AI规划</router-link>
-      </nav>
-
-      <!-- 用户操作区域 -->
-      <div class="header-actions">
-        <button class="logout-btn" @click="handleLogout">退出</button>
+      <div class="header-right">
+        <span class="username">{{ username }}</span>
+        <button class="logout-btn" @click="handleLogout">
+          <SvgIcon name="logout" :size="14" />
+          退出
+        </button>
       </div>
     </div>
   </header>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import { useRouter } from 'vue-router'
+import SvgIcon from './SvgIcon.vue'
 
 const router = useRouter()
+const username = ref(localStorage.getItem('username') || '用户')
 
 const handleLogout = () => {
   localStorage.removeItem('token')
@@ -37,146 +34,75 @@ const handleLogout = () => {
 
 <style scoped>
 .app-header {
-  background: white;
-  border-bottom: 1px solid #e5e7eb;
   position: fixed;
   top: 0;
   left: 0;
   right: 0;
   z-index: 1000;
-  width: 100%;
+  height: var(--header-height);
+  background: var(--color-surface);
+  border-bottom: 1px solid var(--color-border);
 }
 
-.header-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  gap: 20px;
-  padding: 14px 24px;
-  max-width: 1400px;
+.header-inner {
+  max-width: var(--max-width);
   margin: 0 auto;
-  min-height: 60px;
-}
-
-.logo-area {
+  height: 100%;
   display: flex;
   align-items: center;
-  gap: 12px;
+  justify-content: space-between;
+  padding: 0 24px;
 }
 
-.logo-icon {
-  font-size: 28px;
+.logo {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: var(--color-red-light);
 }
 
-.logo-area h1 {
-  margin: 0;
-  font-size: 20px;
+.logo-text {
+  font-size: 16px;
   font-weight: 700;
-  background: linear-gradient(135deg, #2563eb, #7c3aed);
+  background: var(--gradient-brand);
   -webkit-background-clip: text;
   -webkit-text-fill-color: transparent;
   background-clip: text;
 }
 
-.logo-area p {
-  margin: 2px 0 0;
-  color: #64748b;
-  font-size: 12px;
-}
-
-.header-nav {
-  display: flex;
-  gap: 32px;
-}
-
-.nav-item {
-  text-decoration: none;
-  color: #64748b;
-  font-size: 14px;
-  font-weight: 500;
-  padding: 8px 16px;
-  border-radius: 8px;
-  transition: all 0.2s ease;
-}
-
-.nav-item:hover {
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.08);
-}
-
-.nav-item.active {
-  color: white;
-  background: linear-gradient(135deg, #2563eb, #7c3aed);
-  font-weight: 600;
-}
-
-.header-actions {
+.header-right {
   display: flex;
   align-items: center;
-  gap: 16px;
+  gap: 10px;
 }
 
-.user-info {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  margin-right: 8px;
-}
-
-.greeting {
-  font-weight: 600;
-  color: #1e293b;
-  font-size: 14px;
-}
-
-.user-role {
-  font-size: 11px;
-  color: #2563eb;
-  background: rgba(37, 99, 235, 0.1);
-  padding: 2px 8px;
-  border-radius: 999px;
+.username {
+  font-size: 12px;
+  color: var(--color-hint);
 }
 
 .logout-btn {
-  background: transparent;
-  color: #64748b;
-  border: 1px solid #e5e7eb;
-  border-radius: 8px;
-  padding: 8px 16px;
-  font-weight: 500;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  padding: 5px 12px;
+  font-size: 12px;
+  color: var(--color-hint);
+  background: none;
   cursor: pointer;
-  font-size: 14px;
-  transition: all 0.2s ease;
+  font-family: var(--font-family);
+  transition: all 0.2s;
 }
 
 .logout-btn:hover {
-  background: #fef2f2;
-  border-color: #fecaca;
-  color: #dc2626;
+  color: var(--color-red-light);
+  border-color: var(--color-red);
+  background: rgba(230, 57, 70, 0.08);
 }
 
-@media (max-width: 900px) {
-  .header-content {
-    flex-wrap: wrap;
-    padding: 12px 16px;
-  }
-
-  .header-nav {
-    order: 3;
-    width: 100%;
-    justify-content: center;
-    gap: 16px;
-    padding-top: 12px;
-    border-top: 1px solid rgba(148, 163, 184, 0.1);
-  }
-
-  .user-info {
-    align-items: center;
-    margin-right: 0;
-  }
-
-  .logo-area h1 {
-    font-size: 18px;
-  }
+@media (max-width: 768px) {
+  .username { display: none; }
 }
 </style>

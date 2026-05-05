@@ -1,0 +1,54 @@
+:root {
+  /* Brand */
+  --gradient-brand: linear-gradient(135deg, #e63946, #ff6b6b);
+  --color-red: #e63946;
+  --color-red-light: #ff6b6b;
+
+  /* Accent */
+  --gradient-pink: linear-gradient(135deg, #ff6b6b, #ff8fa3);
+  --color-orange: #ff9f1c;
+
+  /* Text on dark */
+  --color-title: #f1f1f1;
+  --color-body: #d4d4d4;
+  --color-secondary: #a3a3a3;
+  --color-hint: #737373;
+  --color-muted: #525252;
+
+  /* Surface */
+  --color-border: #262626;
+  --color-bg: #0a0a0a;
+  --color-surface: #141414;
+  --color-card: #1a1a1a;
+  --color-card-hover: #222222;
+  --color-overlay: rgba(0, 0, 0, 0.7);
+
+  /* Shadows (subtle on dark) */
+  --shadow-card: 0 2px 8px rgba(0, 0, 0, 0.4);
+  --shadow-card-hover: 0 8px 24px rgba(0, 0, 0, 0.6);
+  --shadow-button: 0 4px 16px rgba(230, 57, 70, 0.3);
+  --shadow-fab: 0 4px 24px rgba(230, 57, 70, 0.4);
+  --shadow-drawer: -4px 0 24px rgba(0, 0, 0, 0.5);
+
+  /* Radius */
+  --radius-pill: 999px;
+  --radius-card: 14px;
+  --radius-input: 10px;
+  --radius-image: 10px;
+  --radius-modal: 20px;
+
+  /* Spacing */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+
+  /* Font */
+  --font-family: 'PingFang SC', 'Microsoft YaHei', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+
+  /* Layout */
+  --header-height: 56px;
+  --drawer-width: 460px;
+  --max-width: 1400px;
+}
