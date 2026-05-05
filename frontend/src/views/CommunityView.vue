@@ -72,40 +72,42 @@
                 <SvgIcon name="close" :size="18" />
               </button>
             </div>
-            <div class="modal-images" v-if="selectedPost.images?.length">
-              <img v-for="(img, i) in selectedPost.images" :key="i" :src="img" :alt="selectedPost.title" />
-            </div>
-            <div class="modal-body">
-              <div class="modal-title-row">
-                <h3>{{ selectedPost.title }}</h3>
-                <button class="gen-inline-btn" @click="generateSimilar(selectedPost)">
-                  <SvgIcon name="sparkles" :size="14" />
-                  生成同款
-                </button>
+            <div class="modal-scroll">
+              <div class="modal-images" v-if="selectedPost.images?.length">
+                <img v-for="(img, i) in selectedPost.images" :key="i" :src="img" :alt="selectedPost.title" />
               </div>
-              <p>{{ selectedPost.description }}</p>
-              <div class="card-tags">
-                <span v-for="tag in selectedPost.tags" :key="tag" class="tag">{{ tag }}</span>
-              </div>
-            </div>
-            <div class="comments-area">
-              <h4>评论 ({{ selectedPost.comments }})</h4>
-              <div class="comments-list">
-                <div v-for="c in comments" :key="c.id" class="comment">
-                  <span class="avatar sm">{{ c.avatar }}</span>
-                  <div class="comment-body">
-                    <div class="comment-meta">
-                      <span class="comment-author">{{ c.nickname }}</span>
-                      <span class="comment-time">{{ c.createdAt }}</span>
-                    </div>
-                    <p class="comment-text">{{ c.content }}</p>
-                  </div>
+              <div class="modal-body">
+                <div class="modal-title-row">
+                  <h3>{{ selectedPost.title }}</h3>
+                  <button class="gen-inline-btn" @click="generateSimilar(selectedPost)">
+                    <SvgIcon name="sparkles" :size="14" />
+                    生成同款
+                  </button>
                 </div>
-                <p v-if="!comments.length" class="no-comments">暂无评论</p>
+                <p>{{ selectedPost.description }}</p>
+                <div class="card-tags">
+                  <span v-for="tag in selectedPost.tags" :key="tag" class="tag">{{ tag }}</span>
+                </div>
               </div>
-              <div class="comment-input-row">
-                <input v-model="newComment" placeholder="写下你的评论..." @keydown.enter="submitComment" />
-                <button @click="submitComment"><SvgIcon name="send" :size="14" /></button>
+              <div class="comments-area">
+                <h4>评论 ({{ selectedPost.comments }})</h4>
+                <div class="comments-list">
+                  <div v-for="c in comments" :key="c.id" class="comment">
+                    <span class="avatar sm">{{ c.avatar }}</span>
+                    <div class="comment-body">
+                      <div class="comment-meta">
+                        <span class="comment-author">{{ c.nickname }}</span>
+                        <span class="comment-time">{{ c.createdAt }}</span>
+                      </div>
+                      <p class="comment-text">{{ c.content }}</p>
+                    </div>
+                  </div>
+                  <p v-if="!comments.length" class="no-comments">暂无评论</p>
+                </div>
+                <div class="comment-input-row">
+                  <input v-model="newComment" placeholder="写下你的评论..." @keydown.enter="submitComment" />
+                  <button @click="submitComment"><SvgIcon name="send" :size="14" /></button>
+                </div>
               </div>
             </div>
             <div class="modal-actions">
@@ -234,6 +236,7 @@ onMounted(loadPosts)
   background: var(--color-bg);
   font-family: var(--font-family);
   color: var(--color-body);
+  min-height: 100%;
 }
 
 .discover-header {
@@ -383,14 +386,19 @@ onMounted(loadPosts)
   background: var(--color-surface);
   border-radius: var(--radius-modal);
   max-width: 560px; width: 100%; max-height: 85vh;
-  overflow-y: auto; border: 1px solid var(--color-border);
-  scrollbar-width: none;
+  display: flex; flex-direction: column;
+  overflow: hidden; border: 1px solid var(--color-border);
 }
-.modal-content::-webkit-scrollbar { display: none; }
+
+.modal-scroll {
+  flex: 1; overflow-y: auto; scrollbar-width: none;
+}
+.modal-scroll::-webkit-scrollbar { display: none; }
 
 .modal-top {
   display: flex; justify-content: space-between; align-items: center;
   padding: 16px 20px; border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
 }
 .modal-user { display: flex; align-items: center; gap: 10px; }
 

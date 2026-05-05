@@ -1,5 +1,5 @@
 <template>
-  <div class="ai-page">
+  <div :class="['ai-page', { 'has-result': result }]">
     <div class="ai-inner">
       <!-- Input Section -->
       <section class="input-section">
@@ -166,6 +166,14 @@ const resetPlan = () => { result.value = null; errorMessage.value = ''; file.val
   background: var(--color-bg);
   font-family: var(--font-family);
   color: var(--color-body);
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ai-page.has-result {
+  align-items: flex-start;
 }
 
 .ai-inner {

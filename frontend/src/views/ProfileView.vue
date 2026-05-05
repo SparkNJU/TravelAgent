@@ -58,6 +58,7 @@ onMounted(() => {
   background: var(--color-bg);
   font-family: var(--font-family);
   color: var(--color-body);
+  min-height: 100%;
 }
 
 .profile-inner {
