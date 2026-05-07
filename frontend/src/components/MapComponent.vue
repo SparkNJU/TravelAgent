@@ -1,27 +1,27 @@
 <template>
   <div class="map-container">
-    <!-- 搜索框 -->
-    <div class="search-box">
-      <input
-        v-model="searchQuery"
-        @keyup.enter="searchLocation"
-        placeholder="搜索地点（如：天安门、故宫）"
-        class="search-input"
-      />
-      <button @click="searchLocation" class="search-btn">搜索</button>
-    </div>
-
     <!-- 地图 -->
     <div class="map-wrapper">
+      <!-- 搜索框 -->
+      <div class="search-box">
+        <input
+          v-model="searchQuery"
+          @keyup.enter="searchLocation"
+          placeholder="搜索地点（如：天安门、故宫）"
+          class="search-input"
+        />
+        <button @click="searchLocation" class="search-btn">搜索</button>
+      </div>
+
       <div ref="mapElement" class="map"></div>
 
       <!-- 地点面板收缩按钮 -->
       <button 
         class="collapse-btn" 
-        @click="panelCollapsed = !panelCollapsed"
+        @click="togglePanel"
         :class="{ collapsed: panelCollapsed }"
       >
-        <span>{{ panelCollapsed ? '›' : '‹' }}</span>
+        <span>{{ panelCollapsed ? '‹' : '›' }}</span>
       </button>
       
       <!-- 地点列表面板 -->
@@ -81,6 +81,13 @@ const selectedIndex = ref(0)
 const selectedLocation = ref(null)
 const searchQuery = ref('')
 const panelCollapsed = ref(false)
+
+// 切换面板显示状态
+const togglePanel = () => {
+  panelCollapsed.value = !panelCollapsed.value
+  console.log('面板状态:', panelCollapsed.value)
+}
+
 let map = null
 let markers = []
 
@@ -174,14 +181,26 @@ const initMap = async () => {
 const searchAllLocations = async () => {
   clearMarkers()
 
+  console.log('搜索地点数量:', locationList.value.length)
+  
   for (let i = 0; i < locationList.value.length; i++) {
     const location = locationList.value[i]
+    if (!location) {
+      console.warn(`地点列表索引 ${i} 为空`)
+      continue
+    }
     await geocodeLocation(i, location.location)
   }
 }
 
 // 地理编码：根据地名获取坐标
 const geocodeLocation = async (index, locationName) => {
+  // 检查地点列表是否存在
+  if (!locationList.value[index]) {
+    console.error(`地点列表索引 ${index} 不存在`)
+    return
+  }
+  
   // 第一步：优先查找本地坐标库
   const localCoords = locationCoordLibrary[locationName]
   if (localCoords) {
@@ -445,13 +464,18 @@ onMounted(() => {
 }
 
 .search-box {
-  padding: 12px 16px;
+  position: absolute;
+  top: 12px;
+  left: 12px;
+  width: 400px;
+  padding: 6px 10px;
   display: flex;
   gap: 8px;
   background: white;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+  z-index: 20;
 }
 
 .search-input {
@@ -501,10 +525,6 @@ onMounted(() => {
   z-index: 1;
 }
 
-:deep(.leaflet-container) {
-  font-family: var(--font-family);
-}
-
 :deep(.custom-marker) {
   background: none !important;
   border: none !important;
@@ -546,20 +566,20 @@ onMounted(() => {
 /* 地点面板收缩按钮 */
 .collapse-btn {
   position: absolute;
-  left: 280px;
+  right: 240px;
   top: 50%;
   transform: translateY(-50%);
-  width: 20px;
-  height: 60px;
+  width: 14px;
+  height: 48px;
   background: white;
   border: 1px solid var(--color-border);
-  border-left: none;
-  border-radius: 0 4px 4px 0;
+  border-right: none;
+  border-radius: 4px 0 0 4px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 15;
+  z-index: 16;
   transition: all 0.2s;
   color: var(--color-hint);
   font-size: 18px;
@@ -571,27 +591,31 @@ onMounted(() => {
 }
 
 .collapse-btn.collapsed {
-  left: 0;
-  border-radius: 0 4px 4px 0;
+  right: 0;
+  border-radius: 4px 0 0 4px;
 }
 
 /* 地点列表面板 */
 .location-panel {
-  width: 280px;
+  position: absolute;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  width: 240px;
   background: white;
-  border-right: 1px solid var(--color-border);
+  border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
   overflow: hidden;
   z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+  box-shadow: -2px 0 8px rgba(0, 0, 0, 0.1);
   transition: width 0.3s ease;
 }
 
 .location-panel.collapsed {
   width: 0;
   overflow: hidden;
-  border-right: none;
+  border-left: none;
 }
 
 .panel-header {
@@ -697,7 +721,7 @@ onMounted(() => {
 .location-detail {
   position: absolute;
   bottom: 20px;
-  left: 300px;
+  left: 20px;
   background: white;
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
@@ -849,52 +873,8 @@ onMounted(() => {
   background: var(--color-red);
 }
 
-.map-wrapper {
-  flex: 1;
-  display: flex;
-  position: relative;
-  overflow: hidden;
-}
-
-.map {
-  flex: 1;
-  position: relative;
-  z-index: 1;
-}
-
 /* 地点列表面板 */
 .location-panel {
-  width: 280px;
-  background: white;
-  border-right: 1px solid var(--color-border);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-  z-index: 10;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
-}
-
-.panel-header {
-  padding: 16px;
-  border-bottom: 1px solid var(--color-border);
-  background: var(--color-card);
-  flex-shrink: 0;
-}
-
-.panel-header h3 {
-  margin: 0 0 4px;
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--color-title);
-}
-
-.location-count {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-hint);
-}
-
-.location-list {
   flex: 1;
   overflow-y: auto;
   padding: 8px 0;
@@ -973,19 +953,6 @@ onMounted(() => {
   flex-shrink: 0;
 }
 
-/* 地点详情弹窗 */
-.location-detail {
-  position: absolute;
-  bottom: 20px;
-  left: 300px;
-  background: white;
-  border-radius: 8px;
-  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
-  min-width: 280px;
-  max-width: 380px;
-  z-index: 100;
-  animation: slideIn 0.2s ease-out;
-}
 
 @keyframes slideIn {
   from {

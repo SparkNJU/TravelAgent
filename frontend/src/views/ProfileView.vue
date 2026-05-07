@@ -38,24 +38,36 @@
       <div class="content-area">
         <!-- 旅行规划 -->
         <div v-if="activeTab === 'plans'" class="plans-section">
-          <div v-if="!history.length" class="empty-box">
+          <div v-if="loading" class="loading-box">
+            <SvgIcon name="loader" :size="24" spin />
+            <span>加载中...</span>
+          </div>
+          <div v-else-if="!history.length" class="empty-box">
             <SvgIcon name="compass" :size="40" />
             <p>暂无规划记录</p>
             <span>去 AI规划 页面生成你的第一份旅行计划</span>
           </div>
           <div v-else class="plans-list">
-            <div v-for="item in history" :key="item.id" class="plan-item">
+            <div v-for="item in history" :key="item.planId" class="plan-item">
               <div class="plan-icon">
                 <SvgIcon name="map" :size="20" />
               </div>
               <div class="plan-content">
-                <h3>{{ item.result?.title || '未命名行程' }}</h3>
+                <h3>{{ item.title || '未命名行程' }}</h3>
                 <div class="plan-meta">
-                  <span>{{ item.result?.destination }}</span>
-                  <span>{{ item.result?.days }}天</span>
+                  <span>{{ item.destination }}</span>
+                  <span>{{ item.days }}天</span>
                 </div>
               </div>
               <span class="plan-date">{{ formatDate(item.createdAt) }}</span>
+              <div class="plan-actions">
+                <button type="button" class="action-btn" @click="viewPlanDetail(item.planId)">
+                  查看
+                </button>
+                <button type="button" class="action-btn primary" @click="addToWorkspace(item.planId)">
+                  工作台
+                </button>
+              </div>
             </div>
           </div>
         </div>
@@ -88,17 +100,67 @@
         </div>
       </div>
     </div>
+
+    <!-- 规划详情弹窗 -->
+    <div v-if="showDetailModal" class="modal-overlay" @click="closeModal">
+      <div class="modal-content" @click.stop>
+        <div class="modal-header">
+          <h3>{{ selectedPlan?.title || '规划详情' }}</h3>
+          <button class="close-btn" @click="closeModal">
+            <SvgIcon name="x" :size="16" />
+          </button>
+        </div>
+        <div class="modal-body">
+          <div class="detail-row">
+            <span class="detail-label">目的地</span>
+            <span class="detail-value">{{ selectedPlan?.destination }}</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">天数</span>
+            <span class="detail-value">{{ selectedPlan?.days }}天</span>
+          </div>
+          <div class="detail-row">
+            <span class="detail-label">预算</span>
+            <span class="detail-value">¥{{ selectedPlan?.estimatedBudget || '未设置' }}</span>
+          </div>
+          <div class="detail-section">
+            <h4>行程安排</h4>
+            <div class="itinerary-content" v-html="formatItinerary(selectedPlan?.itinerary)"></div>
+          </div>
+          <div v-if="selectedPlan?.highlights?.length" class="detail-section">
+            <h4>行程亮点</h4>
+            <ul class="highlights-list">
+              <li v-for="(highlight, index) in selectedPlan.highlights" :key="index">
+                {{ highlight }}
+              </li>
+            </ul>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button class="modal-btn secondary" @click="closeModal">关闭</button>
+          <button class="modal-btn primary" @click="addToWorkspace(selectedPlan?.planId); closeModal()">
+            <SvgIcon name="edit" :size="14" />
+            加到工作台
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useRouter } from 'vue-router'
 import SvgIcon from '../components/SvgIcon.vue'
 
+const router = useRouter()
 const username = ref(localStorage.getItem('username') || '用户')
 const history = ref([])
 const posts = ref([])
 const activeTab = ref('plans')
+const loading = ref(false)
+const selectedPlan = ref(null)
+const showDetailModal = ref(false)
 
 const tabs = [
   { id: 'plans', name: '旅行规划' },
@@ -111,18 +173,95 @@ const formatDate = (iso) => {
   return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`
 }
 
-const loadData = () => {
+const loadData = async () => {
   if (activeTab.value === 'plans') {
+    loading.value = true
     try {
-      const stored = localStorage.getItem('assistantHistory')
-      if (stored) history.value = JSON.parse(stored)
-    } catch { history.value = [] }
+      const userId = localStorage.getItem('userId') || '1'
+      const response = await fetch(`/api/travel/plans/user/${userId}`)
+      const data = await response.json()
+      if (data.code === 200) {
+        history.value = data.data
+      } else {
+        history.value = []
+      }
+    } catch (error) {
+      console.error('加载规划失败:', error)
+      history.value = []
+    } finally {
+      loading.value = false
+    }
   } else if (activeTab.value === 'posts') {
     try {
       const stored = localStorage.getItem('travelPosts')
       if (stored) posts.value = JSON.parse(stored)
     } catch { posts.value = [] }
   }
+}
+
+const viewPlanDetail = async (planId) => {
+  console.log('查看按钮点击了，planId:', planId)
+  try {
+    const response = await fetch(`/api/travel/plan/${planId}`)
+    const data = await response.json()
+    console.log('接口返回:', data)
+    if (data.code === 200) {
+      selectedPlan.value = data.data
+      showDetailModal.value = true
+      console.log('弹窗已显示')
+    } else {
+      alert('加载失败: ' + data.message)
+    }
+  } catch (error) {
+    console.error('加载规划详情失败:', error)
+    alert('加载失败: ' + error.message)
+  }
+}
+
+const addToWorkspace = (planId) => {
+  router.push(`/ai-plan?planId=${planId}`)
+}
+
+const closeModal = () => {
+  showDetailModal.value = false
+  selectedPlan.value = null
+}
+
+const formatItinerary = (itinerary) => {
+  if (!itinerary) return '<p>暂无行程安排</p>'
+  
+  try {
+    // 尝试解析JSON
+    const parsed = JSON.parse(itinerary)
+    
+    if (Array.isArray(parsed)) {
+      // 格式化行程数组
+      let html = ''
+      parsed.forEach((day) => {
+        html += `<div class="itinerary-day"><strong>第${day.day}天</strong>`
+        if (day.activities && Array.isArray(day.activities)) {
+          day.activities.forEach((activity) => {
+            html += `<div class="itinerary-item">`
+            if (activity.time) {
+              html += `<span class="itinerary-time">${activity.time}</span>`
+            }
+            html += `<span class="itinerary-location">${activity.location || ''}</span>`
+            if (activity.description) {
+              html += `<span class="itinerary-desc">${activity.description}</span>`
+            }
+            html += `</div>`
+          })
+        }
+        html += `</div>`
+      })
+      return html
+    }
+  } catch (e) {
+    // 如果不是JSON，按普通文本处理
+  }
+  
+  // 将换行转换为 <br>，简单格式化显示
+  return itinerary.replace(/\n/g, '<br>')
 }
 
 onMounted(() => {
@@ -273,6 +412,7 @@ onMounted(() => {
   background: var(--color-bg);
   margin-bottom: 8px;
   transition: background 0.2s;
+  justify-content: flex-start;
 }
 .plan-item:hover { background: var(--color-border); }
 
@@ -362,6 +502,7 @@ onMounted(() => {
   font-weight: 600;
   color: var(--color-title);
   margin: 0 0 6px;
+  line-clamp: 2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -373,6 +514,7 @@ onMounted(() => {
   color: var(--color-secondary);
   margin: 0 0 10px;
   line-height: 1.5;
+  line-clamp: 2;
   display: -webkit-box;
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
@@ -404,5 +546,237 @@ onMounted(() => {
   display: flex;
   align-items: center;
   gap: 3px;
+}
+
+/* 规划项操作按钮 */
+.plan-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  flex-shrink: 0;
+  z-index: 10;
+  align-items: center;
+  margin-left: 0;
+}
+
+.plan-actions .action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0;
+  padding: 8px 0;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-hint);
+  background: var(--color-bg);
+  cursor: pointer;
+  transition: all 0.2s;
+  font-family: var(--font-family);
+  position: relative;
+  margin: 0;
+  width: 88px;
+  min-width: 88px;
+  box-sizing: border-box;
+}
+
+.plan-actions .action-btn:hover {
+  border-color: var(--color-red);
+  color: var(--color-red);
+  background: rgba(230, 57, 70, 0.05);
+}
+
+.plan-actions .action-btn.primary {
+  background: var(--color-red-light);
+  border-color: var(--color-red-light);
+  color: white;
+}
+
+.plan-actions .action-btn.primary:hover {
+  background: var(--color-red);
+  border-color: var(--color-red);
+}
+
+.plan-actions .action-btn.primary:hover {
+  background: var(--color-red);
+  border-color: var(--color-red);
+}
+
+/* 弹窗样式 */
+.modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.5);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  min-height: 100vh;
+}
+
+.modal-content {
+  background: var(--color-card);
+  border-radius: var(--radius-card);
+  border: 1px solid var(--color-border);
+  width: 100%;
+  max-width: 500px;
+  max-height: 80vh;
+  overflow: hidden;
+  box-shadow: var(--shadow-card);
+}
+
+.modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.modal-header h3 {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--color-title);
+  margin: 0;
+}
+
+.modal-header .close-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  background: var(--color-bg);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-hint);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.modal-header .close-btn:hover {
+  background: var(--color-border);
+  color: var(--color-title);
+}
+
+.modal-body {
+  padding: 20px;
+  max-height: 50vh;
+  overflow-y: auto;
+}
+
+.detail-row {
+  display: flex;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.detail-label {
+  font-size: 13px;
+  color: var(--color-hint);
+}
+
+.detail-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-title);
+}
+
+.detail-section {
+  margin-top: 16px;
+}
+
+.detail-section h4 {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-title);
+  margin: 0 0 10px;
+}
+
+.itinerary-content {
+  font-size: 13px;
+  line-height: 1.8;
+  color: var(--color-body);
+  white-space: pre-wrap;
+}
+
+.highlights-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.highlights-list li {
+  padding: 8px 0;
+  font-size: 13px;
+  color: var(--color-body);
+  border-bottom: 1px dashed var(--color-border);
+}
+
+.highlights-list li:last-child {
+  border-bottom: none;
+}
+
+.modal-footer {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-border);
+}
+
+.modal-btn {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 20px;
+  border-radius: var(--radius-pill);
+  font-size: 13px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.2s;
+  border: 1px solid var(--color-border);
+  background: var(--color-bg);
+  color: var(--color-title);
+}
+
+.modal-btn:hover {
+  border-color: var(--color-red);
+  color: var(--color-red);
+}
+
+.modal-btn.primary {
+  background: var(--gradient-brand);
+  border-color: var(--color-red-light);
+  color: white;
+}
+
+.modal-btn.primary:hover {
+  filter: brightness(1.1);
+}
+
+/* 加载状态 */
+.loading-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 48px 24px;
+  color: var(--color-muted);
+}
+
+.loading-box svg {
+  margin-bottom: 12px;
+}
+
+.loading-box span {
+  font-size: 13px;
+  color: var(--color-hint);
 }
 </style>

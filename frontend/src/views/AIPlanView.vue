@@ -51,7 +51,7 @@
     <div v-if="result" class="result-layout">
       <!-- 左侧地图 -->
       <div class="map-section">
-        <MapComponent :destinations="[result.destination]" :itinerary="result.itinerary || parsedItinerary" />
+        <MapComponent :destinations="[result.destination]" :itinerary="parsedItinerary" />
       </div>
 
       <!-- 右侧：行程 + AI 对话 -->
@@ -65,11 +65,14 @@
               <p class="result-meta">{{ result.destination }} · {{ result.days }}天</p>
             </div>
             <div class="result-actions">
+              <button class="action-btn" @click="saveToMyPlans">
+                保存规划
+              </button>
+              <button class="action-btn secondary" @click="resetPlan">重新规划</button>
               <button class="action-btn" @click="shareToCommunity">
                 <SvgIcon name="share" :size="14" />
                 分享到社区
               </button>
-              <button class="action-btn secondary" @click="resetPlan">重新规划</button>
             </div>
           </div>
 
@@ -78,7 +81,7 @@
             :title="result.title"
             :destination="result.destination"
             :days="result.days"
-            :itinerary="result.itinerary || parsedItinerary"
+            :itinerary="parsedItinerary"
             :summary="renderedMarkdown"
             @update:itinerary="handleUpdateItinerary"
           />
@@ -164,15 +167,6 @@ const loading = ref(false)
 const errorMessage = ref('')
 const chatQuery = ref('')
 
-// 处理行程更新
-const handleUpdateItinerary = (updatedItinerary) => {
-  // 更新 result 中的 itinerary
-  result.value = {
-    ...result.value,
-    itinerary: updatedItinerary
-  }
-}
-
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
 const renderedMarkdown = computed(() => {
@@ -183,6 +177,11 @@ const renderedMarkdown = computed(() => {
 // 从返回结果中解析行程数据
 const parsedItinerary = computed(() => {
   if (!result.value) return []
+
+  // 优先使用已编辑的行程数据
+  if (result.value.itinerary && Array.isArray(result.value.itinerary)) {
+    return result.value.itinerary
+  }
 
   // 尝试从markdown中解析行程信息
   const itinerary = []
@@ -280,11 +279,34 @@ const generateMockCoordinates = (destination, location = '') => {
   return [baseCoord[0] + offset, baseCoord[1] + offset]
 }
 
-onMounted(() => {
+onMounted(async () => {
   if (route.query.q) {
     query.value = route.query.q
   }
+  // 如果有 planId 参数，加载已保存的规划
+  if (route.query.planId) {
+    await loadSavedPlan(route.query.planId)
+  }
 })
+
+const loadSavedPlan = async (planId) => {
+  try {
+    const response = await fetch(`/api/travel/plan/${planId}`)
+    const data = await response.json()
+    if (data.code === 200) {
+      const plan = data.data
+      result.value = {
+        title: plan.title,
+        destination: plan.destination,
+        days: plan.days,
+        markdown: plan.itinerary || '',
+        highlights: plan.highlights || []
+      }
+    }
+  } catch (error) {
+    console.error('加载规划失败:', error)
+  }
+}
 
 const appendTag = (tag) => {
   if (!query.value.includes(tag)) {
@@ -328,11 +350,107 @@ const shareToCommunity = () => {
 
 const resetPlan = () => { result.value = null; errorMessage.value = ''; file.value = null; query.value = '' }
 
+const saveToMyPlans = async () => {
+  if (!result.value) {
+    alert('没有可保存的行程')
+    return
+  }
+  
+  // 检查是否有实际的行程数据（不是默认占位数据）
+  if (!result.value.markdown || result.value.markdown.trim() === '') {
+    alert('请先生成行程规划再保存')
+    return
+  }
+  
+  console.log('开始保存规划:', result.value)
+  
+  try {
+    // 使用结构化的行程数据
+    const itineraryData = parsedItinerary.value
+    
+    // 检查是否有实际景点（不是默认的目的地占位）
+    const hasRealLocations = itineraryData.some(day => 
+      day.activities.some(activity => 
+        activity.location && activity.location !== result.value.destination
+      )
+    )
+    
+    if (!hasRealLocations) {
+      alert('行程中没有实际景点，请先生成详细行程')
+      return
+    }
+    
+    const response = await fetch('/api/travel/plan/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: Number(localStorage.getItem('userId')) || 1,
+        title: result.value.title,
+        destination: result.value.destination,
+        days: result.value.days,
+        budget: calculateBudget(result.value.destination, result.value.days),
+        itinerary: JSON.stringify(itineraryData),
+        interests: '',
+        travelStyle: '',
+        highlights: ['✨ 景点体验', '🍽️ 美食品尝', '📸 打卡推荐']
+      })
+    })
+    
+    console.log('响应状态:', response.status)
+    const data = await response.json()
+    console.log('响应数据:', data)
+    
+    if (data.code === 200) {
+      alert('保存成功！已添加到我的规划')
+    } else {
+      alert('保存失败: ' + data.message)
+    }
+  } catch (error) {
+    console.error('保存失败:', error)
+    alert('保存失败，请重试')
+  }
+}
+
 const sendChat = async () => {
   if (!chatQuery.value.trim()) return
   // TODO: 调用后端 API 更新行程
   console.log('用户问题:', chatQuery.value)
   chatQuery.value = ''
+}
+
+// 处理行程更新
+const handleUpdateItinerary = async (updatedItinerary) => {
+  // 更新本地数据
+  result.value = {
+    ...result.value,
+    itinerary: updatedItinerary
+  }
+  
+  // 如果是从已保存的规划加载的（有 planId），自动保存到后端
+  if (route.query.planId) {
+    await saveUpdatedPlan(route.query.planId, updatedItinerary)
+  }
+}
+
+// 保存更新后的规划到后端
+const saveUpdatedPlan = async (planId, itinerary) => {
+  try {
+    const response = await fetch(`/api/travel/plan/${planId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        itinerary: JSON.stringify(itinerary)
+      })
+    })
+    const data = await response.json()
+    if (data.code === 200) {
+      console.log('规划已更新')
+    } else {
+      console.error('更新失败:', data.message)
+    }
+  } catch (error) {
+    console.error('更新规划失败:', error)
+  }
 }
 </script>
 
@@ -449,14 +567,15 @@ const sendChat = async () => {
 .map-section {
   position: relative;
   background: #f5f5f5;
-  border-right: 1px solid var(--color-border);
+  border-right: 2px solid var(--color-border);
   overflow: hidden;
+  box-shadow: inset -2px 0 8px rgba(0, 0, 0, 0.05);
 }
 
 .itinerary-section {
   display: flex;
   flex-direction: column;
-  background: var(--color-bg);
+  background: #0a0a0a;
   overflow: hidden;
 }
 
@@ -465,29 +584,32 @@ const sendChat = async () => {
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 2px solid #333333;
+  background: #0a0a0a;
 }
 
 .ai-chat-panel {
   flex: 0 0 280px;
   display: flex;
   flex-direction: column;
-  background: var(--color-card);
-  border-top: 1px solid var(--color-border);
+  background: #0a0a0a;
+  border-top: 2px solid #333333;
   overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
 }
 
 .chat-header {
   padding: 16px;
-  border-bottom: 1px solid var(--color-border);
+  border-bottom: 1px solid #333333;
   flex-shrink: 0;
+  background: #111111;
 }
 
 .chat-header h3 {
   margin: 0 0 4px;
   font-size: 14px;
   font-weight: 700;
-  color: var(--color-title);
+  color: #f8fafc;
 }
 
 .chat-subtitle {
@@ -499,10 +621,11 @@ const sendChat = async () => {
 .chat-messages {
   flex: 1;
   overflow-y: auto;
-  padding: 12px 16px;
+  padding: 16px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  background: #0a0a0a;
 }
 
 .message {
@@ -517,8 +640,8 @@ const sendChat = async () => {
 }
 
 .bot-message .message-content {
-  background: rgba(255, 107, 107, 0.1);
-  color: var(--color-body);
+  background: rgba(255, 107, 107, 0.15);
+  color: #e2e8f0;
 }
 
 .user-message .message-content {
@@ -530,21 +653,26 @@ const sendChat = async () => {
 .chat-input-area {
   display: flex;
   gap: 8px;
-  padding: 12px;
-  border-top: 1px solid var(--color-border);
+  padding: 12px 16px;
+  border-top: 1px solid #333333;
   flex-shrink: 0;
-  background: var(--color-bg);
+  background: #0a0a0a;
 }
 
 .chat-input {
   flex: 1;
-  border: 1px solid var(--color-border);
+  border: 1px solid #333333;
   border-radius: 4px;
   padding: 8px 12px;
   font-size: 12px;
   font-family: var(--font-family);
-  background: white;
-  color: var(--color-title);
+  background: #1a1a1a;
+  color: #f8fafc;
+}
+
+.chat-input::placeholder {
+  color: #64748b;
+  opacity: 0.6;
 }
 
 .chat-input:focus {
@@ -590,21 +718,28 @@ const sendChat = async () => {
 
 .result-meta {
   font-size: 13px;
-  color: var(--color-hint);
+  color: var(--color-body);
+  opacity: 0.7;
   margin: 0;
 }
 
 .result-actions {
-  display: flex;
-  gap: 8px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
   flex-shrink: 0;
+  width: 100%;
+  max-width: 380px;
 }
 
 .action-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 5px;
-  padding: 8px 16px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 0;
   border: none;
   border-radius: var(--radius-pill);
   font-size: 12px;
@@ -613,6 +748,7 @@ const sendChat = async () => {
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
+  box-sizing: border-box;
 }
 
 .action-btn:not(.secondary) {
@@ -645,36 +781,11 @@ const sendChat = async () => {
 
   .itinerary-section {
     height: auto;
-    max-height: 500px;
-  }
-}
-
-@media (max-width: 768px) {
-  .input-section {
-    padding: 20px;
+    max-height: none;
   }
 
-  .input-header {
-    flex-direction: column;
-    align-items: flex-start;
-    text-align: left;
-  }
-
-  .input-header h2 {
-    font-size: 18px;
-  }
-
-  .quick-tags {
-    flex-basis: 100%;
-  }
-
-  .result-top-bar {
-    flex-direction: column;
-    padding: 16px;
-  }
-
-  .result-actions {
-    width: 100%;
+  .ai-chat-panel {
+    flex: 0 0 200px;
   }
 }
 </style>
