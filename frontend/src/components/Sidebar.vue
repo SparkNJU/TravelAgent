@@ -13,10 +13,7 @@
         <SvgIcon name="sparkles" :size="20" />
         <span>AI规划</span>
       </router-link>
-      <router-link to="/publish" class="nav-item" :class="{ active: $route.path === '/publish' }">
-        <SvgIcon name="plus" :size="20" />
-        <span>发布</span>
-      </router-link>
+      
       <router-link to="/profile" class="nav-item" :class="{ active: $route.path === '/profile' }">
         <SvgIcon name="user" :size="20" />
         <span>我的</span>

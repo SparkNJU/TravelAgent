@@ -49,6 +49,9 @@ public class CommunityPost {
     @Column(columnDefinition = "TEXT")
     private String tags; // 用逗号分隔的标签
 
+    @Column
+    private Long originalPostId; // 原帖ID（用于分享）
+
     @Column(nullable = false)
     private Long userId;
 

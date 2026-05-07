@@ -59,7 +59,7 @@
 import { ref } from 'vue'
 import SvgIcon from './SvgIcon.vue'
 
-defineEmits(['close'])
+const emit = defineEmits(['close', 'success'])
 
 const title = ref('')
 const description = ref('')
@@ -95,7 +95,7 @@ const addCustomTag = () => {
 const submit = async () => {
   if (!title.value.trim() || !description.value.trim() || !selectedTags.value.length) return
   try {
-    await fetch('/api/community/posts', {
+    const res = await fetch('/api/community/posts', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '1' },
       body: JSON.stringify({
@@ -106,6 +106,10 @@ const submit = async () => {
         tags: selectedTags.value
       })
     })
+    const data = await res.json()
+    if (data.code === 200) {
+      emit('success')
+    }
   } catch { /* ignore */ }
 }
 </script>

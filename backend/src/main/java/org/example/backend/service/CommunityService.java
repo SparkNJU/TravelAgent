@@ -14,10 +14,14 @@ import org.example.backend.entity.Comment;
 import org.example.backend.entity.CommunityPost;
 import org.example.backend.entity.LikeRecord;
 import org.example.backend.entity.TravelPlan;
+import org.example.backend.entity.User;
+import org.example.backend.entity.User;
 import org.example.backend.repository.CommentRepository;
 import org.example.backend.repository.CommunityPostRepository;
 import org.example.backend.repository.LikeRecordRepository;
 import org.example.backend.repository.TravelPlanRepository;
+import org.example.backend.repository.UserRepository;
+import org.example.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -45,6 +49,9 @@ public class CommunityService {
 
     @Autowired
     private LikeRecordRepository likeRecordRepository;
+
+    @Autowired
+    private UserRepository userRepository;
 
     // 直接创建 ObjectMapper 实例，不依赖 Spring 自动装配
     private final ObjectMapper objectMapper = new ObjectMapper();
@@ -264,6 +271,40 @@ public class CommunityService {
     }
 
     /**
+     * 转发帖子
+     */
+    @Transactional
+    public CommunityPostResponse sharePost(Long postId, Long userId) {
+        // 查找原帖
+        CommunityPost originalPost = postRepository.findById(postId)
+                .orElseThrow(() -> new RuntimeException("帖子不存在"));
+
+        // 增加原帖的转发数
+        originalPost.setShares(originalPost.getShares() + 1);
+        postRepository.save(originalPost);
+
+        // 创建新帖子（分享）
+        CommunityPost newPost = new CommunityPost();
+        newPost.setTitle("[转载] " + originalPost.getTitle());
+        newPost.setDescription("//@" + originalPost.getNickname() + "\n" + originalPost.getDescription());
+        newPost.setImages(originalPost.getImages());
+        newPost.setAvatar("");
+        newPost.setNickname(userRepository.findById(userId)
+                .map(User::getUsername)
+                .orElse("用户"));
+        newPost.setBio("");
+        newPost.setLikes(0);
+        newPost.setComments(0);
+        newPost.setShares(0);
+        newPost.setTags(originalPost.getTags());
+        newPost.setOriginalPostId(postId);
+        newPost.setUserId(userId);
+
+        CommunityPost savedPost = postRepository.save(newPost);
+        return convertToResponse(savedPost);
+    }
+
+    /**
      * 将旅行规划转换为社区帖子
      */
     @Transactional
@@ -411,6 +452,7 @@ public class CommunityService {
         response.setComments(post.getComments());
         response.setShares(post.getShares());
         response.setTags(convertCsvToList(post.getTags()));
+        response.setOriginalPostId(post.getOriginalPostId());
         response.setUserId(post.getUserId());
         response.setCreatedAt(post.getCreatedAt());
         response.setUpdatedAt(post.getUpdatedAt());

@@ -1,16 +1,16 @@
 :root {
   --font-sans: 'HarmonyOS Sans SC', 'Noto Sans SC', 'PingFang SC', 'Microsoft YaHei', sans-serif;
-  --bg-app: #f3f5f9;
-  --bg-rail: #f8fafc;
-  --bg-surface: #ffffff;
-  --text-primary: #0f172a;
-  --text-secondary: #475569;
-  --line: #e2e8f0;
-  --line-strong: #cbd5e1;
-  --brand: #2563eb;
-  --brand-press: #1d4ed8;
-  --success: #16a34a;
-  --shadow: 0 16px 30px rgba(15, 23, 42, 0.06);
+  --bg-app: #0a0a0a;
+  --bg-rail: #111111;
+  --bg-surface: #1a1a1a;
+  --text-primary: #f8fafc;
+  --text-secondary: #94a3b8;
+  --line: #334155;
+  --line-strong: #475569;
+  --brand: #3b82f6;
+  --brand-press: #60a5fa;
+  --success: #22c55e;
+  --shadow: 0 16px 30px rgba(0, 0, 0, 0.4);
 }
 
 * {
@@ -28,10 +28,7 @@ body,
 body {
   font-family: var(--font-sans);
   color: var(--text-primary);
-  background:
-    radial-gradient(circle at 20% -10%, #dbeafe 0%, transparent 45%),
-    radial-gradient(circle at 90% 0%, #e0f2fe 0%, transparent 42%),
-    var(--bg-app);
+  background: var(--bg-app);
 }
 
 h1,
@@ -50,7 +47,7 @@ p {
 
 .left-rail {
   border-right: 1px solid var(--line);
-  background: linear-gradient(180deg, #f8fafc 0%, #eef2ff 100%);
+  background: linear-gradient(180deg, #111111 0%, #1a1a2e 100%);
   padding: 18px 14px;
 }
 
@@ -82,14 +79,14 @@ p {
 }
 
 .rail-item:hover {
-  background: #eff6ff;
-  color: #1e3a8a;
+  background: #1e293b;
+  color: #60a5fa;
 }
 
 .rail-item.active {
-  color: #1d4ed8;
-  border-color: #bfdbfe;
-  background: #dbeafe;
+  color: #93c5fd;
+  border-color: #3b82f6;
+  background: #1e3a5f;
 }
 
 .workspace {
@@ -138,6 +135,14 @@ p {
   padding: 16px;
 }
 
+.map-container {
+  background: #ffffff;
+}
+
+.map-container {
+  background: #ffffff;
+}
+
 .intro-card {
   display: flex;
   justify-content: space-between;
@@ -162,9 +167,9 @@ p {
 
 .chip {
   border-radius: 999px;
-  border: 1px solid #bfdbfe;
-  background: #eff6ff;
-  color: #1d4ed8;
+  border: 1px solid #3b82f6;
+  background: #1e3a5f;
+  color: #93c5fd;
   padding: 6px 10px;
   font-size: 13px;
 }
@@ -207,7 +212,7 @@ p {
 
 .task-table th,
 .task-table td {
-  border-bottom: 1px solid #eef2f7;
+  border-bottom: 1px solid #334155;
   text-align: left;
   padding: 12px 14px;
   font-size: 13px;
@@ -217,7 +222,7 @@ p {
 .task-table th {
   font-size: 12px;
   color: #64748b;
-  background: #f8fafc;
+  background: #111111;
 }
 
 .status.success {
@@ -246,7 +251,7 @@ p {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #f8fafc;
+  background: #111111;
 }
 
 .export-history-panel {
@@ -274,7 +279,7 @@ p {
   padding: 10px;
   border: 1px solid var(--line);
   border-radius: 10px;
-  background: #ffffff;
+  background: #111111;
 }
 
 .compare-summary {
@@ -396,30 +401,30 @@ p {
 .trace-table th,
 .trace-table td {
   padding: 10px 12px;
-  border-bottom: 1px solid #eef2f7;
+  border-bottom: 1px solid #334155;
   text-align: left;
   font-size: 12px;
 }
 
 .trace-table th {
   color: #64748b;
-  background: #f8fafc;
+  background: #111111;
 }
 
 .error-box {
-  border: 1px solid #fecaca;
+  border: 1px solid #450a0a;
   border-radius: 10px;
-  background: #fff1f2;
+  background: #1c1917;
   padding: 10px;
 }
 
 .error-box p {
-  color: #9f1239;
+  color: #fca5a5;
   font-weight: 600;
 }
 
 .error-box small {
-  color: #9f1239;
+  color: #fca5a5;
 }
 
 .quick-ask {
@@ -427,18 +432,24 @@ p {
   grid-template-columns: 1fr auto;
   gap: 8px;
   margin-top: 10px;
+  background: #0a0a0a;
+  padding: 12px;
+  border-radius: 10px;
 }
 
 .memo-list {
   margin-top: 8px;
   display: grid;
   gap: 6px;
+  background: #0a0a0a;
+  padding: 12px;
+  border-radius: 10px;
 }
 
 .memo-list p {
   margin: 0;
   font-size: 12px;
-  color: #475569;
+  color: #94a3b8;
 }
 
 .help-overlay {
@@ -456,8 +467,8 @@ p {
   margin: 0 auto;
   border: 1px solid rgba(148, 163, 184, 0.2);
   border-radius: 24px;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
-  box-shadow: 0 30px 60px rgba(15, 23, 42, 0.28);
+  background: linear-gradient(180deg, #1a1a1a 0%, #111111 100%);
+  box-shadow: 0 30px 60px rgba(0, 0, 0, 0.5);
   padding: 22px;
 }
 
@@ -484,27 +495,28 @@ p {
 
 .help-header p {
 
-.help-header-actions {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  justify-content: flex-end;
-}
+  .help-header-actions {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+  }
 
-.help-return-button {
-  border: 1px solid rgba(15, 23, 42, 0.12);
-  background: #ffffff;
-  color: #0f172a;
-  border-radius: 999px;
-  padding: 10px 16px;
-  font-size: 13px;
-  font-weight: 700;
-  cursor: pointer;
-}
+  .help-return-button {
+    border: 1px solid rgba(248, 250, 252, 0.12);
+    background: #111111;
+    color: #f8fafc;
+    border-radius: 999px;
+    padding: 10px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+  }
 
-.help-return-button:hover {
-  background: #f8fafc;
-}
+  .help-return-button:hover {
+    background: #1e293b;
+  }
+
   margin-top: 8px;
   color: #475569;
 }
@@ -518,7 +530,7 @@ p {
 .help-card {
   border: 1px solid var(--line);
   border-radius: 18px;
-  background: #ffffff;
+  background: #111111;
   padding: 18px;
 }
 
@@ -535,7 +547,7 @@ p {
   line-height: 1.8;
 }
 
-.help-card li + li {
+.help-card li+li {
   margin-top: 6px;
 }
 
@@ -558,7 +570,8 @@ textarea {
   border: 1px solid var(--line-strong);
   border-radius: 10px;
   padding: 9px 10px;
-  background: #ffffff;
+  background: #111111;
+  color: #f8fafc;
 }
 
 input:focus,
@@ -586,13 +599,13 @@ button {
 }
 
 .ghost {
-  color: #1e293b;
-  background: #ffffff;
+  color: #e2e8f0;
+  background: #111111;
   border-color: var(--line-strong);
 }
 
 .ghost:hover {
-  background: #f8fafc;
+  background: #1e293b;
 }
 
 .link-btn {
@@ -613,9 +626,9 @@ button {
 .create-modal {
   width: min(700px, calc(100vw - 28px));
   border-radius: 14px;
-  background: #ffffff;
+  background: #1a1a1a;
   border: 1px solid var(--line);
-  box-shadow: 0 24px 40px rgba(15, 23, 42, 0.25);
+  box-shadow: 0 24px 40px rgba(0, 0, 0, 0.5);
   padding: 16px;
   animation: rise 0.2s ease;
 }
@@ -632,6 +645,7 @@ button {
     opacity: 0;
     transform: translateY(6px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -643,6 +657,7 @@ button {
     opacity: 0;
     transform: translateY(12px) scale(0.98);
   }
+
   to {
     opacity: 1;
     transform: translateY(0) scale(1);

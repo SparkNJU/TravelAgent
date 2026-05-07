@@ -182,7 +182,7 @@ public class CommunityController {
     @PostMapping("/posts/{id}/like")
     public ResponseEntity<ApiResponse<CommunityPostResponse>> likePost(
             @PathVariable Long id,
-            @RequestParam Long userId) {
+            @RequestHeader(value = "X-User-Id", defaultValue = "1") Long userId) {
         try {
             CommunityPostResponse response = communityService.likePost(id, userId);
             boolean isLiked = communityService.isLiked(id, userId);
@@ -200,9 +200,25 @@ public class CommunityController {
     @GetMapping("/posts/{id}/liked")
     public ResponseEntity<ApiResponse<Boolean>> isLiked(
             @PathVariable Long id,
-            @RequestParam Long userId) {
+            @RequestHeader(value = "X-User-Id", defaultValue = "1") Long userId) {
         boolean liked = communityService.isLiked(id, userId);
         return ResponseEntity.ok(ApiResponse.success(liked));
+    }
+
+    /**
+     * 转发帖子
+     */
+    @PostMapping("/posts/{id}/share")
+    public ResponseEntity<ApiResponse<CommunityPostResponse>> sharePost(
+            @PathVariable Long id,
+            @RequestHeader(value = "X-User-Id", defaultValue = "1") Long userId) {
+        try {
+            CommunityPostResponse response = communityService.sharePost(id, userId);
+            return ResponseEntity.ok(ApiResponse.success(response, "转发成功"));
+        } catch (RuntimeException e) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                    .body(ApiResponse.error(e.getMessage()));
+        }
     }
 
     /**

@@ -1,7 +1,7 @@
 <template>
-  <div :class="['ai-page', { 'has-result': result }]">
-    <div class="ai-inner">
-      <!-- Input Section -->
+  <div :class="['ai-plan-page', { 'has-result': result }]">
+    <!-- Input Modal (固定在顶部或侧边) -->
+    <div v-if="!result" class="input-modal">
       <section class="input-section">
         <div class="input-header">
           <SvgIcon name="sparkles" :size="20" class="header-icon" />
@@ -45,48 +45,69 @@
           <p v-if="errorMessage" class="error-msg">{{ errorMessage }}</p>
         </form>
       </section>
+    </div>
 
-      <!-- Result Section -->
-      <section v-if="result" class="result-section">
-        <div class="result-header">
-          <div class="result-title-area">
-            <h2>{{ result.title }}</h2>
-            <p class="result-meta">{{ result.destination }} · {{ result.days }}天</p>
-          </div>
-          <div class="result-actions">
-            <button class="action-btn" @click="shareToCommunity">
-              <SvgIcon name="share" :size="14" />
-              分享到社区
-            </button>
-            <button class="action-btn secondary" @click="resetPlan">重新规划</button>
-          </div>
-        </div>
+    <!-- Result Layout (Left: Map, Right: Itinerary) -->
+    <div v-if="result" class="result-layout">
+      <!-- 左侧地图 -->
+      <div class="map-section">
+        <MapComponent :destinations="[result.destination]" :itinerary="result.itinerary || parsedItinerary" />
+      </div>
 
-        <div class="result-body">
-          <div class="markdown-body" v-html="renderedMarkdown"></div>
-
-          <div class="result-sidebar" v-if="result.images?.length || result.sources?.length">
-            <div class="sidebar-block" v-if="result.images?.length">
-              <h4>图片参考</h4>
-              <div class="image-grid">
-                <a v-for="(img, i) in result.images" :key="i" :href="img.sourceUrl || img.imageUrl" target="_blank" rel="noreferrer">
-                  <img :src="img.imageUrl" :alt="img.title" />
-                </a>
-              </div>
+      <!-- 右侧：行程 + AI 对话 -->
+      <div class="itinerary-section">
+        <!-- 上面：行程详情 -->
+        <div class="itinerary-top">
+          <!-- 顶部操作栏 -->
+          <div class="result-top-bar">
+            <div class="result-title-area">
+              <h2>{{ result.title }}</h2>
+              <p class="result-meta">{{ result.destination }} · {{ result.days }}天</p>
             </div>
-
-            <div class="sidebar-block" v-if="result.sources?.length">
-              <h4>参考来源</h4>
-              <ul class="source-list">
-                <li v-for="(s, i) in result.sources" :key="i">
-                  <a :href="s.link" target="_blank" rel="noreferrer">{{ s.title }}</a>
-                  <p v-if="s.snippet">{{ s.snippet }}</p>
-                </li>
-              </ul>
+            <div class="result-actions">
+              <button class="action-btn" @click="shareToCommunity">
+                <SvgIcon name="share" :size="14" />
+                分享到社区
+              </button>
+              <button class="action-btn secondary" @click="resetPlan">重新规划</button>
             </div>
           </div>
+
+          <!-- 行程详情面板 -->
+          <ItineraryPanel
+            :title="result.title"
+            :destination="result.destination"
+            :days="result.days"
+            :itinerary="result.itinerary || parsedItinerary"
+            :summary="renderedMarkdown"
+            @update:itinerary="handleUpdateItinerary"
+          />
         </div>
-      </section>
+
+        <!-- 下面：AI 对话框 -->
+        <div class="ai-chat-panel">
+          <div class="chat-header">
+            <h3>行程助手</h3>
+            <p class="chat-subtitle">有问题？快速咨询</p>
+          </div>
+
+          <div class="chat-messages">
+            <div class="message bot-message">
+              <div class="message-content">{{ result.title }}已生成！有任何问题可以随时咨询我。</div>
+            </div>
+          </div>
+
+          <div class="chat-input-area">
+            <input
+              v-model="chatQuery"
+              @keyup.enter="sendChat"
+              placeholder="如：改成美食为主、增加夜生活..."
+              class="chat-input"
+            />
+            <button @click="sendChat" class="chat-send-btn">发送</button>
+          </div>
+        </div>
+      </div>
     </div>
   </div>
 </template>
@@ -97,13 +118,60 @@ import { useRoute } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import SvgIcon from '../components/SvgIcon.vue'
+import MapComponent from '../components/MapComponent.vue'
+import ItineraryPanel from '../components/ItineraryPanel.vue'
 
 const route = useRoute()
 const query = ref('')
 const file = ref(null)
-const result = ref(null)
+
+// 默认示例数据
+const defaultResult = {
+  title: '北京 5 天深度游',
+  destination: '北京',
+  days: 5,
+  markdown: `
+## 第1天：古都文化之旅
+- 上午：天安门广场 - 游览中国国旗升旗仪式和广场的宏伟景观
+- 中午：故宫博物院 - 探索960年的古宫廷建筑与文化
+- 下午：景山公园 - 俯瞰紫禁城全景，拍摄绝美照片
+
+## 第2天：长城壮美体验
+- 上午：慕田峪长城 - 游览保存完好的明代长城
+- 中午：长城脚下农家乐 - 品尝地道北京风味
+- 下午：鸟巢水立方 - 参观奥运场馆建筑
+
+## 第3天：皇家园林赏析
+- 上午：颐和园 - 欣赏世界最大皇家园林
+- 下午：清华大学 - 感受顶尖学府氛围
+- 晚上：三里屯 - 体验北京夜生活
+
+## 第4天：胡同文化品鉴
+- 上午：南锣鼓巷 - 游走古老的胡同街道
+- 中午：黑芝麻胡同的传统美食
+- 下午：什刹海酒吧街 - 享受休闲时光
+
+## 第5天：购物与美食之旅
+- 上午：王府井大街 - 逛街购物
+- 中午：全聚德烤鸭 - 品尝北京烤鸭
+- 下午：798艺术区 - 探索现代艺术
+  `,
+  images: []
+}
+
+const result = ref(defaultResult)
 const loading = ref(false)
 const errorMessage = ref('')
+const chatQuery = ref('')
+
+// 处理行程更新
+const handleUpdateItinerary = (updatedItinerary) => {
+  // 更新 result 中的 itinerary
+  result.value = {
+    ...result.value,
+    itinerary: updatedItinerary
+  }
+}
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -111,6 +179,106 @@ const renderedMarkdown = computed(() => {
   if (!result.value?.markdown) return ''
   return DOMPurify.sanitize(md.render(result.value.markdown))
 })
+
+// 从返回结果中解析行程数据
+const parsedItinerary = computed(() => {
+  if (!result.value) return []
+
+  // 尝试从markdown中解析行程信息
+  const itinerary = []
+  const markdown = result.value.markdown || ''
+  const lines = markdown.split('\n')
+
+  let currentDay = null
+  lines.forEach((line, index) => {
+    // 匹配 "第X天" 的标题
+    if (line.includes('第') && line.includes('天') && line.startsWith('#')) {
+      currentDay = {
+        day: parseInt(line.match(/\d+/)?.[0] || itinerary.length + 1),
+        activities: [],
+        date: '',
+        summary: ''
+      }
+      itinerary.push(currentDay)
+    }
+
+    // 匹配活动 (- 上午：天安门广场 - 游览...)
+    if (currentDay && line.trim().startsWith('-')) {
+      const trimmed = line.trim().substring(1).trim() // 去掉 "- "
+      const parts = trimmed.split(/[-–]/).map(s => s.trim()) // 分割 "-" 或 "–"
+      
+      if (parts.length >= 1) {
+        // 第一部分是 "时间：地点" 的格式
+        const firstPart = parts[0]
+        const colonIndex = firstPart.indexOf('：') > -1 ? firstPart.indexOf('：') : firstPart.indexOf(':')
+        
+        let time = ''
+        let location = ''
+        
+        if (colonIndex > -1) {
+          time = firstPart.substring(0, colonIndex).trim()
+          location = firstPart.substring(colonIndex + 1).trim()
+        } else {
+          location = firstPart
+        }
+
+        currentDay.activities.push({
+          time: time || '全天',
+          location: location || '',
+          description: parts.slice(1).join(' - '),
+          coordinates: generateMockCoordinates(result.value.destination, location)
+        })
+      }
+    }
+  })
+
+  // 如果没有解析到行程，生成默认结构
+  if (itinerary.length === 0) {
+    for (let i = 1; i <= (result.value.days || 1); i++) {
+      itinerary.push({
+        day: i,
+        activities: [
+          {
+            location: result.value.destination,
+            description: `第${i}天行程`,
+            time: '全天',
+            coordinates: generateMockCoordinates(result.value.destination)
+          }
+        ]
+      })
+    }
+  }
+
+  return itinerary
+})
+
+// 生成模拟坐标（生产环境应该从AI返回的数据中获取真实坐标）
+const generateMockCoordinates = (destination, location = '') => {
+  // 主要城市坐标
+  const cityCoords = {
+    '北京': [39.9042, 116.4074],
+    '上海': [31.2304, 121.4737],
+    '广州': [23.1291, 113.2644],
+    '深圳': [22.5431, 114.0579],
+    '杭州': [30.2741, 120.1551],
+    '西安': [34.3416, 108.9398],
+    '成都': [30.5728, 104.0668],
+    '南京': [32.0603, 118.7969],
+    '苏州': [31.2989, 120.5954],
+    '武汉': [30.5928, 114.3055],
+    '东京': [35.6762, 139.6503],
+    '大阪': [34.6937, 135.5023],
+    '京都': [35.0116, 135.7681],
+    '首尔': [37.5665, 126.9780],
+    '曼谷': [13.7563, 100.5018],
+    '新加坡': [1.3521, 103.8198]
+  }
+
+  // 随机偏移以显示不同的位置
+  const baseCoord = cityCoords[destination] || [30, 110]
+  const offset = Math.random() * 0.5 - 0.25
+  return [baseCoord[0] + offset, baseCoord[1] + offset]
+}
 
 onMounted(() => {
   if (route.query.q) {
@@ -158,69 +326,75 @@ const shareToCommunity = () => {
   })
 }
 
-const resetPlan = () => { result.value = null; errorMessage.value = ''; file.value = null }
+const resetPlan = () => { result.value = null; errorMessage.value = ''; file.value = null; query.value = '' }
+
+const sendChat = async () => {
+  if (!chatQuery.value.trim()) return
+  // TODO: 调用后端 API 更新行程
+  console.log('用户问题:', chatQuery.value)
+  chatQuery.value = ''
+}
 </script>
 
 <style scoped>
-.ai-page {
+.ai-plan-page {
+  width: 100%;
+  min-height: 100vh;
   background: var(--color-bg);
   font-family: var(--font-family);
   color: var(--color-body);
-  min-height: 100%;
+}
+
+/* Input Modal (无结果时) */
+.input-modal {
+  width: 100%;
+  min-height: 100vh;
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 20px;
 }
 
-.ai-page.has-result {
-  align-items: flex-start;
-}
-
-.ai-inner {
-  max-width: 960px;
-  margin: 0 auto;
-  padding: 28px 32px;
-}
-
-/* Input Section */
 .input-section {
   background: var(--color-card);
   border-radius: var(--radius-card);
-  padding: 24px;
+  padding: 32px;
   border: 1px solid var(--color-border);
-  margin-bottom: 24px;
+  width: 100%;
+  max-width: 640px;
+  box-shadow: var(--shadow-card);
 }
 
 .input-header {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 18px;
+  gap: 16px;
+  margin-bottom: 24px;
 }
 
 .header-icon { color: var(--color-red-light); }
 
 .input-header h2 {
-  font-size: 18px;
+  font-size: 20px;
   font-weight: 700;
   color: var(--color-title);
   margin: 0;
 }
 
 .input-header p {
-  font-size: 13px;
+  font-size: 14px;
   color: var(--color-hint);
-  margin: 3px 0 0;
+  margin: 4px 0 0;
 }
 
-.input-form { display: flex; flex-direction: column; gap: 14px; }
+.input-form { display: flex; flex-direction: column; gap: 16px; }
 
 .query-input {
   resize: vertical;
-  min-height: 80px;
+  min-height: 100px;
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-input);
-  padding: 12px 14px;
+  padding: 14px 16px;
   font-size: 14px;
   font-family: var(--font-family);
   background: var(--color-bg);
@@ -232,114 +406,275 @@ const resetPlan = () => { result.value = null; errorMessage.value = ''; file.val
 
 .input-row { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
 
-.quick-tags { display: flex; flex-wrap: wrap; gap: 6px; }
+.quick-tags { display: flex; flex-wrap: wrap; gap: 8px; }
 
 .quick-tag {
   border: 1px solid var(--color-border); border-radius: var(--radius-pill);
-  padding: 5px 12px; font-size: 12px; color: var(--color-hint);
+  padding: 6px 14px; font-size: 12px; color: var(--color-hint);
   background: var(--color-bg); cursor: pointer; transition: all 0.2s; font-family: var(--font-family);
 }
 .quick-tag:hover { border-color: var(--color-red); color: var(--color-red-light); }
 
-.input-actions { display: flex; gap: 10px; align-items: center; }
+.input-actions { display: flex; gap: 12px; align-items: center; }
 
 .upload-btn {
-  display: flex; align-items: center; gap: 5px;
-  padding: 7px 14px; border: 1.5px dashed var(--color-border);
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: 1.5px dashed var(--color-border);
   border-radius: var(--radius-input); color: var(--color-muted);
-  font-size: 12px; cursor: pointer; transition: all 0.2s;
+  font-size: 12px; cursor: pointer; transition: all 0.2s; font-family: var(--font-family);
 }
 .upload-btn:hover { border-color: var(--color-red); color: var(--color-red-light); }
 
 .gen-btn {
-  display: flex; align-items: center; gap: 6px;
-  padding: 8px 20px; border: none; border-radius: var(--radius-pill);
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 24px; border: none; border-radius: var(--radius-pill);
   background: var(--gradient-brand); color: white;
-  font-size: 13px; font-weight: 600; font-family: var(--font-family);
+  font-size: 14px; font-weight: 600; font-family: var(--font-family);
   cursor: pointer; box-shadow: var(--shadow-button); transition: all 0.2s;
 }
-.gen-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-1px); }
-.gen-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.gen-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-2px); }
+.gen-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
 .error-msg { margin: 0; font-size: 13px; color: var(--color-red-light); }
 
-/* Result Section */
-.result-section {
-  background: var(--color-card);
-  border-radius: var(--radius-card);
-  padding: 24px;
-  border: 1px solid var(--color-border);
+/* Result Layout (Map + Itinerary) */
+.result-layout {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  width: 100%;
+  height: 100vh;
+  gap: 0;
 }
 
-.result-header {
+.map-section {
+  position: relative;
+  background: #f5f5f5;
+  border-right: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.itinerary-section {
+  display: flex;
+  flex-direction: column;
+  background: var(--color-bg);
+  overflow: hidden;
+}
+
+.itinerary-top {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-bottom: 1px solid var(--color-border);
+}
+
+.ai-chat-panel {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  background: var(--color-card);
+  border-top: 1px solid var(--color-border);
+  overflow: hidden;
+}
+
+.chat-header {
+  padding: 16px;
+  border-bottom: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.chat-header h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-title);
+}
+
+.chat-subtitle {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-hint);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 12px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.message {
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.message-content {
+  padding: 8px 12px;
+  border-radius: 6px;
+  word-break: break-word;
+}
+
+.bot-message .message-content {
+  background: rgba(255, 107, 107, 0.1);
+  color: var(--color-body);
+}
+
+.user-message .message-content {
+  background: var(--color-red-light);
+  color: white;
+  margin-left: 20px;
+}
+
+.chat-input-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+  background: var(--color-bg);
+}
+
+.chat-input {
+  flex: 1;
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: var(--font-family);
+  background: white;
+  color: var(--color-title);
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: var(--color-red-light);
+  box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.1);
+}
+
+.chat-send-btn {
+  padding: 8px 16px;
+  border: none;
+  background: var(--color-red-light);
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-send-btn:hover {
+  background: var(--color-red);
+}
+
+.result-top-bar {
   display: flex;
   justify-content: space-between;
   align-items: flex-start;
   gap: 16px;
-  margin-bottom: 20px;
-  padding-bottom: 16px;
+  padding: 20px;
   border-bottom: 1px solid var(--color-border);
+  background: var(--color-card);
+  flex-shrink: 0;
 }
 
-.result-title-area h2 { font-size: 20px; font-weight: 700; color: var(--color-title); margin: 0 0 4px; }
-.result-meta { font-size: 13px; color: var(--color-hint); margin: 0; }
+.result-title-area h2 {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--color-title);
+  margin: 0 0 4px;
+}
 
-.result-actions { display: flex; gap: 8px; flex-shrink: 0; }
+.result-meta {
+  font-size: 13px;
+  color: var(--color-hint);
+  margin: 0;
+}
+
+.result-actions {
+  display: flex;
+  gap: 8px;
+  flex-shrink: 0;
+}
 
 .action-btn {
-  display: flex; align-items: center; gap: 5px;
-  padding: 7px 16px; border: none; border-radius: var(--radius-pill);
-  font-size: 12px; font-weight: 600; font-family: var(--font-family);
-  cursor: pointer; transition: all 0.2s;
-}
-.action-btn:not(.secondary) { background: var(--gradient-brand); color: white; }
-.action-btn.secondary { background: var(--color-bg); color: var(--color-secondary); border: 1px solid var(--color-border); }
-.action-btn:hover { filter: brightness(1.1); }
-
-.result-body { display: flex; gap: 24px; }
-
-.markdown-body {
-  flex: 1;
-  line-height: 1.8;
-  color: var(--color-body);
-  font-size: 14px;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 8px 16px;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
 }
 
-.markdown-body :deep(h1), .markdown-body :deep(h2), .markdown-body :deep(h3) {
-  margin-top: 20px; margin-bottom: 10px; font-weight: 700; color: var(--color-title);
+.action-btn:not(.secondary) {
+  background: var(--gradient-brand);
+  color: white;
 }
-.markdown-body :deep(h1) { font-size: 18px; }
-.markdown-body :deep(h2) { font-size: 16px; }
-.markdown-body :deep(h3) { font-size: 14px; }
-.markdown-body :deep(ul), .markdown-body :deep(ol) { padding-left: 20px; margin: 8px 0; }
-.markdown-body :deep(li) { margin-bottom: 6px; }
-.markdown-body :deep(blockquote) {
-  border-left: 3px solid var(--color-red); margin: 12px 0; padding: 10px 14px;
-  background: rgba(230,57,70,0.06); border-radius: 0 var(--radius-input) var(--radius-input) 0;
+
+.action-btn.secondary {
+  background: var(--color-bg);
   color: var(--color-secondary);
-}
-.markdown-body :deep(a) { color: var(--color-red-light); text-decoration: none; }
-.markdown-body :deep(a):hover { text-decoration: underline; }
-.markdown-body :deep(strong) { color: var(--color-title); }
-
-.result-sidebar { width: 260px; flex-shrink: 0; display: flex; flex-direction: column; gap: 20px; }
-
-.sidebar-block h4 { font-size: 14px; font-weight: 600; margin: 0 0 10px; color: var(--color-title); }
-
-.image-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.image-grid img {
-  width: 100%; border-radius: var(--radius-image);
-  aspect-ratio: 4/3; object-fit: cover; display: block;
+  border: 1px solid var(--color-border);
 }
 
-.source-list { list-style: none; padding: 0; margin: 0; }
-.source-list li { margin-bottom: 8px; }
-.source-list a { font-size: 12px; font-weight: 500; color: var(--color-red-light); text-decoration: none; }
-.source-list p { margin: 3px 0 0; font-size: 11px; color: var(--color-hint); }
+.action-btn:hover {
+  filter: brightness(1.1);
+}
+
+/* 响应式设计 */
+@media (max-width: 1024px) {
+  .result-layout {
+    grid-template-columns: 1fr;
+    height: auto;
+  }
+
+  .map-section {
+    height: 400px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+  }
+
+  .itinerary-section {
+    height: auto;
+    max-height: 500px;
+  }
+}
 
 @media (max-width: 768px) {
-  .ai-inner { padding: 16px; }
-  .result-body { flex-direction: column; }
-  .result-sidebar { width: 100%; }
+  .input-section {
+    padding: 20px;
+  }
+
+  .input-header {
+    flex-direction: column;
+    align-items: flex-start;
+    text-align: left;
+  }
+
+  .input-header h2 {
+    font-size: 18px;
+  }
+
+  .quick-tags {
+    flex-basis: 100%;
+  }
+
+  .result-top-bar {
+    flex-direction: column;
+    padding: 16px;
+  }
+
+  .result-actions {
+    width: 100%;
+  }
 }
 </style>

@@ -19,6 +19,7 @@ public class CommunityPostResponse {
     private Integer comments;
     private Integer shares;
     private List<String> tags;
+    private Long originalPostId;
     private Long userId;
     private LocalDateTime createdAt;
     private LocalDateTime updatedAt;

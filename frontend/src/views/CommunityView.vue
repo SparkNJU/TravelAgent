@@ -1,24 +1,30 @@
 <template>
   <div class="discover-page">
     <header class="discover-header">
-      <div class="search-box">
-        <SvgIcon name="search" :size="15" class="search-icon" />
-        <input
-          v-model="searchQuery"
-          placeholder="搜索旅行攻略、目的地..."
-          class="search-input"
-          @keydown.enter="handleSearch"
-        />
-      </div>
-      <div class="category-bar">
-        <button
-          v-for="cat in categories"
-          :key="cat.id"
-          :class="['cat-item', { active: activeCategory === cat.id }]"
-          @click="activeCategory = cat.id; handleCategoryChange()"
-        >
-          {{ cat.name }}
-        </button>
+      <button class="publish-btn" @click="showPublishModal = true">
+        <SvgIcon name="plus" :size="16" />
+        <span>发布</span>
+      </button>
+      <div class="search-wrapper">
+        <div class="search-box">
+          <SvgIcon name="search" :size="15" class="search-icon" />
+          <input
+            v-model="searchQuery"
+            placeholder="搜索旅行攻略、目的地..."
+            class="search-input"
+            @keydown.enter="handleSearch"
+          />
+        </div>
+        <div class="category-bar">
+          <button
+            v-for="cat in categories"
+            :key="cat.id"
+            :class="['cat-item', { active: activeCategory === cat.id }]"
+            @click="activeCategory = cat.id; handleCategoryChange()"
+          >
+            {{ cat.name }}
+          </button>
+        </div>
       </div>
     </header>
 
@@ -55,6 +61,9 @@
       </div>
     </main>
 
+    <!-- Publish Modal -->
+    <PublishModal v-if="showPublishModal" @close="showPublishModal = false" @success="handlePublishSuccess" />
+
     <!-- Post Detail Modal -->
     <Teleport to="body">
       <Transition name="modal">
@@ -89,7 +98,7 @@
                   <span v-for="tag in selectedPost.tags" :key="tag" class="tag">{{ tag }}</span>
                 </div>
               </div>
-              <div class="comments-area">
+              <div v-if="showComments" class="comments-area">
                 <h4>评论 ({{ selectedPost.comments }})</h4>
                 <div class="comments-list">
                   <div v-for="c in comments" :key="c.id" class="comment">
@@ -104,16 +113,18 @@
                   </div>
                   <p v-if="!comments.length" class="no-comments">暂无评论</p>
                 </div>
-                <div class="comment-input-row">
-                  <input v-model="newComment" placeholder="写下你的评论..." @keydown.enter="submitComment" />
-                  <button @click="submitComment"><SvgIcon name="send" :size="14" /></button>
-                </div>
+              </div>
+            </div>
+            <div class="comment-input-wrapper">
+              <div class="comment-input-row">
+                <input v-model="newComment" placeholder="写下你的评论..." @keydown.enter="submitComment" />
+                <button @click="submitComment"><SvgIcon name="send" :size="14" /></button>
               </div>
             </div>
             <div class="modal-actions">
-              <button class="modal-action like"><SvgIcon name="heart" :size="16" /> {{ selectedPost.likes }}</button>
-              <button class="modal-action"><SvgIcon name="message" :size="16" /> {{ selectedPost.comments }}</button>
-              <button class="modal-action share"><SvgIcon name="share" :size="16" /> {{ selectedPost.shares }}</button>
+              <button class="modal-action like" :class="{ liked: likedPosts.includes(selectedPost.id) }" @click="handleLike(selectedPost)"><SvgIcon name="heart" :size="16" /> {{ selectedPost.likes }}</button>
+              <button class="modal-action" :class="{ active: showComments }" @click="toggleComments"><SvgIcon name="message" :size="16" /> {{ selectedPost.comments }}</button>
+              <button class="modal-action share" @click="handleShare(selectedPost)"><SvgIcon name="share" :size="16" /> {{ selectedPost.shares }}</button>
             </div>
           </div>
         </div>
@@ -126,6 +137,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import SvgIcon from '../components/SvgIcon.vue'
+import PublishModal from '../components/PublishModal.vue'
 
 const router = useRouter()
 const searchQuery = ref('')
@@ -198,11 +210,7 @@ const openPost = async (post) => {
   selectedPost.value = post
   comments.value = []
   newComment.value = ''
-  try {
-    const res = await fetch(`/api/community/posts/${post.id}/comments`)
-    const data = await res.json()
-    if (data.code === 200) comments.value = data.data
-  } catch { /* empty */ }
+  showComments.value = false
 }
 
 const submitComment = async () => {
@@ -228,6 +236,60 @@ const generateSimilar = (post) => {
   router.push({ path: '/ai-plan', query: { q: query } })
 }
 
+const likedPosts = ref([])
+const showComments = ref(false)
+
+const toggleComments = async () => {
+  showComments.value = !showComments.value
+  if (showComments.value && !comments.value.length && selectedPost.value) {
+    try {
+      const res = await fetch(`/api/community/posts/${selectedPost.value.id}/comments`)
+      const data = await res.json()
+      if (data.code === 200) comments.value = data.data
+    } catch { /* ignore */ }
+  }
+}
+
+const handleLike = async (post) => {
+  try {
+    const res = await fetch(`/api/community/posts/${post.id}/like`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '1' }
+    })
+    const data = await res.json()
+    if (data.code === 200) {
+      const index = likedPosts.value.indexOf(post.id)
+      if (index > -1) {
+        likedPosts.value.splice(index, 1)
+        post.likes--
+      } else {
+        likedPosts.value.push(post.id)
+        post.likes++
+      }
+    }
+  } catch { /* ignore */ }
+}
+
+const handleShare = async (post) => {
+  try {
+    const res = await fetch(`/api/community/posts/${post.id}/share`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '1' }
+    })
+    const data = await res.json()
+    if (data.code === 200) {
+      post.shares++
+    }
+  } catch { /* ignore */ }
+}
+
+const showPublishModal = ref(false)
+
+const handlePublishSuccess = () => {
+  showPublishModal.value = false
+  loadPosts()
+}
+
 onMounted(loadPosts)
 </script>
 
@@ -244,11 +306,36 @@ onMounted(loadPosts)
   top: 0;
   z-index: 100;
   background: var(--color-surface);
-  padding: 16px 28px 0;
+  padding: 16px 28px;
   border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.publish-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 14px 28px;
+  border: none;
+  border-radius: var(--radius-pill);
+  background: var(--gradient-brand);
+  color: white;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  font-family: var(--font-family);
+  transition: all 0.2s;
+  box-shadow: var(--shadow-button);
+  flex-shrink: 0;
+}
+.publish-btn:hover { filter: brightness(1.1); transform: translateY(-1px); }
+
+.search-wrapper {
+  flex: 1;
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 12px;
 }
 
 .search-box {
@@ -447,7 +534,14 @@ onMounted(loadPosts)
 .comment-text { font-size: 13px; color: var(--color-secondary); margin: 0; line-height: 1.5; }
 .no-comments { text-align: center; color: var(--color-muted); font-size: 13px; padding: 20px 0; }
 
-.comment-input-row { display: flex; gap: 8px; margin-top: 14px; }
+.comment-input-wrapper {
+  padding: 12px 20px;
+  background: var(--color-surface);
+  border-top: 1px solid var(--color-border);
+  flex-shrink: 0;
+}
+
+.comment-input-row { display: flex; gap: 8px; }
 .comment-input-row input {
   flex: 1; padding: 8px 14px;
   border: 1.5px solid var(--color-border); border-radius: var(--radius-pill);
@@ -471,6 +565,7 @@ onMounted(loadPosts)
 }
 .modal-action:hover { background: var(--color-card); }
 .modal-action.like { color: var(--color-red-light); }
+.modal-action.like.liked { color: #ef4444; }
 .modal-action.share { color: #34d399; }
 
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s; }
