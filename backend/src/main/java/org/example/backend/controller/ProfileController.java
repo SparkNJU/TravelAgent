@@ -36,7 +36,7 @@ public class ProfileController {
                     .orElseThrow(() -> new RuntimeException("用户不存在"));
             UserProfileResponse profile = new UserProfileResponse(
                     user.getId(), user.getUsername(), user.getEmail(),
-                    user.getPhone(), user.getProfilePicUrl(), user.getCreatedAt());
+                    user.getPhone(), user.getProfilePicUrl(), user.getBio(), user.getCreatedAt());
             return ResponseEntity.ok(ApiResponse.success(profile));
         } catch (RuntimeException e) {
             return ResponseEntity.status(HttpStatus.NOT_FOUND)
@@ -52,7 +52,7 @@ public class ProfileController {
             User user = userService.updateProfile(userId, req);
             UserProfileResponse profile = new UserProfileResponse(
                     user.getId(), user.getUsername(), user.getEmail(),
-                    user.getPhone(), user.getProfilePicUrl(), user.getCreatedAt());
+                    user.getPhone(), user.getProfilePicUrl(), user.getBio(), user.getCreatedAt());
             return ResponseEntity.ok(ApiResponse.success(profile, "资料更新成功"));
         } catch (RuntimeException e) {
             return ResponseEntity.badRequest().body(ApiResponse.error(e.getMessage()));

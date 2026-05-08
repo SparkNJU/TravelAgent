@@ -121,6 +121,10 @@
                 <label>手机号</label>
                 <input v-model="editForm.phone" class="field" placeholder="手机号" />
               </div>
+              <div class="field-group">
+                <label>个人简介</label>
+                <input v-model="editForm.bio" class="field" placeholder="介绍一下自己吧" />
+              </div>
               <p v-if="editError" class="msg error">{{ editError }}</p>
               <button type="submit" class="submit-btn" :disabled="editLoading">
                 <span v-if="editLoading" class="spinner"></span>
@@ -231,7 +235,7 @@ const tabs = [
 
 // 编辑资料
 const showEditModal = ref(false)
-const editForm = ref({ username: '', email: '', phone: '' })
+const editForm = ref({ username: '', email: '', phone: '', bio: '' })
 const editError = ref('')
 const editLoading = ref(false)
 
@@ -262,7 +266,8 @@ const fetchProfile = async () => {
       editForm.value = {
         username: data.data.username || '',
         email: data.data.email || '',
-        phone: data.data.phone || ''
+        phone: data.data.phone || '',
+        bio: data.data.bio || ''
       }
     }
   } catch { /* ignore */ }

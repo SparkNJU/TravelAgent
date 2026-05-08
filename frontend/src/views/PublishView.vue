@@ -108,7 +108,6 @@ const submit = async () => {
         title: title.value,
         description: description.value,
         images: images.value,
-        avatar: '', nickname: localStorage.getItem('username') || '用户', bio: '',
         tags: selectedTags.value
       })
     })

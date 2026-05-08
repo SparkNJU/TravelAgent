@@ -346,7 +346,6 @@ const shareToCommunity = () => {
       title: result.value.title,
       description: result.value.summary || '',
       images: result.value.images?.map(i => i.imageUrl).filter(Boolean) || [],
-      avatar: '', nickname: localStorage.getItem('username') || '用户', bio: '',
       tags: [result.value.destination, 'AI规划'].filter(Boolean)
     })
   })

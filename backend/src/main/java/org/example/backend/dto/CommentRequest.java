@@ -10,6 +10,4 @@ import lombok.NoArgsConstructor;
 @AllArgsConstructor
 public class CommentRequest {
     private String content;
-    private String avatar;
-    private String nickname;
 }

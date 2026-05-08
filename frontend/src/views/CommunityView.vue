@@ -52,7 +52,7 @@
             <div class="card-footer">
               <div class="card-author">
                 <span class="avatar">{{ post.avatar || '' }}</span>
-                <span class="author-name">{{ post.nickname }}</span>
+                <span class="author-name">{{ post.username }}</span>
               </div>
               <span class="stat"><SvgIcon name="heart" :size="14" /> {{ formatLikes(post.likes) }}</span>
             </div>
@@ -73,7 +73,7 @@
               <div class="modal-user">
                 <span class="avatar lg">{{ selectedPost.avatar }}</span>
                 <div>
-                  <span class="author-name">{{ selectedPost.nickname }}</span>
+                  <span class="author-name">{{ selectedPost.username }}</span>
                   <span class="author-bio">{{ selectedPost.bio }}</span>
                 </div>
               </div>
@@ -105,7 +105,7 @@
                     <span class="avatar sm">{{ c.avatar }}</span>
                     <div class="comment-body">
                       <div class="comment-meta">
-                        <span class="comment-author">{{ c.nickname }}</span>
+                        <span class="comment-author">{{ c.username }}</span>
                         <span class="comment-time">{{ c.createdAt }}</span>
                       </div>
                       <p class="comment-text">{{ c.content }}</p>
@@ -228,11 +228,11 @@ const submitComment = async () => {
     const res = await fetch(`/api/community/posts/${selectedPost.value.id}/comments`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '1' },
-      body: JSON.stringify({ content: newComment.value, avatar: '', nickname: localStorage.getItem('username') || '用户' })
+      body: JSON.stringify({ content: newComment.value })
     })
     const data = await res.json()
     if (data.code === 200) {
-      comments.value.push({ id: Date.now(), content: newComment.value, avatar: '', nickname: localStorage.getItem('username') || '用户', createdAt: '刚刚' })
+      comments.value.push({ id: Date.now(), content: newComment.value, avatar: '', username: localStorage.getItem('username') || '用户', createdAt: '刚刚' })
       selectedPost.value.comments++
       newComment.value = ''
     }

@@ -13,7 +13,7 @@ public class CommunityPostResponse {
     private String description;
     private List<String> images;
     private String avatar;
-    private String nickname;
+    private String username;
     private String bio;
     private Integer likes;
     private Integer comments;

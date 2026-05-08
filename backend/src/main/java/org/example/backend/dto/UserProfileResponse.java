@@ -8,16 +8,18 @@ public class UserProfileResponse {
     private String email;
     private String phone;
     private String profilePicUrl;
+    private String bio;
     private LocalDateTime createdAt;
 
     public UserProfileResponse() {}
 
-    public UserProfileResponse(Long id, String username, String email, String phone, String profilePicUrl, LocalDateTime createdAt) {
+    public UserProfileResponse(Long id, String username, String email, String phone, String profilePicUrl, String bio, LocalDateTime createdAt) {
         this.id = id;
         this.username = username;
         this.email = email;
         this.phone = phone;
         this.profilePicUrl = profilePicUrl;
+        this.bio = bio;
         this.createdAt = createdAt;
     }
 
@@ -31,6 +33,8 @@ public class UserProfileResponse {
     public void setPhone(String phone) { this.phone = phone; }
     public String getProfilePicUrl() { return profilePicUrl; }
     public void setProfilePicUrl(String profilePicUrl) { this.profilePicUrl = profilePicUrl; }
+    public String getBio() { return bio; }
+    public void setBio(String bio) { this.bio = bio; }
     public LocalDateTime getCreatedAt() { return createdAt; }
     public void setCreatedAt(LocalDateTime createdAt) { this.createdAt = createdAt; }
 }

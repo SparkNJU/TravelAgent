@@ -28,15 +28,6 @@ public class CommunityPost {
     @Column(columnDefinition = "TEXT")
     private String images; // 用JSON格式存储多张图片URL
 
-    @Column(length = 100)
-    private String avatar;
-
-    @Column(nullable = false, length = 50)
-    private String nickname;
-
-    @Column(length = 200)
-    private String bio;
-
     @Column(nullable = false)
     private Integer likes = 0;
 

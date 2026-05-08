@@ -28,12 +28,6 @@ public class Comment {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String content;
 
-    @Column(length = 100)
-    private String avatar;
-
-    @Column(nullable = false, length = 50)
-    private String nickname;
-
     @Column(nullable = false, updatable = false)
     private LocalDateTime createdAt;
 

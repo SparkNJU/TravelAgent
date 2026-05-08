@@ -68,6 +68,10 @@ public class UserService {
             user.setPhone(req.getPhone());
         }
 
+        if (req.getBio() != null) {
+            user.setBio(req.getBio());
+        }
+
         return userRepository.save(user);
     }
 

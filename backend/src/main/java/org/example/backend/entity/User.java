@@ -25,6 +25,9 @@ public class User {
     @Column(name = "profile_pic_url", length = 255)
     private String profilePicUrl;
 
+    @Column(length = 200)
+    private String bio;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -89,6 +92,14 @@ public class User {
 
     public void setProfilePicUrl(String profilePicUrl) {
         this.profilePicUrl = profilePicUrl;
+    }
+
+    public String getBio() {
+        return bio;
+    }
+
+    public void setBio(String bio) {
+        this.bio = bio;
     }
 
     public LocalDateTime getCreatedAt() {

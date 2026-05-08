@@ -73,9 +73,6 @@ public class CommunityService {
         post.setTitle(request.getTitle());
         post.setDescription(request.getDescription());
         post.setImages(convertListToJson(request.getImages()));
-        post.setAvatar(request.getAvatar() != null ? request.getAvatar() : "👤");
-        post.setNickname(request.getNickname() != null ? request.getNickname() : "用户");
-        post.setBio(request.getBio());
         post.setTags(convertListToCsv(request.getTags()));
         post.setUserId(userId);
         post.setLikes(0);
@@ -99,9 +96,10 @@ public class CommunityService {
      * 查询所有帖子
      */
     public List<CommunityPostResponse> getAllPosts() {
-        return postRepository.findAllByOrderByCreatedAtDesc()
-                .stream()
-                .map(this::convertToResponse)
+        List<CommunityPost> posts = postRepository.findAllByOrderByCreatedAtDesc();
+        Map<Long, User> userMap = batchLoadUsers(posts);
+        return posts.stream()
+                .map(p -> convertToResponse(p, userMap))
                 .collect(Collectors.toList());
     }
 
@@ -109,9 +107,10 @@ public class CommunityService {
      * 根据用户ID查询帖子
      */
     public List<CommunityPostResponse> getPostsByUserId(Long userId) {
-        return postRepository.findByUserIdOrderByCreatedAtDesc(userId)
-                .stream()
-                .map(this::convertToResponse)
+        List<CommunityPost> posts = postRepository.findByUserIdOrderByCreatedAtDesc(userId);
+        Map<Long, User> userMap = batchLoadUsers(posts);
+        return posts.stream()
+                .map(p -> convertToResponse(p, userMap))
                 .collect(Collectors.toList());
     }
 
@@ -119,9 +118,10 @@ public class CommunityService {
      * 热门帖子
      */
     public List<CommunityPostResponse> getHotPosts() {
-        return postRepository.findTop10ByOrderByLikesDesc()
-                .stream()
-                .map(this::convertToResponse)
+        List<CommunityPost> posts = postRepository.findTop10ByOrderByLikesDesc();
+        Map<Long, User> userMap = batchLoadUsers(posts);
+        return posts.stream()
+                .map(p -> convertToResponse(p, userMap))
                 .collect(Collectors.toList());
     }
 
@@ -129,9 +129,10 @@ public class CommunityService {
      * 根据标签搜索
      */
     public List<CommunityPostResponse> searchByTag(String tag) {
-        return postRepository.findByTagContaining(tag)
-                .stream()
-                .map(this::convertToResponse)
+        List<CommunityPost> posts = postRepository.findByTagContaining(tag);
+        Map<Long, User> userMap = batchLoadUsers(posts);
+        return posts.stream()
+                .map(p -> convertToResponse(p, userMap))
                 .collect(Collectors.toList());
     }
 
@@ -139,17 +140,14 @@ public class CommunityService {
      * 根据分类查询帖子
      */
     public List<CommunityPostResponse> getPostsByCategory(String category) {
-        // 分类映射：将前端分类转换为标签关键词
         String tagKeyword = convertCategoryToTag(category);
-
         if (tagKeyword == null) {
-            // 如果是"all"或者未知分类，返回所有帖子
             return getAllPosts();
         }
-
-        return postRepository.findByTagContaining(tagKeyword)
-                .stream()
-                .map(this::convertToResponse)
+        List<CommunityPost> posts = postRepository.findByTagContaining(tagKeyword);
+        Map<Long, User> userMap = batchLoadUsers(posts);
+        return posts.stream()
+                .map(p -> convertToResponse(p, userMap))
                 .collect(Collectors.toList());
     }
 
@@ -192,9 +190,10 @@ public class CommunityService {
      * 搜索帖子
      */
     public List<CommunityPostResponse> search(String keyword) {
-        return postRepository.searchByKeyword(keyword)
-                .stream()
-                .map(this::convertToResponse)
+        List<CommunityPost> posts = postRepository.searchByKeyword(keyword);
+        Map<Long, User> userMap = batchLoadUsers(posts);
+        return posts.stream()
+                .map(p -> convertToResponse(p, userMap))
                 .collect(Collectors.toList());
     }
 
@@ -212,12 +211,6 @@ public class CommunityService {
             post.setDescription(request.getDescription());
         if (request.getImages() != null)
             post.setImages(convertListToJson(request.getImages()));
-        if (request.getAvatar() != null)
-            post.setAvatar(request.getAvatar());
-        if (request.getNickname() != null)
-            post.setNickname(request.getNickname());
-        if (request.getBio() != null)
-            post.setBio(request.getBio());
         if (request.getTags() != null)
             post.setTags(convertListToCsv(request.getTags()));
 
@@ -286,13 +279,12 @@ public class CommunityService {
         // 创建新帖子（分享）
         CommunityPost newPost = new CommunityPost();
         newPost.setTitle("[转载] " + originalPost.getTitle());
-        newPost.setDescription("//@" + originalPost.getNickname() + "\n" + originalPost.getDescription());
+
+        // 获取原帖作者的用户名
+        String originalUsername = userRepository.findById(originalPost.getUserId())
+                .map(User::getUsername).orElse("用户");
+        newPost.setDescription("//@" + originalUsername + "\n" + originalPost.getDescription());
         newPost.setImages(originalPost.getImages());
-        newPost.setAvatar("");
-        newPost.setNickname(userRepository.findById(userId)
-                .map(User::getUsername)
-                .orElse("用户"));
-        newPost.setBio("");
         newPost.setLikes(0);
         newPost.setComments(0);
         newPost.setShares(0);
@@ -330,11 +322,6 @@ public class CommunityService {
         // 设置图片（从规划的images字段提取）
         List<String> images = extractImagesFromPlan(plan);
         postRequest.setImages(images);
-
-        // 设置用户信息
-        postRequest.setAvatar(request.getAvatar() != null ? request.getAvatar() : "👤");
-        postRequest.setNickname(request.getNickname() != null ? request.getNickname() : "用户");
-        postRequest.setBio(request.getBio());
 
         // 生成标签
         List<String> tags = generateTags(plan);
@@ -440,14 +427,24 @@ public class CommunityService {
      * 转换实体为响应DTO
      */
     private CommunityPostResponse convertToResponse(CommunityPost post) {
+        return convertToResponse(post, null);
+    }
+
+    private CommunityPostResponse convertToResponse(CommunityPost post, Map<Long, User> userMap) {
         CommunityPostResponse response = new CommunityPostResponse();
         response.setId(post.getId());
         response.setTitle(post.getTitle());
         response.setDescription(post.getDescription());
         response.setImages(convertJsonToList(post.getImages()));
-        response.setAvatar(post.getAvatar());
-        response.setNickname(post.getNickname());
-        response.setBio(post.getBio());
+
+        User author = (userMap != null) ? userMap.get(post.getUserId()) : null;
+        if (author == null) {
+            author = userRepository.findById(post.getUserId()).orElse(null);
+        }
+        response.setAvatar(author != null ? author.getProfilePicUrl() : "");
+        response.setUsername(author != null ? author.getUsername() : "用户");
+        response.setBio(author != null ? author.getBio() : "");
+
         response.setLikes(post.getLikes());
         response.setComments(post.getComments());
         response.setShares(post.getShares());
@@ -509,6 +506,19 @@ public class CommunityService {
     }
 
     /**
+     * 批量加载用户，避免 N+1 查询
+     */
+    private Map<Long, User> batchLoadUsers(List<CommunityPost> posts) {
+        List<Long> userIds = posts.stream()
+                .map(CommunityPost::getUserId)
+                .distinct()
+                .collect(Collectors.toList());
+        if (userIds.isEmpty()) return Collections.emptyMap();
+        return userRepository.findAllById(userIds).stream()
+                .collect(Collectors.toMap(User::getId, u -> u));
+    }
+
+    /**
      * 获取帖子评论
      */
     public List<CommentResponse> getComments(Long postId) {
@@ -532,8 +542,6 @@ public class CommunityService {
         comment.setPostId(postId);
         comment.setUserId(userId);
         comment.setContent(request.getContent());
-        comment.setAvatar(request.getAvatar() != null ? request.getAvatar() : "👤");
-        comment.setNickname(request.getNickname() != null ? request.getNickname() : "用户");
 
         Comment savedComment = commentRepository.save(comment);
         return convertCommentToResponse(savedComment);
@@ -543,8 +551,9 @@ public class CommunityService {
         CommentResponse response = new CommentResponse();
         response.setId(comment.getId());
         response.setContent(comment.getContent());
-        response.setAvatar(comment.getAvatar());
-        response.setNickname(comment.getNickname());
+        User commenter = userRepository.findById(comment.getUserId()).orElse(null);
+        response.setAvatar(commenter != null ? commenter.getProfilePicUrl() : "");
+        response.setUsername(commenter != null ? commenter.getUsername() : "用户");
         response.setCreatedAt(comment.getCreatedAt().toString());
         return response;
     }
