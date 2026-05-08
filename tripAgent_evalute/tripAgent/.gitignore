@@ -1,29 +1,76 @@
-# OS
+### 操作系统 ###
 .DS_Store
 Thumbs.db
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 
-# Node
-node_modules/
+### Node.js (Frontend) ###
 frontend/node_modules/
 frontend/dist/
+frontend/build/
+frontend/.npm
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/.vite/
 
-# Java
-backend/.gradle/
-backend/build/
+### Java (Backend) ###
 backend/target/
+backend/build/
+backend/.gradle/
+backend/.idea/
+backend/*.iml
+backend/out/
+backend/bin/
 
-# Python
-__pycache__/
-*.pyc
+### Python (Agent) ###
+agent/__pycache__/
+agent/app/__pycache__/
 agent/.venv/
+agent/venv/
+agent/env/
+agent/ENV/
+agent/*.egg-info/
+agent/.eggs/
+agent/dist/
+agent/build/
+agent/.pytest_cache/
+agent/.coverage
+agent/htmlcov/
+agent/.tox/
 
-# Env
+### 环境变量 ###
 .env
-.env.*
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
 frontend/.env.local
 agent/.env
 
-# IDE
+### IDE ###
 .vscode/
 .idea/
 *.iml
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+.DS_Store
+
+### 日志 ###
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+### 临时文件 ###
+*.tmp
+.cache/
+.parcel-cache/
