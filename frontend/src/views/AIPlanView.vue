@@ -116,15 +116,18 @@
 </template>
 
 <script setup>
-import { computed, ref, onMounted } from 'vue'
+import { computed, ref, onMounted, inject } from 'vue'
 import { useRoute } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import SvgIcon from '../components/SvgIcon.vue'
 import MapComponent from '../components/MapComponent.vue'
 import ItineraryPanel from '../components/ItineraryPanel.vue'
+import { useAuth } from '../composables/useAuth'
 
 const route = useRoute()
+const { isLoggedIn } = useAuth()
+const showLogin = inject('showLoginModal')
 const query = ref('')
 const file = ref(null)
 
@@ -334,6 +337,7 @@ const generatePlan = async () => {
 }
 
 const shareToCommunity = () => {
+  if (!isLoggedIn.value) { showLogin(); return }
   if (!result.value) return
   fetch('/api/community/posts', {
     method: 'POST',
@@ -351,6 +355,7 @@ const shareToCommunity = () => {
 const resetPlan = () => { result.value = null; errorMessage.value = ''; file.value = null; query.value = '' }
 
 const saveToMyPlans = async () => {
+  if (!isLoggedIn.value) { showLogin(); return }
   if (!result.value) {
     alert('没有可保存的行程')
     return

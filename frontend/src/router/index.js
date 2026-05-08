@@ -1,25 +1,16 @@
 import { createRouter, createWebHistory } from 'vue-router'
-import LoginView from '../views/LoginView.vue'
-import RegisterView from '../views/RegisterView.vue'
 import CommunityView from '../views/CommunityView.vue'
 import AIPlanView from '../views/AIPlanView.vue'
-
 import ProfileView from '../views/ProfileView.vue'
-
-const requireAuth = (to, from, next) => {
-  if (localStorage.getItem('token')) next()
-  else next('/login')
-}
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
   routes: [
-    { path: '/login', name: 'login', component: LoginView },
-    { path: '/register', name: 'register', component: RegisterView },
-    { path: '/', name: 'discover', component: CommunityView, beforeEnter: requireAuth },
-    { path: '/ai-plan', name: 'aiPlan', component: AIPlanView, beforeEnter: requireAuth },
-
-    { path: '/profile', name: 'profile', component: ProfileView, beforeEnter: requireAuth },
+    { path: '/', name: 'discover', component: CommunityView },
+    { path: '/ai-plan', name: 'aiPlan', component: AIPlanView },
+    { path: '/profile', name: 'profile', component: ProfileView },
+    { path: '/login', redirect: '/' },
+    { path: '/register', redirect: '/' },
   ]
 })
 

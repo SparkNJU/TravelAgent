@@ -1,6 +1,19 @@
 <script setup>
+import { ref, provide } from 'vue'
 import { RouterView } from 'vue-router'
 import Sidebar from './components/Sidebar.vue'
+import LoginModal from './components/LoginModal.vue'
+
+const loginModalVisible = ref(false)
+
+const showLoginModal = () => {
+  loginModalVisible.value = true
+}
+provide('showLoginModal', showLoginModal)
+
+const closeLoginModal = () => {
+  loginModalVisible.value = false
+}
 </script>
 
 <template>
@@ -10,6 +23,7 @@ import Sidebar from './components/Sidebar.vue'
       <RouterView />
     </main>
   </div>
+  <LoginModal v-if="loginModalVisible" @close="closeLoginModal" @success="closeLoginModal" />
 </template>
 
 <style scoped>

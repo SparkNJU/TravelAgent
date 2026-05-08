@@ -13,7 +13,6 @@
         <SvgIcon name="sparkles" :size="20" />
         <span>AI规划</span>
       </router-link>
-      
       <router-link to="/profile" class="nav-item" :class="{ active: $route.path === '/profile' }">
         <SvgIcon name="user" :size="20" />
         <span>我的</span>
@@ -21,25 +20,36 @@
     </nav>
 
     <div class="sidebar-bottom">
-      <button class="nav-item logout" @click="handleLogout">
-        <SvgIcon name="logout" :size="18" />
-        <span>退出</span>
+      <template v-if="isLoggedIn">
+        <div class="user-avatar" :title="username">{{ avatarLetter }}</div>
+        <button class="nav-item logout" @click="handleLogout">
+          <SvgIcon name="logout" :size="18" />
+          <span>退出</span>
+        </button>
+      </template>
+      <button v-else class="nav-item login-btn" @click="showLogin">
+        <SvgIcon name="user" :size="18" />
+        <span>登录</span>
       </button>
     </div>
   </aside>
 </template>
 
 <script setup>
-import { useRouter } from 'vue-router'
+import { inject, computed } from 'vue'
 import SvgIcon from './SvgIcon.vue'
+import { useAuth } from '../composables/useAuth'
 
-const router = useRouter()
+const { isLoggedIn, username, logout } = useAuth()
+const showLogin = inject('showLoginModal')
+
+const avatarLetter = computed(() => {
+  const name = username.value || 'U'
+  return name.charAt(0).toUpperCase()
+})
 
 const handleLogout = () => {
-  localStorage.removeItem('token')
-  localStorage.removeItem('username')
-  localStorage.removeItem('userId')
-  router.push('/login')
+  logout()
 }
 </script>
 
@@ -119,9 +129,34 @@ const handleLogout = () => {
 
 .sidebar-bottom {
   flex-shrink: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.user-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: var(--gradient-brand);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  font-size: 14px;
+  font-weight: 700;
 }
 
 .logout:hover {
+  color: var(--color-red-light);
+}
+
+.login-btn {
+  color: var(--color-red-light);
+}
+.login-btn:hover {
+  background: rgba(230, 57, 70, 0.1);
   color: var(--color-red-light);
 }
 </style>

@@ -1,7 +1,7 @@
 <template>
   <div class="discover-page">
     <header class="discover-header">
-      <button class="publish-btn" @click="showPublishModal = true">
+      <button class="publish-btn" @click="requireAuth(() => showPublishModal = true)">
         <SvgIcon name="plus" :size="16" />
         <span>发布</span>
       </button>
@@ -134,12 +134,20 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, inject } from 'vue'
 import { useRouter } from 'vue-router'
 import SvgIcon from '../components/SvgIcon.vue'
 import PublishModal from '../components/PublishModal.vue'
+import { useAuth } from '../composables/useAuth'
 
 const router = useRouter()
+const { isLoggedIn } = useAuth()
+const showLogin = inject('showLoginModal')
+
+const requireAuth = (action) => {
+  if (!isLoggedIn.value) { showLogin(); return }
+  action()
+}
 const searchQuery = ref('')
 const activeCategory = ref('all')
 const allPosts = ref([])
@@ -214,6 +222,7 @@ const openPost = async (post) => {
 }
 
 const submitComment = async () => {
+  if (!isLoggedIn.value) { showLogin(); return }
   if (!newComment.value.trim() || !selectedPost.value) return
   try {
     const res = await fetch(`/api/community/posts/${selectedPost.value.id}/comments`, {
@@ -251,6 +260,7 @@ const toggleComments = async () => {
 }
 
 const handleLike = async (post) => {
+  if (!isLoggedIn.value) { showLogin(); return }
   try {
     const res = await fetch(`/api/community/posts/${post.id}/like`, {
       method: 'POST',
@@ -271,6 +281,7 @@ const handleLike = async (post) => {
 }
 
 const handleShare = async (post) => {
+  if (!isLoggedIn.value) { showLogin(); return }
   try {
     const res = await fetch(`/api/community/posts/${post.id}/share`, {
       method: 'POST',

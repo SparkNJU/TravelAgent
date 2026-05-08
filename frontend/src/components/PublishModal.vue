@@ -56,10 +56,13 @@
 </template>
 
 <script setup>
-import { ref } from 'vue'
+import { ref, inject } from 'vue'
 import SvgIcon from './SvgIcon.vue'
+import { useAuth } from '../composables/useAuth'
 
 const emit = defineEmits(['close', 'success'])
+const { isLoggedIn } = useAuth()
+const showLogin = inject('showLoginModal')
 
 const title = ref('')
 const description = ref('')
@@ -93,6 +96,7 @@ const addCustomTag = () => {
 }
 
 const submit = async () => {
+  if (!isLoggedIn.value) { emit('close'); showLogin(); return }
   if (!title.value.trim() || !description.value.trim() || !selectedTags.value.length) return
   try {
     const res = await fetch('/api/community/posts', {
