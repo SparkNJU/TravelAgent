@@ -27,12 +27,18 @@ export function useAuth() {
     localStorage.removeItem('username')
   }
 
+  function updateUsername(newName) {
+    state.username = newName
+    localStorage.setItem('username', newName)
+  }
+
   return {
     token: computed(() => state.token),
     userId: computed(() => state.userId),
     username: computed(() => state.username),
     isLoggedIn,
     login,
-    logout
+    logout,
+    updateUsername
   }
 }

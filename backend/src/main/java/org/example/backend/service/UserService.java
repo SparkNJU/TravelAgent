@@ -1,5 +1,6 @@
 package org.example.backend.service;
 
+import org.example.backend.dto.UpdateProfileRequest;
 import org.example.backend.entity.User;
 import org.example.backend.repository.UserRepository;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,48 +13,80 @@ public class UserService {
     @Autowired
     private UserRepository userRepository;
 
-    /**
-     * Authenticate user with username and password
-     */
     public Optional<User> authenticate(String username, String password) {
         Optional<User> user = userRepository.findByUsername(username);
-        // Simple password check (in production, use proper password hashing like BCrypt)
         if (user.isPresent() && password.equals(user.get().getPassword())) {
             return user;
         }
         return Optional.empty();
     }
 
-    /**
-     * Get user by username
-     */
     public Optional<User> getUserByUsername(String username) {
         return userRepository.findByUsername(username);
     }
 
-    /**
-     * Check if username already exists
-     */
+    public Optional<User> getUserById(Long id) {
+        return userRepository.findById(id);
+    }
+
     public boolean usernameExists(String username) {
         return userRepository.findByUsername(username).isPresent();
     }
 
-    /**
-     * Check if email already exists
-     */
     public boolean emailExists(String email) {
         return userRepository.findByEmail(email).isPresent();
     }
 
-    /**
-     * Register new user
-     */
     public User registerUser(String username, String password, String email, String phone) {
         User user = new User();
         user.setUsername(username);
-        user.setPassword(password); // In production, use password hashing
+        user.setPassword(password);
         user.setEmail(email);
         user.setPhone(phone);
         return userRepository.save(user);
+    }
+
+    public User updateProfile(Long userId, UpdateProfileRequest req) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+
+        if (req.getUsername() != null && !req.getUsername().equals(user.getUsername())) {
+            if (usernameExists(req.getUsername())) {
+                throw new RuntimeException("用户名已存在");
+            }
+            user.setUsername(req.getUsername());
+        }
+
+        if (req.getEmail() != null && !req.getEmail().equals(user.getEmail())) {
+            if (req.getEmail().length() > 0 && emailExists(req.getEmail())) {
+                throw new RuntimeException("邮箱已被使用");
+            }
+            user.setEmail(req.getEmail());
+        }
+
+        if (req.getPhone() != null) {
+            user.setPhone(req.getPhone());
+        }
+
+        return userRepository.save(user);
+    }
+
+    public boolean changePassword(Long userId, String oldPassword, String newPassword) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+
+        if (!user.getPassword().equals(oldPassword)) {
+            return false;
+        }
+        user.setPassword(newPassword);
+        userRepository.save(user);
+        return true;
+    }
+
+    public void updateProfilePicUrl(Long userId, String url) {
+        User user = userRepository.findById(userId)
+                .orElseThrow(() -> new RuntimeException("用户不存在"));
+        user.setProfilePicUrl(url);
+        userRepository.save(user);
     }
 }
