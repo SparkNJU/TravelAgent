@@ -1,6 +1,19 @@
 -- Travel Planning System Database Schema
 -- Created for AgentLLM Travel Platform
 
+SET FOREIGN_KEY_CHECKS = 0;
+
+DROP TABLE IF EXISTS comments;
+DROP TABLE IF EXISTS community_posts;
+DROP TABLE IF EXISTS plan_highlights;
+DROP TABLE IF EXISTS travel_plans;
+DROP TABLE IF EXISTS orders;
+DROP TABLE IF EXISTS ai_planning_history;
+DROP TABLE IF EXISTS destinations;
+DROP TABLE IF EXISTS users;
+
+SET FOREIGN_KEY_CHECKS = 1;
+
 -- Users Table
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -113,7 +126,6 @@ INSERT IGNORE INTO destinations (name, description, rating, review_count, image_
 ('新加坡', '狮城明珠。现代化城市，美食天堂，购物天地。', 4.8, 2050, 'https://picsum.photos/400/200?random=6', '新加坡', '亚洲');
 
 -- Community Posts Table
-DROP TABLE IF EXISTS community_posts;
 CREATE TABLE community_posts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
@@ -152,7 +164,6 @@ INSERT IGNORE INTO community_posts (title, description, images, likes, comments,
 ('云南丽江｜古城之外的小众秘境', '大家都去古城，但其实丽江周边有很多更美的地方，比如白沙古镇、玉湖村', '["https://images.unsplash.com/photo-1528164344705-47542687000d?w=400&h=400&fit=crop"]', 1678, 112, 67, '丽江,小众,云南,秘境', 1, NOW(), NOW());
 
 -- Comments Table
-DROP TABLE IF EXISTS comments;
 CREATE TABLE comments (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     post_id BIGINT NOT NULL,
