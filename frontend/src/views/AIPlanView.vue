@@ -1,1074 +1,791 @@
 <template>
-  <div class="assistant-page">
-    <aside class="history-sidebar" :class="{ collapsed: isSidebarCollapsed }">
-      <div class="history-top">
-        <div class="history-heading">
-          <div class="history-title-row">
-            <h3>历史对话</h3>
-            <div class="history-toolbar">
-              <button class="secondary-btn" type="button" @click="toggleSidebar">
-                {{ isSidebarCollapsed ? '展开' : '收起' }}
+  <div :class="['ai-plan-page', { 'has-result': result }]">
+    <!-- Input Modal (固定在顶部或侧边) -->
+    <div v-if="!result" class="input-modal">
+      <section class="input-section">
+        <div class="input-header">
+          <SvgIcon name="sparkles" :size="20" class="header-icon" />
+          <div>
+            <h2>AI 旅行规划</h2>
+            <p>输入你的旅行想法，智能生成个性化行程方案</p>
+          </div>
+        </div>
+
+        <form @submit.prevent="generatePlan" class="input-form">
+          <textarea
+            v-model="query"
+            rows="3"
+            placeholder="比如：帮我做一个东京 5 天旅行计划，偏美食和城市观光，预算 10000 元..."
+            class="query-input"
+          />
+
+          <div class="input-row">
+            <div class="quick-tags">
+              <button type="button" class="quick-tag" @click="appendTag('3天短途')">3天短途</button>
+              <button type="button" class="quick-tag" @click="appendTag('5天深度游')">5天深度游</button>
+              <button type="button" class="quick-tag" @click="appendTag('情侣出行')">情侣出行</button>
+              <button type="button" class="quick-tag" @click="appendTag('亲子游')">亲子游</button>
+              <button type="button" class="quick-tag" @click="appendTag('美食为主')">美食为主</button>
+              <button type="button" class="quick-tag" @click="appendTag('预算5000')">预算5000</button>
+            </div>
+            <div class="input-actions">
+              <label class="upload-btn">
+                <input type="file" @change="handleFileChange" hidden />
+                <SvgIcon name="upload" :size="16" />
+                <span>{{ file ? file.name : '上传文件' }}</span>
+              </label>
+              <button type="submit" class="gen-btn" :disabled="loading">
+                <SvgIcon v-if="loading" name="loader" :size="16" spin />
+                <SvgIcon v-else name="sparkles" :size="16" />
+                {{ loading ? '生成中...' : '生成计划' }}
               </button>
             </div>
           </div>
-          <p>快速回看已生成的行程记录</p>
-        </div>
+
+          <p v-if="errorMessage" class="error-msg">{{ errorMessage }}</p>
+        </form>
+      </section>
+    </div>
+
+    <!-- Result Layout (Left: Map, Right: Itinerary) -->
+    <div v-if="result" class="result-layout">
+      <!-- 左侧地图 -->
+      <div class="map-section">
+        <MapComponent :destinations="[result.destination]" :itinerary="parsedItinerary" />
       </div>
 
-      <div v-if="!isSidebarCollapsed" class="history-body">
-        <div v-if="!history.length" class="empty-state">
-          <p>还没有历史对话</p>
-          <span>生成一次计划后会自动保存</span>
-        </div>
-
-        <div v-else class="history-list">
-          <div
-            v-for="item in history"
-            :key="item.id"
-            class="history-item"
-            :class="{ active: item.id === selectedHistoryId }"
-          >
-            <button type="button" class="history-main" @click="selectHistory(item)">
-              <div class="history-title">{{ item.result?.title || '未命名行程' }}</div>
-              <div class="history-meta">
-                <span>{{ item.result?.destination || '未知目的地' }}</span>
-                <span>{{ item.result?.days ? item.result.days + ' 天' : '—' }}</span>
-              </div>
-              <p class="history-snippet">{{ item.query }}</p>
-              <span class="history-date">{{ formatDateTime(item.createdAt) }}</span>
-            </button>
-            <div class="history-actions-inline">
-              <button type="button" class="inline-btn" @click="editHistory(item)">编辑</button>
-              <button type="button" class="inline-btn danger" @click="removeHistory(item.id)">删除</button>
+      <!-- 右侧：行程 + AI 对话 -->
+      <div class="itinerary-section">
+        <!-- 上面：行程详情 -->
+        <div class="itinerary-top">
+          <!-- 顶部操作栏 -->
+          <div class="result-top-bar">
+            <div class="result-title-area">
+              <h2>{{ result.title }}</h2>
+              <p class="result-meta">{{ result.destination }} · {{ result.days }}天</p>
+            </div>
+            <div class="result-actions">
+              <button class="action-btn" @click="saveToMyPlans">
+                保存规划
+              </button>
+              <button class="action-btn secondary" @click="resetPlan">重新规划</button>
+              <button class="action-btn" @click="shareToCommunity">
+                <SvgIcon name="share" :size="14" />
+                分享到社区
+              </button>
             </div>
           </div>
+
+          <!-- 行程详情面板 -->
+          <ItineraryPanel
+            :title="result.title"
+            :destination="result.destination"
+            :days="result.days"
+            :itinerary="parsedItinerary"
+            :summary="renderedMarkdown"
+            @update:itinerary="handleUpdateItinerary"
+          />
         </div>
-      </div>
-      <div class="history-footer" v-if="!isSidebarCollapsed">
-        <button class="secondary-btn" type="button" @click="clearHistory" :disabled="!history.length">
-          清空
-        </button>
-      </div>
-    </aside>
 
-    <div class="page-shell" :class="{ collapsed: isSidebarCollapsed }">
-      <header class="page-header">
-        <div>
-          <h2>旅行计划工作台</h2>
-          <p>输入旅行需求，上传参考文件，获取渲染后的规划结果</p>
+        <!-- 下面：AI 对话框 -->
+        <div class="ai-chat-panel">
+          <div class="chat-header">
+            <h3>行程助手</h3>
+            <p class="chat-subtitle">有问题？快速咨询</p>
+          </div>
+
+          <div class="chat-messages">
+            <div class="message bot-message">
+              <div class="message-content">{{ result.title }}已生成！有任何问题可以随时咨询我。</div>
+            </div>
+          </div>
+
+          <div class="chat-input-area">
+            <input
+              v-model="chatQuery"
+              @keyup.enter="sendChat"
+              placeholder="如：改成美食为主、增加夜生活..."
+              class="chat-input"
+            />
+            <button @click="sendChat" class="chat-send-btn">发送</button>
+          </div>
         </div>
-        <router-link to="/" class="back-link">返回首页</router-link>
-      </header>
-
-      <div class="page-grid">
-        <section class="main-column">
-          <section class="composer-section">
-            <form @submit.prevent="generatePlan" class="composer-form">
-              <label class="field">
-                <span>你的需求</span>
-                <textarea
-                  v-model="query"
-                  rows="5"
-                  placeholder="例如：帮我做一个日本东京 5 天旅行计划，偏美食和城市观光，预算 10000 元。"
-                />
-              </label>
-
-              <label class="field">
-                <span>上传参考文件</span>
-                <input type="file" @change="handleFileChange" />
-                <small>支持常见文本 / 文档文件；如果解析失败，仍会基于需求生成计划。</small>
-              </label>
-
-              <div class="actions">
-                <button class="primary-btn" type="submit" :disabled="loading">
-                  {{ loading ? '生成中...' : '生成旅行计划' }}
-                </button>
-                <button class="secondary-btn" type="button" @click="loadPreset('东京 5 天游')">东京 5 天</button>
-                <button class="secondary-btn" type="button" @click="loadPreset('新加坡 4 天游，偏亲子和美食')">新加坡 4 天</button>
-                <button class="secondary-btn" type="button" @click="resetAll">清空</button>
-              </div>
-
-              <p v-if="errorMessage" class="error-text">{{ errorMessage }}</p>
-            </form>
-          </section>
-
-          <section v-if="result" class="result-grid">
-            <article class="result-section">
-              <div class="result-header">
-                <div>
-                  <p class="eyebrow">AI 行程卡片</p>
-                  <h3>{{ result.title }}</h3>
-                  <p class="subtitle">{{ result.destination }} · {{ result.days }} 天 · {{ displayDate }}</p>
-                </div>
-                <div class="meta-badges">
-                  <span class="tag">已生成</span>
-                  <span class="tag soft">个性化</span>
-                  <span class="tag soft">可编辑</span>
-                </div>
-              </div>
-
-              <div class="result-highlight">
-                <div class="highlight-card">
-                  <p class="label">出行天数</p>
-                  <p class="value">{{ result.days || '-' }} 天</p>
-                </div>
-                <div class="highlight-card">
-                  <p class="label">目的地</p>
-                  <p class="value">{{ result.destination || '-' }}</p>
-                </div>
-                <div class="highlight-card">
-                  <p class="label">查询摘要</p>
-                  <p class="value clamp">{{ query }}</p>
-                </div>
-              </div>
-
-              <div class="markdown-body" v-html="renderedMarkdown"></div>
-            </article>
-
-            <aside class="result-aside">
-              <article class="image-section" v-if="result.images && result.images.length">
-                <h3>图片资源</h3>
-                <div class="image-list masonry">
-                  <a
-                    v-for="(img, index) in result.images"
-                    :key="index"
-                    :href="img.sourceUrl || img.imageUrl"
-                    target="_blank"
-                    rel="noreferrer"
-                    class="image-item"
-                  >
-                    <img :src="img.imageUrl" :alt="img.title || 'travel image'" />
-                    <span>{{ img.title || '图片来源' }}</span>
-                  </a>
-                </div>
-              </article>
-
-              <article class="source-section" v-if="result.sources && result.sources.length">
-                <h3>搜索来源</h3>
-                <ul class="source-list">
-                  <li v-for="(source, index) in result.sources" :key="index">
-                    <a :href="source.link" target="_blank" rel="noreferrer">{{ source.title }}</a>
-                    <p>{{ source.snippet }}</p>
-                  </li>
-                </ul>
-              </article>
-            </aside>
-          </section>
-        </section>
       </div>
     </div>
   </div>
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, ref, onMounted } from 'vue'
+import { useRoute } from 'vue-router'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
+import SvgIcon from '../components/SvgIcon.vue'
+import MapComponent from '../components/MapComponent.vue'
+import ItineraryPanel from '../components/ItineraryPanel.vue'
 
+const route = useRoute()
 const query = ref('')
 const file = ref(null)
-const result = ref(null)
+
+// 默认示例数据
+const defaultResult = {
+  title: '北京 5 天深度游',
+  destination: '北京',
+  days: 5,
+  markdown: `
+## 第1天：古都文化之旅
+- 上午：天安门广场 - 游览中国国旗升旗仪式和广场的宏伟景观
+- 中午：故宫博物院 - 探索960年的古宫廷建筑与文化
+- 下午：景山公园 - 俯瞰紫禁城全景，拍摄绝美照片
+
+## 第2天：长城壮美体验
+- 上午：慕田峪长城 - 游览保存完好的明代长城
+- 中午：长城脚下农家乐 - 品尝地道北京风味
+- 下午：鸟巢水立方 - 参观奥运场馆建筑
+
+## 第3天：皇家园林赏析
+- 上午：颐和园 - 欣赏世界最大皇家园林
+- 下午：清华大学 - 感受顶尖学府氛围
+- 晚上：三里屯 - 体验北京夜生活
+
+## 第4天：胡同文化品鉴
+- 上午：南锣鼓巷 - 游走古老的胡同街道
+- 中午：黑芝麻胡同的传统美食
+- 下午：什刹海酒吧街 - 享受休闲时光
+
+## 第5天：购物与美食之旅
+- 上午：王府井大街 - 逛街购物
+- 中午：全聚德烤鸭 - 品尝北京烤鸭
+- 下午：798艺术区 - 探索现代艺术
+  `,
+  images: []
+}
+
+const result = ref(defaultResult)
 const loading = ref(false)
 const errorMessage = ref('')
-const history = ref([])
-const selectedHistoryId = ref(null)
-const isSidebarCollapsed = ref(false)
+const chatQuery = ref('')
 
-const md = new MarkdownIt({
-  html: false,
-  linkify: true,
-  breaks: true
+const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+
+const renderedMarkdown = computed(() => {
+  if (!result.value?.markdown) return ''
+  return DOMPurify.sanitize(md.render(result.value.markdown))
 })
 
-const handleFileChange = (event) => {
-  const selected = event.target.files?.[0] || null
-  file.value = selected
-}
+// 从返回结果中解析行程数据
+const parsedItinerary = computed(() => {
+  if (!result.value) return []
 
-const loadPreset = (text) => {
-  query.value = text
-}
-
-const resetAll = () => {
-  query.value = ''
-  file.value = null
-  result.value = null
-  errorMessage.value = ''
-  selectedHistoryId.value = null
-}
-
-const toggleSidebar = () => {
-  isSidebarCollapsed.value = !isSidebarCollapsed.value
-}
-
-const formatDate = (isoString) => {
-  if (!isoString) {
-    return '—'
+  // 优先使用已编辑的行程数据
+  if (result.value.itinerary && Array.isArray(result.value.itinerary)) {
+    return result.value.itinerary
   }
-  const date = new Date(isoString)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
-    date.getDate()
-  ).padStart(2, '0')}`
-}
 
-const formatDateTime = (isoString) => {
-  if (!isoString) {
-    return '—'
-  }
-  const date = new Date(isoString)
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(
-    date.getDate()
-  ).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(
-    date.getMinutes()
-  ).padStart(2, '0')}`
-}
+  // 尝试从markdown中解析行程信息
+  const itinerary = []
+  const markdown = result.value.markdown || ''
+  const lines = markdown.split('\n')
 
-const stripMarkdownSections = (markdownText, sectionTitles) => {
-  if (!markdownText) {
-    return ''
-  }
-  const lines = markdownText.split('\n')
-  const titleSet = new Set(sectionTitles)
-  const output = []
-  let skip = false
-  let skipLevel = null
-
-  lines.forEach((line) => {
-    const headingMatch = /^(#{1,6})\s+(.*)$/.exec(line.trim())
-    if (headingMatch) {
-      const level = headingMatch[1].length
-      const title = headingMatch[2].trim()
-      if (titleSet.has(title)) {
-        skip = true
-        skipLevel = level
-        return
+  let currentDay = null
+  lines.forEach((line, index) => {
+    // 匹配 "第X天" 的标题
+    if (line.includes('第') && line.includes('天') && line.startsWith('#')) {
+      currentDay = {
+        day: parseInt(line.match(/\d+/)?.[0] || itinerary.length + 1),
+        activities: [],
+        date: '',
+        summary: ''
       }
-      if (skip && skipLevel !== null && level <= skipLevel) {
-        skip = false
-        skipLevel = null
-      }
+      itinerary.push(currentDay)
     }
-    if (!skip) {
-      output.push(line)
+
+    // 匹配活动 (- 上午：天安门广场 - 游览...)
+    if (currentDay && line.trim().startsWith('-')) {
+      const trimmed = line.trim().substring(1).trim() // 去掉 "- "
+      const parts = trimmed.split(/[-–]/).map(s => s.trim()) // 分割 "-" 或 "–"
+      
+      if (parts.length >= 1) {
+        // 第一部分是 "时间：地点" 的格式
+        const firstPart = parts[0]
+        const colonIndex = firstPart.indexOf('：') > -1 ? firstPart.indexOf('：') : firstPart.indexOf(':')
+        
+        let time = ''
+        let location = ''
+        
+        if (colonIndex > -1) {
+          time = firstPart.substring(0, colonIndex).trim()
+          location = firstPart.substring(colonIndex + 1).trim()
+        } else {
+          location = firstPart
+        }
+
+        currentDay.activities.push({
+          time: time || '全天',
+          location: location || '',
+          description: parts.slice(1).join(' - '),
+          coordinates: generateMockCoordinates(result.value.destination, location)
+        })
+      }
     }
   })
 
-  return output.join('\n')
+  // 如果没有解析到行程，生成默认结构
+  if (itinerary.length === 0) {
+    for (let i = 1; i <= (result.value.days || 1); i++) {
+      itinerary.push({
+        day: i,
+        activities: [
+          {
+            location: result.value.destination,
+            description: `第${i}天行程`,
+            time: '全天',
+            coordinates: generateMockCoordinates(result.value.destination)
+          }
+        ]
+      })
+    }
+  }
+
+  return itinerary
+})
+
+// 生成模拟坐标（生产环境应该从AI返回的数据中获取真实坐标）
+const generateMockCoordinates = (destination, location = '') => {
+  // 主要城市坐标
+  const cityCoords = {
+    '北京': [39.9042, 116.4074],
+    '上海': [31.2304, 121.4737],
+    '广州': [23.1291, 113.2644],
+    '深圳': [22.5431, 114.0579],
+    '杭州': [30.2741, 120.1551],
+    '西安': [34.3416, 108.9398],
+    '成都': [30.5728, 104.0668],
+    '南京': [32.0603, 118.7969],
+    '苏州': [31.2989, 120.5954],
+    '武汉': [30.5928, 114.3055],
+    '东京': [35.6762, 139.6503],
+    '大阪': [34.6937, 135.5023],
+    '京都': [35.0116, 135.7681],
+    '首尔': [37.5665, 126.9780],
+    '曼谷': [13.7563, 100.5018],
+    '新加坡': [1.3521, 103.8198]
+  }
+
+  // 随机偏移以显示不同的位置
+  const baseCoord = cityCoords[destination] || [30, 110]
+  const offset = Math.random() * 0.5 - 0.25
+  return [baseCoord[0] + offset, baseCoord[1] + offset]
 }
 
-const renderedMarkdown = computed(() => {
-  if (!result.value?.markdown) {
-    return ''
+onMounted(async () => {
+  if (route.query.q) {
+    query.value = route.query.q
   }
-  const filteredMarkdown = stripMarkdownSections(result.value.markdown, ['图片参考', '联网参考来源'])
-  return DOMPurify.sanitize(md.render(filteredMarkdown))
+  // 如果有 planId 参数，加载已保存的规划
+  if (route.query.planId) {
+    await loadSavedPlan(route.query.planId)
+  }
 })
 
-const displayDate = computed(() => {
-  if (!selectedHistoryId.value) {
-    return formatDate(new Date().toISOString())
-  }
-  const selected = history.value.find((item) => item.id === selectedHistoryId.value)
-  return formatDate(selected?.createdAt)
-})
-
-const loadHistory = () => {
-  const stored = localStorage.getItem('assistantHistory')
-  if (!stored) {
-    return
-  }
+const loadSavedPlan = async (planId) => {
   try {
-    history.value = JSON.parse(stored)
+    const response = await fetch(`/api/travel/plan/${planId}`)
+    const data = await response.json()
+    if (data.code === 200) {
+      const plan = data.data
+      result.value = {
+        title: plan.title,
+        destination: plan.destination,
+        days: plan.days,
+        markdown: plan.itinerary || '',
+        highlights: plan.highlights || []
+      }
+    }
   } catch (error) {
-    history.value = []
+    console.error('加载规划失败:', error)
   }
 }
 
-const saveHistory = () => {
-  localStorage.setItem('assistantHistory', JSON.stringify(history.value))
+const appendTag = (tag) => {
+  if (!query.value.includes(tag)) {
+    query.value = query.value.trim() + (query.value ? '，' : '') + tag
+  }
 }
 
-const addHistory = (data) => {
-  const entry = {
-    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-    query: query.value.trim(),
-    createdAt: new Date().toISOString(),
-    result: data
-  }
-  history.value.unshift(entry)
-  history.value = history.value.slice(0, 20)
-  selectedHistoryId.value = entry.id
-  saveHistory()
-}
-
-const selectHistory = (entry) => {
-  selectedHistoryId.value = entry.id
-  result.value = entry.result
-  query.value = entry.query
-  errorMessage.value = ''
-}
-
-const editHistory = (entry) => {
-  const nextQuery = window.prompt('修改这条历史的需求内容：', entry.query)
-  if (nextQuery === null) {
-    return
-  }
-  entry.query = nextQuery.trim()
-  if (entry.id === selectedHistoryId.value) {
-    query.value = entry.query
-  }
-  saveHistory()
-}
-
-const removeHistory = (id) => {
-  const confirmed = window.confirm('确定要删除这条历史吗？')
-  if (!confirmed) {
-    return
-  }
-  history.value = history.value.filter((item) => item.id !== id)
-  if (selectedHistoryId.value === id) {
-    selectedHistoryId.value = null
-    result.value = null
-  }
-  saveHistory()
-}
-
-const clearHistory = () => {
-  if (!history.value.length) {
-    return
-  }
-  const confirmed = window.confirm('确定要清空历史对话吗？')
-  if (!confirmed) {
-    return
-  }
-  history.value = []
-  selectedHistoryId.value = null
-  localStorage.removeItem('assistantHistory')
-}
+const handleFileChange = (e) => { file.value = e.target.files?.[0] || null }
 
 const generatePlan = async () => {
-  if (!query.value.trim()) {
-    errorMessage.value = '请先输入旅行需求'
-    return
-  }
-
+  if (!query.value.trim()) { errorMessage.value = '请先输入旅行需求'; return }
   loading.value = true
   errorMessage.value = ''
-
   try {
     const formData = new FormData()
     formData.append('query', query.value.trim())
     formData.append('userId', localStorage.getItem('userId') || '1')
-    if (file.value) {
-      formData.append('file', file.value)
-    }
+    if (file.value) formData.append('file', file.value)
+    const res = await fetch('/api/assistant/chat', { method: 'POST', body: formData })
+    const data = await res.json()
+    if (data.code === 200) result.value = data.data
+    else errorMessage.value = data.message || '生成失败'
+  } catch { errorMessage.value = '服务器错误' }
+  finally { loading.value = false }
+}
 
-    const response = await fetch('/api/assistant/chat', {
-      method: 'POST',
-      body: formData
+const shareToCommunity = () => {
+  if (!result.value) return
+  fetch('/api/community/posts', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '1' },
+    body: JSON.stringify({
+      title: result.value.title,
+      description: result.value.summary || '',
+      images: result.value.images?.map(i => i.imageUrl).filter(Boolean) || [],
+      avatar: '', nickname: localStorage.getItem('username') || '用户', bio: '',
+      tags: [result.value.destination, 'AI规划'].filter(Boolean)
     })
-    const data = await response.json()
+  })
+}
 
+const resetPlan = () => { result.value = null; errorMessage.value = ''; file.value = null; query.value = '' }
+
+const saveToMyPlans = async () => {
+  if (!result.value) {
+    alert('没有可保存的行程')
+    return
+  }
+  
+  // 检查是否有实际的行程数据（不是默认占位数据）
+  if (!result.value.markdown || result.value.markdown.trim() === '') {
+    alert('请先生成行程规划再保存')
+    return
+  }
+  
+  console.log('开始保存规划:', result.value)
+  
+  try {
+    // 使用结构化的行程数据
+    const itineraryData = parsedItinerary.value
+    
+    // 检查是否有实际景点（不是默认的目的地占位）
+    const hasRealLocations = itineraryData.some(day => 
+      day.activities.some(activity => 
+        activity.location && activity.location !== result.value.destination
+      )
+    )
+    
+    if (!hasRealLocations) {
+      alert('行程中没有实际景点，请先生成详细行程')
+      return
+    }
+    
+    const response = await fetch('/api/travel/plan/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: Number(localStorage.getItem('userId')) || 1,
+        title: result.value.title,
+        destination: result.value.destination,
+        days: result.value.days,
+        budget: calculateBudget(result.value.destination, result.value.days),
+        itinerary: JSON.stringify(itineraryData),
+        interests: '',
+        travelStyle: '',
+        highlights: ['✨ 景点体验', '🍽️ 美食品尝', '📸 打卡推荐']
+      })
+    })
+    
+    console.log('响应状态:', response.status)
+    const data = await response.json()
+    console.log('响应数据:', data)
+    
     if (data.code === 200) {
-      result.value = data.data
-      addHistory(data.data)
+      alert('保存成功！已添加到我的规划')
     } else {
-      errorMessage.value = data.message || '生成失败，请重试'
+      alert('保存失败: ' + data.message)
     }
   } catch (error) {
-    errorMessage.value = '服务器错误'
-  } finally {
-    loading.value = false
+    console.error('保存失败:', error)
+    alert('保存失败，请重试')
   }
 }
 
-onMounted(() => {
-  loadHistory()
-})
+const sendChat = async () => {
+  if (!chatQuery.value.trim()) return
+  // TODO: 调用后端 API 更新行程
+  console.log('用户问题:', chatQuery.value)
+  chatQuery.value = ''
+}
+
+// 处理行程更新
+const handleUpdateItinerary = async (updatedItinerary) => {
+  // 更新本地数据
+  result.value = {
+    ...result.value,
+    itinerary: updatedItinerary
+  }
+  
+  // 如果是从已保存的规划加载的（有 planId），自动保存到后端
+  if (route.query.planId) {
+    await saveUpdatedPlan(route.query.planId, updatedItinerary)
+  }
+}
+
+// 保存更新后的规划到后端
+const saveUpdatedPlan = async (planId, itinerary) => {
+  try {
+    const response = await fetch(`/api/travel/plan/${planId}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        itinerary: JSON.stringify(itinerary)
+      })
+    })
+    const data = await response.json()
+    if (data.code === 200) {
+      console.log('规划已更新')
+    } else {
+      console.error('更新失败:', data.message)
+    }
+  } catch (error) {
+    console.error('更新规划失败:', error)
+  }
+}
 </script>
 
 <style scoped>
-.assistant-page {
+.ai-plan-page {
+  width: 100%;
   min-height: 100vh;
-  padding: var(--space-6);
-  overflow-x: hidden;
-  background: linear-gradient(135deg, var(--color-white) 0%, var(--color-gray-50) 100%);
+  background: var(--color-bg);
+  font-family: var(--font-family);
+  color: var(--color-body);
 }
 
-.page-shell {
-  max-width: var(--max-width);
-  margin: 0 auto;
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-5);
+/* Input Modal (无结果时) */
+.input-modal {
   width: 100%;
-  padding-left: var(--sidebar-width);
-  transition: padding var(--transition-normal);
-}
-
-.page-shell.collapsed {
-  padding-left: var(--sidebar-collapsed);
-}
-
-.page-header {
+  min-height: 100vh;
   display: flex;
-  justify-content: space-between;
   align-items: center;
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
+  justify-content: center;
+  padding: 20px;
 }
 
-.page-header h2 {
-  margin: 0;
-  font-size: 26px;
+.input-section {
+  background: var(--color-card);
+  border-radius: var(--radius-card);
+  padding: 32px;
+  border: 1px solid var(--color-border);
+  width: 100%;
+  max-width: 640px;
+  box-shadow: var(--shadow-card);
+}
+
+.input-header {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.header-icon { color: var(--color-red-light); }
+
+.input-header h2 {
+  font-size: 20px;
   font-weight: 700;
-  letter-spacing: -0.03em;
-  color: var(--color-gray-900);
+  color: var(--color-title);
+  margin: 0;
 }
 
-.page-header p {
-  margin: var(--space-1) 0 0;
-  color: var(--color-gray-500);
+.input-header p {
   font-size: 14px;
+  color: var(--color-hint);
+  margin: 4px 0 0;
 }
 
-.page-grid {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: var(--space-5);
-  width: 100%;
-}
+.input-form { display: flex; flex-direction: column; gap: 16px; }
 
-.main-column {
-  display: grid;
-  gap: var(--space-5);
-}
-
-.back-link,
-.primary-btn,
-.secondary-btn {
-  border: none;
-  border-radius: var(--radius-full);
-  padding: 10px 20px;
-  text-decoration: none;
-  cursor: pointer;
-  font-weight: 600;
-  font-size: 14px;
-  transition: all var(--transition-fast);
-}
-
-.back-link,
-.secondary-btn {
-  background: var(--color-gray-100);
-  color: var(--color-gray-700);
-}
-
-.back-link:hover,
-.secondary-btn:hover {
-  background: var(--color-gray-200);
-}
-
-.primary-btn {
-  background: var(--color-primary);
-  color: var(--color-white);
-  box-shadow: var(--shadow-primary);
-}
-
-.primary-btn:hover {
-  background: var(--color-primary-dark);
-  transform: translateY(-1px);
-}
-
-.primary-btn:disabled {
-  opacity: 0.6;
-  cursor: not-allowed;
-  transform: none;
-}
-
-.composer-section,
-.result-section,
-.source-section,
-.image-section {
-  padding: var(--space-5) 0;
-  border-bottom: 1px solid var(--color-gray-200);
-}
-
-.composer-section {
-  padding-top: 0;
-}
-
-.composer-form {
-  display: grid;
-  gap: var(--space-5);
-}
-
-.field {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.field span {
-  font-weight: 600;
-  font-size: 14px;
-  color: var(--color-gray-800);
-}
-
-textarea,
-input[type='file'] {
-  width: 100%;
-}
-
-textarea {
+.query-input {
   resize: vertical;
-  min-height: 120px;
-  border-radius: var(--radius-lg);
-  border: 1px solid var(--color-gray-200);
-  padding: var(--space-4);
-  font-size: 15px;
-  font-family: var(--font-sans);
-  background: var(--color-white);
-  transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
-}
-
-textarea:focus {
-  outline: none;
-  border-color: var(--color-primary);
-  box-shadow: 0 0 0 3px var(--color-primary-lighter);
-}
-
-input[type='file'] {
-  padding: var(--space-3);
-  border: 1px solid var(--color-gray-200);
-  border-radius: var(--radius-md);
-  background: var(--color-white);
+  min-height: 100px;
+  border: 1.5px solid var(--color-border);
+  border-radius: var(--radius-input);
+  padding: 14px 16px;
   font-size: 14px;
-  cursor: pointer;
+  font-family: var(--font-family);
+  background: var(--color-bg);
+  color: var(--color-title);
+  transition: border-color 0.2s;
 }
+.query-input:focus { outline: none; border-color: var(--color-red); box-shadow: 0 0 0 3px rgba(230,57,70,0.08); }
+.query-input::placeholder { color: var(--color-muted); }
 
-input[type='file']:hover {
-  border-color: var(--color-gray-300);
+.input-row { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px; }
+
+.quick-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+
+.quick-tag {
+  border: 1px solid var(--color-border); border-radius: var(--radius-pill);
+  padding: 6px 14px; font-size: 12px; color: var(--color-hint);
+  background: var(--color-bg); cursor: pointer; transition: all 0.2s; font-family: var(--font-family);
 }
+.quick-tag:hover { border-color: var(--color-red); color: var(--color-red-light); }
 
-small {
-  font-size: 12px;
-  color: var(--color-gray-500);
+.input-actions { display: flex; gap: 12px; align-items: center; }
+
+.upload-btn {
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 16px; border: 1.5px dashed var(--color-border);
+  border-radius: var(--radius-input); color: var(--color-muted);
+  font-size: 12px; cursor: pointer; transition: all 0.2s; font-family: var(--font-family);
 }
+.upload-btn:hover { border-color: var(--color-red); color: var(--color-red-light); }
 
-.actions {
-  display: flex;
-  gap: var(--space-3);
-  flex-wrap: wrap;
+.gen-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 24px; border: none; border-radius: var(--radius-pill);
+  background: var(--gradient-brand); color: white;
+  font-size: 14px; font-weight: 600; font-family: var(--font-family);
+  cursor: pointer; box-shadow: var(--shadow-button); transition: all 0.2s;
 }
+.gen-btn:hover:not(:disabled) { filter: brightness(1.1); transform: translateY(-2px); }
+.gen-btn:disabled { opacity: 0.6; cursor: not-allowed; }
 
-.error-text {
-  color: var(--color-error);
-  font-size: 14px;
-  margin: 0;
-}
+.error-msg { margin: 0; font-size: 13px; color: var(--color-red-light); }
 
-.result-grid {
+/* Result Layout (Map + Itinerary) */
+.result-layout {
   display: grid;
-  grid-template-columns: minmax(0, 2fr) minmax(0, 1fr);
-  gap: var(--space-5);
-  min-width: 0;
-}
-
-.result-section {
-  padding-right: var(--space-3);
-  min-width: 0;
-}
-
-.result-aside {
-  display: grid;
-  gap: var(--space-5);
-  align-content: start;
-  min-width: 0;
-}
-
-.result-header {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-4);
-  align-items: flex-start;
-  margin-bottom: var(--space-5);
-}
-
-.eyebrow {
-  text-transform: uppercase;
-  font-size: 11px;
-  letter-spacing: 0.1em;
-  color: var(--color-primary);
-  font-weight: 600;
-  margin: 0 0 var(--space-2);
-}
-
-.result-header h3 {
-  margin: 0;
-  font-size: 24px;
-  font-weight: 700;
-  color: var(--color-gray-900);
-  letter-spacing: -0.02em;
-}
-
-.subtitle {
-  margin: var(--space-2) 0 0;
-  color: var(--color-gray-500);
-  font-size: 14px;
-}
-
-.meta-badges {
-  display: flex;
-  gap: var(--space-2);
-  flex-wrap: wrap;
-}
-
-.tag {
-  background: var(--color-primary);
-  color: var(--color-white);
-  padding: 4px 12px;
-  border-radius: var(--radius-full);
-  font-size: 12px;
-  font-weight: 600;
-}
-
-.tag.soft {
-  background: var(--color-primary-lighter);
-  color: var(--color-primary-dark);
-}
-
-.result-highlight {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-  gap: var(--space-4);
-  margin-bottom: var(--space-5);
-}
-
-.highlight-card {
-  padding: var(--space-3) var(--space-4);
-  background: var(--color-gray-50);
-  border-radius: var(--radius-md);
-  border-left: 3px solid var(--color-primary);
-}
-
-.label {
-  margin: 0 0 var(--space-2);
-  font-size: 12px;
-  color: var(--color-gray-500);
-  font-weight: 500;
-}
-
-.value {
-  margin: 0;
-  font-weight: 600;
-  color: var(--color-gray-900);
-  font-size: 15px;
-}
-
-.value.clamp {
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.markdown-body {
-  line-height: 1.8;
-  color: var(--color-gray-800);
-}
-
-.markdown-body h1,
-.markdown-body h2,
-.markdown-body h3 {
-  margin-top: var(--space-5);
-  margin-bottom: var(--space-3);
-  font-weight: 700;
-  color: var(--color-gray-900);
-}
-
-.markdown-body h1 { font-size: 24px; }
-.markdown-body h2 { font-size: 20px; }
-.markdown-body h3 { font-size: 18px; }
-
-.markdown-body p {
-  margin-bottom: var(--space-3);
-}
-
-.markdown-body ul,
-.markdown-body ol {
-  padding-left: var(--space-5);
-  margin-bottom: var(--space-3);
-}
-
-.markdown-body li {
-  margin-bottom: var(--space-2);
-}
-
-.markdown-body blockquote {
-  border-left: 3px solid var(--color-primary);
-  margin: var(--space-4) 0;
-  padding: var(--space-3) var(--space-4);
-  color: var(--color-gray-600);
-  background: var(--color-gray-50);
-  border-radius: 0 var(--radius-md) var(--radius-md) 0;
-}
-
-.markdown-body code {
-  background: var(--color-gray-100);
-  padding: 2px 6px;
-  border-radius: var(--radius-sm);
-  font-size: 0.9em;
-  font-family: var(--font-mono);
-}
-
-.markdown-body pre {
-  background: var(--color-gray-900);
-  color: var(--color-white);
-  padding: var(--space-4);
-  border-radius: var(--radius-md);
-  overflow-x: auto;
-}
-
-.markdown-body pre code {
-  background: none;
-  padding: 0;
-  color: inherit;
-}
-
-.image-list,
-.source-list {
-  display: grid;
-  gap: var(--space-4);
-}
-
-.image-item {
-  display: grid;
-  gap: var(--space-2);
-  text-decoration: none;
-  color: inherit;
-}
-
-.image-item img {
+  grid-template-columns: 1fr 1fr;
   width: 100%;
-  border-radius: var(--radius-lg);
-  object-fit: cover;
-  aspect-ratio: 4 / 3;
-  display: block;
-  transition: transform var(--transition-normal);
+  height: 100vh;
+  gap: 0;
 }
 
-.image-item:hover img {
-  transform: scale(1.02);
-}
-
-.image-item span {
-  font-size: 12px;
-  color: var(--color-gray-500);
-}
-
-.source-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  max-width: 100%;
-}
-
-.source-list li {
-  padding: var(--space-3);
-  background: var(--color-gray-50);
-  border-radius: var(--radius-md);
-}
-
-.source-list a {
-  color: var(--color-primary);
-  text-decoration: none;
-  font-weight: 500;
-}
-
-.source-list a:hover {
-  text-decoration: underline;
-}
-
-.source-list p {
-  margin: var(--space-2) 0 0;
-  color: var(--color-gray-500);
-  font-size: 13px;
-}
-
-/* History Sidebar */
-.history-sidebar {
-  position: fixed;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  width: var(--sidebar-width);
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-4);
-  padding: var(--space-5) var(--space-4);
-  background: var(--color-white);
-  border-right: 1px solid var(--color-gray-200);
-  overflow-y: auto;
-  transition: width var(--transition-normal);
-  z-index: 10;
-}
-
-.history-sidebar.collapsed {
-  width: var(--sidebar-collapsed);
-}
-
-.history-top {
-  display: flex;
-  justify-content: space-between;
-  gap: var(--space-3);
-  align-items: flex-start;
-}
-
-.history-title-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--space-3);
-  width: 100%;
-}
-
-.history-heading h3 {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--color-gray-900);
-}
-
-.history-heading p {
-  margin: var(--space-1) 0 0;
-  color: var(--color-gray-500);
-  font-size: 12px;
-}
-
-.history-toolbar {
-  display: flex;
-  gap: var(--space-2);
-  margin-top: 0;
-  width: auto;
-  justify-content: flex-end;
-}
-
-.history-sidebar.collapsed .history-body {
-  display: none;
-}
-
-.history-sidebar.collapsed .history-top {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-2);
-}
-
-.history-sidebar.collapsed .history-title-row {
-  flex-direction: column;
-  align-items: flex-start;
-  gap: var(--space-1);
-}
-
-.history-sidebar.collapsed .history-heading h3 {
-  font-size: 13px;
-}
-
-.history-sidebar.collapsed .history-heading p {
-  font-size: 10px;
-}
-
-.history-sidebar.collapsed .history-toolbar {
-  flex-direction: column;
-  align-items: flex-start;
-}
-
-.history-footer {
-  margin-top: auto;
-  padding-top: var(--space-4);
-  border-top: 1px solid var(--color-gray-200);
-}
-
-.history-actions {
-  display: flex;
-  justify-content: flex-end;
-}
-
-.empty-state {
-  padding: var(--space-6) var(--space-3);
-  text-align: center;
-  color: var(--color-gray-400);
-}
-
-.empty-state p {
-  font-size: 14px;
-  margin-bottom: var(--space-2);
-}
-
-.empty-state span {
-  font-size: 12px;
-}
-
-.image-list.masonry {
-  display: block;
-  column-count: auto;
-  column-width: 180px;
-  column-gap: var(--space-4);
-  width: 100%;
-  max-width: 100%;
-}
-
-.image-list.masonry .image-item {
-  break-inside: avoid;
-  margin-bottom: var(--space-4);
-}
-
-.history-list {
-  display: grid;
-  gap: var(--space-3);
-}
-
-.history-item {
-  display: grid;
-  gap: var(--space-2);
-  border: none;
-  background: transparent;
-  border-radius: var(--radius-md);
-  padding: var(--space-3);
-  text-align: left;
-  transition: background-color var(--transition-fast);
+.map-section {
   position: relative;
-}
-
-.history-item:hover {
-  background: var(--color-gray-100);
-}
-
-.history-item.active {
-  background: var(--color-primary-lighter);
-}
-
-.history-title {
-  font-weight: 600;
-  margin-bottom: var(--space-1);
-  color: var(--color-gray-900);
-  font-size: 14px;
-}
-
-.history-meta {
-  display: flex;
-  gap: var(--space-3);
-  font-size: 12px;
-  color: var(--color-gray-500);
-  margin-bottom: var(--space-2);
-}
-
-.history-main {
-  background: transparent;
-  border: none;
-  text-align: left;
-  padding: 0 60px 0 0;
-  cursor: pointer;
-}
-
-.history-actions-inline {
-  display: flex;
-  gap: var(--space-2);
-  position: absolute;
-  bottom: var(--space-2);
-  right: var(--space-2);
-  opacity: 0;
-  pointer-events: none;
-  transition: opacity var(--transition-fast);
-}
-
-.history-item:hover .history-actions-inline,
-.history-item.active .history-actions-inline {
-  opacity: 1;
-  pointer-events: auto;
-}
-
-.inline-btn {
-  border: none;
-  background: var(--color-white);
-  color: var(--color-primary);
-  padding: 4px 10px;
-  border-radius: var(--radius-full);
-  font-size: 12px;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all var(--transition-fast);
-  box-shadow: var(--shadow-xs);
-}
-
-.inline-btn:hover {
-  background: var(--color-primary);
-  color: var(--color-white);
-}
-
-.inline-btn.danger {
-  background: var(--color-white);
-  color: var(--color-error);
-}
-
-.inline-btn.danger:hover {
-  background: var(--color-error);
-  color: var(--color-white);
-}
-
-.history-snippet {
-  margin: 0 0 var(--space-2);
-  color: var(--color-gray-600);
-  font-size: 13px;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+  background: #f5f5f5;
+  border-right: 2px solid var(--color-border);
   overflow: hidden;
+  box-shadow: inset -2px 0 8px rgba(0, 0, 0, 0.05);
+}
+
+.itinerary-section {
+  display: flex;
+  flex-direction: column;
+  background: #0a0a0a;
+  overflow: hidden;
+}
+
+.itinerary-top {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-bottom: 2px solid #333333;
+  background: #0a0a0a;
+}
+
+.ai-chat-panel {
+  flex: 0 0 280px;
+  display: flex;
+  flex-direction: column;
+  background: #0a0a0a;
+  border-top: 2px solid #333333;
+  overflow: hidden;
+  box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+}
+
+.chat-header {
+  padding: 16px;
+  border-bottom: 1px solid #333333;
+  flex-shrink: 0;
+  background: #111111;
+}
+
+.chat-header h3 {
+  margin: 0 0 4px;
+  font-size: 14px;
+  font-weight: 700;
+  color: #f8fafc;
+}
+
+.chat-subtitle {
+  margin: 0;
+  font-size: 11px;
+  color: var(--color-hint);
+}
+
+.chat-messages {
+  flex: 1;
+  overflow-y: auto;
+  padding: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  background: #0a0a0a;
+}
+
+.message {
+  font-size: 12px;
   line-height: 1.5;
 }
 
-.history-date {
-  font-size: 11px;
-  color: var(--color-gray-400);
+.message-content {
+  padding: 8px 12px;
+  border-radius: 6px;
+  word-break: break-word;
 }
 
-/* Section Headers */
-h3 {
-  font-size: 16px;
+.bot-message .message-content {
+  background: rgba(255, 107, 107, 0.15);
+  color: #e2e8f0;
+}
+
+.user-message .message-content {
+  background: var(--color-red-light);
+  color: white;
+  margin-left: 20px;
+}
+
+.chat-input-area {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-top: 1px solid #333333;
+  flex-shrink: 0;
+  background: #0a0a0a;
+}
+
+.chat-input {
+  flex: 1;
+  border: 1px solid #333333;
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-size: 12px;
+  font-family: var(--font-family);
+  background: #1a1a1a;
+  color: #f8fafc;
+}
+
+.chat-input::placeholder {
+  color: #64748b;
+  opacity: 0.6;
+}
+
+.chat-input:focus {
+  outline: none;
+  border-color: var(--color-red-light);
+  box-shadow: 0 0 0 2px rgba(255, 107, 107, 0.1);
+}
+
+.chat-send-btn {
+  padding: 8px 16px;
+  border: none;
+  background: var(--color-red-light);
+  color: white;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.chat-send-btn:hover {
+  background: var(--color-red);
+}
+
+.result-top-bar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+  padding: 20px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-card);
+  flex-shrink: 0;
+}
+
+.result-title-area h2 {
+  font-size: 18px;
   font-weight: 700;
-  color: var(--color-gray-900);
-  margin-bottom: var(--space-4);
+  color: var(--color-title);
+  margin: 0 0 4px;
 }
 
-/* Responsive */
-@media (max-width: 1100px) {
-  .history-sidebar {
-    position: static;
-    width: 100%;
-    height: auto;
-    border-right: none;
-    border-bottom: 1px solid var(--color-gray-200);
-  }
-
-  .history-sidebar.collapsed {
-    width: 100%;
-  }
-
-  .page-shell,
-  .page-shell.collapsed {
-    padding-left: 0;
-  }
+.result-meta {
+  font-size: 13px;
+  color: var(--color-body);
+  opacity: 0.7;
+  margin: 0;
 }
 
-@media (max-width: 960px) {
-  .result-grid {
+.result-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  flex-shrink: 0;
+  width: 100%;
+  max-width: 380px;
+}
+
+.action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: 100%;
+  min-width: 0;
+  padding: 8px 0;
+  border: none;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.2s;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.action-btn:not(.secondary) {
+  background: var(--gradient-brand);
+  color: white;
+}
+
+.action-btn.secondary {
+  background: var(--color-bg);
+  color: var(--color-secondary);
+  border: 1px solid var(--color-border);
+}
+
+.action-btn:hover {
+  filter: brightness(1.1);
+}
+
+/* 响应式设计 */
+@media (max-width: 1024px) {
+  .result-layout {
     grid-template-columns: 1fr;
+    height: auto;
   }
 
-  .image-list.masonry {
-    column-count: 1;
+  .map-section {
+    height: 400px;
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
   }
 
-  .page-header {
-    flex-direction: column;
-    align-items: flex-start;
+  .itinerary-section {
+    height: auto;
+    max-height: none;
+  }
+
+  .ai-chat-panel {
+    flex: 0 0 200px;
   }
 }
 </style>

@@ -8,10 +8,11 @@ import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import org.springframework.http.HttpEntity;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
+import org.springframework.web.client.RestTemplate;
 import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -21,13 +22,15 @@ public class TripAssistantService {
 
     private static final Logger logger = LoggerFactory.getLogger(TripAssistantService.class);
 
-    private final HttpClient httpClient = HttpClient.newBuilder()
-        .version(HttpClient.Version.HTTP_1_1)
-        .build();
+    private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     @Value("${app.agent.base-url:http://localhost:8000/api/trip/plan}")
     private String agentBaseUrl;
+
+    public TripAssistantService(RestTemplate restTemplate) {
+        this.restTemplate = restTemplate;
+    }
 
     public Map<String, Object> generateTripPlan(String query, MultipartFile file, Long userId) {
         Map<String, Object> payload = new LinkedHashMap<>();
@@ -47,23 +50,22 @@ public class TripAssistantService {
         try {
             String requestBody = objectMapper.writeValueAsString(payload);
             logger.info("Agent request payload: {}", requestBody);
-            HttpRequest request = HttpRequest.newBuilder(URI.create(agentBaseUrl))
-                .header("Content-Type", "application/json")
-                .header("Accept", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(requestBody, java.nio.charset.StandardCharsets.UTF_8))
-                .build();
 
-            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
-            if (response.statusCode() >= 200 && response.statusCode() < 300) {
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON));
+
+            HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(agentBaseUrl, entity, String.class);
+            // Use getStatusCode().value() for maximum compatibility across Spring versions
+            int status = response.getStatusCode().value();
+            if (status >= 200 && status < 300) {
                 @SuppressWarnings("unchecked")
-                Map<String, Object> data = objectMapper.readValue(response.body(), Map.class);
+                Map<String, Object> data = objectMapper.readValue(response.getBody(), Map.class);
                 return data;
             }
-            logger.warn("Agent error status: {}, body: {}", response.statusCode(), response.body());
-            return fallbackPlan(query, file, "Agent returned HTTP " + response.statusCode());
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return fallbackPlan(query, file, e.getMessage());
+            logger.warn("Agent error status: {}, body: {}", status, response.getBody());
+            return fallbackPlan(query, file, "Agent returned HTTP " + status);
         } catch (IOException e) {
             return fallbackPlan(query, file, e.getMessage());
         }

@@ -1,5 +1,6 @@
 package org.example.backend.service;
 
+import org.example.backend.dto.SavePlanRequest;
 import org.example.backend.dto.TravelPlanRequest;
 import org.example.backend.dto.TravelPlanResponse;
 import org.example.backend.entity.PlanHighlight;
@@ -26,7 +27,7 @@ public class TravelPlanService {
     public TravelPlanResponse generateTravelPlan(TravelPlanRequest request, Long userId) {
         // Generate itinerary
         String itinerary = generateItinerary(request);
-        
+
         // Create TravelPlan entity
         TravelPlan plan = new TravelPlan();
         plan.setUserId(userId);
@@ -39,10 +40,10 @@ public class TravelPlanService {
         plan.setInterests(request.getInterests());
         plan.setTravelStyle(request.getTravelStyle());
         plan.setStatus("draft");
-        
+
         // First save the plan to get its ID
         TravelPlan savedPlan = travelPlanRepository.save(plan);
-        
+
         // Add highlights
         List<String> highlightTexts = generateHighlights(request);
         java.util.Set<PlanHighlight> highlights = new java.util.HashSet<>();
@@ -52,12 +53,12 @@ public class TravelPlanService {
             h.setPlanId(savedPlan.getId());
             highlights.add(h);
         }
-        
+
         savedPlan.setHighlights(highlights);
-        
+
         // Save highlights
         TravelPlan finalPlan = travelPlanRepository.save(savedPlan);
-        
+
         // Convert to response
         return convertToResponse(finalPlan);
     }
@@ -94,8 +95,7 @@ public class TravelPlanService {
                         "Day 1-3: 巴黎\nDay 4-7: 瑞士\nDay 8-10: 意大利",
                         24999,
                         0.95,
-                        Arrays.asList("埃菲尔铁塔", "卢浮宫", "阿尔卑斯山", "威尼斯")
-                ),
+                        Arrays.asList("埃菲尔铁塔", "卢浮宫", "阿尔卑斯山", "威尼斯")),
                 new TravelPlanResponse(
                         2L,
                         "亚洲美食之旅",
@@ -104,9 +104,7 @@ public class TravelPlanService {
                         "Day 1-4: 曼谷\nDay 5-7: 清迈",
                         8999,
                         0.89,
-                        Arrays.asList("大皇宫", "浮市场", "清迈古城")
-                )
-        );
+                        Arrays.asList("大皇宫", "浮市场", "清迈古城")));
     }
 
     /**
@@ -148,19 +146,91 @@ public class TravelPlanService {
                 "🍽️ 地道美食之旅",
                 "📸 拍照圣地打卡",
                 "🛍️ 特色购物体验",
-                "🏨 精选住宿推荐"
-        );
+                "🏨 精选住宿推荐");
+    }
+
+    /**
+     * Save a travel plan to user's personal plans
+     */
+    public TravelPlanResponse savePlan(org.example.backend.dto.SavePlanRequest request) {
+        // Create TravelPlan entity
+        TravelPlan plan = new TravelPlan();
+        plan.setUserId(request.getUserId());
+        plan.setTitle(request.getTitle());
+        plan.setDestinationName(request.getDestination());
+        plan.setDays(request.getDays());
+        plan.setItinerary(request.getItinerary());
+        plan.setEstimatedBudget(request.getBudget() != null ? BigDecimal.valueOf(request.getBudget()) : null);
+        plan.setInterests(request.getInterests());
+        plan.setTravelStyle(request.getTravelStyle());
+        plan.setStatus("saved");
+        plan.setAiConfidenceScore(BigDecimal.valueOf(0.90));
+
+        // First save the plan to get its ID
+        TravelPlan savedPlan = travelPlanRepository.save(plan);
+
+        // Add highlights
+        if (request.getHighlights() != null && !request.getHighlights().isEmpty()) {
+            java.util.Set<PlanHighlight> highlights = new java.util.HashSet<>();
+            for (String text : request.getHighlights()) {
+                PlanHighlight h = new PlanHighlight();
+                h.setHighlightText(text);
+                h.setPlanId(savedPlan.getId());
+                highlights.add(h);
+            }
+            savedPlan.setHighlights(highlights);
+            savedPlan = travelPlanRepository.save(savedPlan);
+        }
+
+        return convertToResponse(savedPlan);
+    }
+
+    /**
+     * Update a plan
+     */
+    public TravelPlanResponse updatePlan(Long planId, java.util.Map<String, Object> request) {
+        return travelPlanRepository.findById(planId)
+                .map(plan -> {
+                    if (request.containsKey("itinerary")) {
+                        plan.setItinerary((String) request.get("itinerary"));
+                    }
+                    if (request.containsKey("title")) {
+                        plan.setTitle((String) request.get("title"));
+                    }
+                    if (request.containsKey("destination")) {
+                        plan.setDestinationName((String) request.get("destination"));
+                    }
+                    if (request.containsKey("days")) {
+                        plan.setDays((Integer) request.get("days"));
+                    }
+                    if (request.containsKey("budget")) {
+                        plan.setEstimatedBudget(BigDecimal.valueOf((Integer) request.get("budget")));
+                    }
+                    return convertToResponse(travelPlanRepository.save(plan));
+                })
+                .orElse(null);
+    }
+
+    /**
+     * Delete a plan
+     */
+    public boolean deletePlan(Long planId, Long userId) {
+        return travelPlanRepository.findById(planId)
+                .filter(plan -> plan.getUserId().equals(userId))
+                .map(plan -> {
+                    travelPlanRepository.delete(plan);
+                    return true;
+                })
+                .orElse(false);
     }
 
     /**
      * Convert TravelPlan entity to DTO
      */
     private TravelPlanResponse convertToResponse(TravelPlan plan) {
-        List<String> highlightTexts = plan.getHighlights() != null ?
-                plan.getHighlights().stream()
-                        .map(PlanHighlight::getHighlightText)
-                        .collect(Collectors.toList()) :
-                Arrays.asList("景点体验", "美食品尝", "文化探索");
+        List<String> highlightTexts = plan.getHighlights() != null ? plan.getHighlights().stream()
+                .map(PlanHighlight::getHighlightText)
+                .collect(Collectors.toList()) : Arrays.asList("景点体验", "美食品尝", "文化探索");
 
         return new TravelPlanResponse(
                 plan.getId(),
@@ -170,7 +240,6 @@ public class TravelPlanService {
                 plan.getItinerary(),
                 plan.getEstimatedBudget() != null ? plan.getEstimatedBudget().intValue() : 0,
                 plan.getAiConfidenceScore() != null ? plan.getAiConfidenceScore().doubleValue() : 0.0,
-                highlightTexts
-        );
+                highlightTexts);
     }
 }
