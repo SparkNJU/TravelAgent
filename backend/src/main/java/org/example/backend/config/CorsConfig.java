@@ -13,7 +13,7 @@ public class CorsConfig {
 
     @Bean
     public CorsFilter corsFilter() {
-        CorsConfiguration config = new CorsConfiguration();
+        CorsConfiguration config = new CorsConfiguration();//
 
         // 允许所有来源
         config.setAllowedOriginPatterns(Arrays.asList("*"));
