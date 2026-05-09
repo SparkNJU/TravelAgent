@@ -20,7 +20,7 @@
           <h1>AI 旅行规划</h1>
           <p>描述你的旅行想法，智能生成个性化行程方案</p>
         </div>
-        <ChatInput :loading="loading" @submit="handleSend" />
+        <ChatInput :loading="loading" v-model="selectedMode" :selectedModel="selectedModel" @update:selectedModel="selectedModel = $event" @submit="handleSend" />
       </div>
 
       <!-- Active conversation: messages + compact input -->
@@ -63,6 +63,9 @@
             compact
             :loading="loading"
             :hasMessages="true"
+            v-model="selectedMode"
+            :selectedModel="selectedModel"
+            @update:selectedModel="selectedModel = $event"
             @submit="handleSend"
           />
         </div>
@@ -133,6 +136,8 @@ const sidebarCollapsed = ref(false)
 const loading = ref(false)
 const messagesRef = ref(null)
 const activeController = ref(null)
+const selectedMode = ref('agent')
+const selectedModel = ref('deepseek-v4-flash')
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -245,8 +250,9 @@ function handleSend({ query, file }) {
   const formData = new FormData()
   formData.append('query', query)
   formData.append('userId', localStorage.getItem('userId') || '1')
-  formData.append('mode', 'agent')
-  formData.append('generatePlanFirst', 'true')
+  formData.append('mode', selectedMode.value)
+  formData.append('generatePlanFirst', selectedMode.value === 'plan' ? 'false' : 'true')
+  formData.append('model', selectedModel.value)
   if (file) formData.append('file', file)
 
   const agentMsg = () => activeConversation.value?.messages.at(-1)
@@ -264,7 +270,7 @@ function handleSend({ query, file }) {
         msg.planContent += event.content
       } else if (event.type === 'done') {
         return
-      } else if (['thought', 'action', 'observation'].includes(event.type)) {
+      } else if (['thought', 'action', 'observation', 'reflection'].includes(event.type)) {
         msg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
       } else if (event.type === 'error') {
         msg.events.push({ type: 'observation', content: `Error: ${event.content}`, metadata: {} })

@@ -18,6 +18,22 @@
             <span v-if="file" class="file-name">{{ file.name }}</span>
             <span v-else>附件</span>
           </label>
+          <div class="mode-select-wrap">
+            <select
+              :value="mode"
+              class="mode-select"
+              @change="onModeChange"
+            >
+              <option v-for="m in modes" :key="m.value" :value="m.value">{{ m.label }}</option>
+            </select>
+          </div>
+          <select
+            :value="modelName"
+            class="model-select"
+            @change="$emit('update:selectedModel', $event.target.value)"
+          >
+            <option v-for="m in models" :key="m.value" :value="m.value">{{ m.label }}</option>
+          </select>
           <div v-if="!compact" class="quick-tags">
             <button
               v-for="tag in tags"
@@ -42,7 +58,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick } from 'vue'
+import { ref, watch, nextTick } from 'vue'
 import SvgIcon from '../SvgIcon.vue'
 
 const props = defineProps({
@@ -50,9 +66,31 @@ const props = defineProps({
   loading: { type: Boolean, default: false },
   placeholder: { type: String, default: '描述你的旅行想法，例如：帮我做一个东京5天旅行计划...' },
   hasMessages: { type: Boolean, default: false },
+  modelValue: { type: String, default: 'agent' },
+  selectedModel: { type: String, default: 'deepseek-v4-flash' },
 })
 
-const emit = defineEmits(['submit'])
+const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel'])
+
+const mode = ref(props.modelValue)
+const modelName = ref(props.selectedModel)
+
+watch(() => props.modelValue, (v) => { mode.value = v })
+watch(() => props.selectedModel, (v) => { modelName.value = v })
+
+const modes = [
+  { value: 'agent', label: 'Agent' },
+  { value: 'plan', label: 'Plan' },
+  { value: 'reflection', label: 'Reflection' },
+]
+
+const models = [
+  { value: 'deepseek-v4-flash', label: 'DeepSeek V4' },
+  { value: 'kimi-k2.6', label: 'Kimi K2.6' },
+  { value: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
+  { value: 'qwen3.6-plus', label: 'Qwen 3.6+' },
+  { value: 'glm-5.1', label: 'GLM 5.1' },
+]
 
 const tags = ['3天短途', '5天深度游', '美食为主', '亲子游', '情侣出行']
 const localQuery = ref('')
@@ -76,6 +114,11 @@ function autoResize() {
   if (!el) return
   el.style.height = 'auto'
   el.style.height = el.scrollHeight + 'px'
+}
+
+function onModeChange(e) {
+  mode.value = e.target.value
+  emit('update:modelValue', mode.value)
 }
 
 function handleSubmit() {
@@ -161,7 +204,7 @@ function handleSubmit() {
   padding: 4px 10px;
   border-radius: var(--radius-pill);
   font-size: 12px;
-  color: var(--color-hint);
+  color: var(--color-title);
   cursor: pointer;
   transition: all 0.15s;
   white-space: nowrap;
@@ -200,6 +243,59 @@ function handleSubmit() {
 .quick-tag:hover {
   border-color: var(--color-red);
   color: var(--color-red-light);
+}
+
+.mode-select-wrap {
+  display: block;
+  width: 160px;
+  flex-shrink: 0;
+}
+
+.mode-select {
+  width: 100%;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-family: var(--font-family);
+  color: var(--color-title);
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+}
+
+.mode-select:hover {
+  border-color: var(--color-secondary);
+}
+
+.model-select {
+  width: 160px;
+  padding: 3px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  font-family: var(--font-family);
+  color: var(--color-title);
+  background: transparent;
+  cursor: pointer;
+  outline: none;
+  flex-shrink: 0;
+  -webkit-appearance: none;
+  appearance: none;
+  padding-right: 20px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 6px center;
+}
+
+.model-select:hover {
+  border-color: var(--color-secondary);
 }
 
 .send-btn {
