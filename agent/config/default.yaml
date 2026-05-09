@@ -1,0 +1,21 @@
+llm:
+  base_url: "https://dashscope.aliyuncs.com/compatible-mode/v1"
+  api_key_env: "DASHSCOPE_API_KEY"
+  chat_model: "deepseek-v4-flash"
+  temperature: 0.7
+  max_tokens: 4096
+
+agent:
+  max_iterations: 8
+  self_correction_retries: 2
+
+tools:
+  serper:
+    enabled: true
+    api_key_env: "SERPER_API_KEY"
+  weather:
+    enabled: true
+    api_key_env: "WEATHER_API_KEY"
+    base_url: "https://api.weatherapi.com/v1"
+  file_parser:
+    enabled: true
