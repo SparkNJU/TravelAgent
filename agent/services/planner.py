@@ -13,12 +13,11 @@ execution plan that an AI agent will follow to create a detailed travel itinerar
 
 Available tools:
 - web_search: search the web for attractions, food, transportation, etc.
-- get_weather: get current weather and forecast for a city
 - parse_file: extract text from an uploaded file (txt/pdf/docx)
 
 For each step, specify:
 1. What needs to be done
-2. Which tool to use (web_search, get_weather, parse_file, or "reasoning" for LLM reasoning)
+2. Which tool to use (web_search, parse_file, or "reasoning" for LLM reasoning)
 3. What information is expected from that step
 
 Output a numbered list of steps. Be specific about search queries and reasoning tasks. \

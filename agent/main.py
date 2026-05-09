@@ -36,14 +36,6 @@ _serper = SerperClient()
 
 _tool_registry = ToolRegistry()
 _tool_registry.register(WebSearchTool(_serper))
-
-if config.tools.weather_enabled:
-    weather_key = os.getenv(config.tools.weather_api_key_env, "")
-    if weather_key:
-        from services.weather_client import WeatherTool
-
-        _tool_registry.register(WeatherTool(weather_key, config.tools.weather_base_url))
-
 _tool_registry.register(FileParserTool())
 
 _planner = MetaPlanner(_llm)
