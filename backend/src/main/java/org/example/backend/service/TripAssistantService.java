@@ -1,6 +1,7 @@
 package org.example.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import org.example.backend.dto.AgentChatRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -36,7 +37,9 @@ public class TripAssistantService {
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private final ExecutorService sseExecutor = Executors.newCachedThreadPool();
-    private final HttpClient httpClient = HttpClient.newHttpClient();
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .version(HttpClient.Version.HTTP_1_1)
+            .build();
 
     @Value("${app.agent.base-url:http://localhost:8000/api/trip/plan}")
     private String agentBaseUrl;
@@ -71,7 +74,7 @@ public class TripAssistantService {
             logger.info("Agent request payload: {}", requestBody);
 
             HttpHeaders headers = new HttpHeaders();
-            headers.setContentType(MediaType.APPLICATION_JSON);
+            headers.setContentType(MediaType.valueOf("application/json;charset=UTF-8"));
             headers.setAccept(java.util.List.of(MediaType.APPLICATION_JSON));
 
             HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
@@ -91,18 +94,25 @@ public class TripAssistantService {
 
     /**
      * SSE streaming endpoint: proxies the Python agent's SSE stream to the frontend.
+     * Forwards model and temperature for per-request LLM configuration.
      */
-    public SseEmitter streamAgentChat(String query, Long userId, String mode,
-                                       boolean generatePlanFirst, MultipartFile file) {
+    public SseEmitter streamAgentChat(AgentChatRequest req, MultipartFile file) {
         SseEmitter emitter = new SseEmitter(300_000L); // 5 min timeout
 
         sseExecutor.execute(() -> {
             try {
                 Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("query", query);
-                payload.put("user_id", userId);
-                payload.put("mode", mode);
-                payload.put("generate_plan_first", generatePlanFirst);
+                payload.put("query", req.getQuery());
+                payload.put("user_id", req.getUserId());
+                payload.put("mode", req.getMode());
+                payload.put("generate_plan_first", req.isGeneratePlanFirst());
+
+                if (req.getModel() != null && !req.getModel().isEmpty()) {
+                    payload.put("model", req.getModel());
+                }
+                if (req.getTemperature() != null) {
+                    payload.put("temperature", req.getTemperature());
+                }
 
                 if (file != null && !file.isEmpty()) {
                     payload.put("file_name", file.getOriginalFilename());
@@ -111,13 +121,14 @@ public class TripAssistantService {
                 }
 
                 String jsonBody = objectMapper.writeValueAsString(payload);
-                logger.info("Agent SSE request: mode={}, query={}", mode, query);
+                logger.info("SSE stream started: userId={}, mode={}, model={}, query={}",
+                        req.getUserId(), req.getMode(), req.getModel(), req.getQuery());
 
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(agentChatUrl))
-                        .header("Content-Type", "application/json")
+                        .header("Content-Type", "application/json; charset=utf-8")
                         .header("Accept", "text/event-stream")
-                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
                         .build();
 
                 HttpResponse<java.io.InputStream> response = httpClient.send(
@@ -146,12 +157,13 @@ public class TripAssistantService {
                                         Map.of("type", "done", "content", "")));
                                 break;
                             }
-                            // Forward the SSE data line as-is to the frontend
+                            logger.debug("SSE event: {}", data);
                             emitter.send(SseEmitter.event().name("agent").data(data));
                         }
                     }
                 }
 
+                logger.info("SSE stream completed: userId={}", req.getUserId());
                 emitter.complete();
             } catch (Exception e) {
                 logger.error("Agent SSE proxy error", e);

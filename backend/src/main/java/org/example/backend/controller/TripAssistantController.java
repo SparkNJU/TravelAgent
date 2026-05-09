@@ -1,5 +1,6 @@
 package org.example.backend.controller;
 
+import org.example.backend.dto.AgentChatRequest;
 import org.example.backend.dto.ApiResponse;
 import org.example.backend.service.TripAssistantService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -37,17 +38,15 @@ public class TripAssistantController {
     /**
      * SSE streaming endpoint: proxies the Python agent's SSE stream.
      * Returns text/event-stream for real-time agent thinking/acting visualization.
+     * Accepts model and temperature for per-request LLM configuration.
      */
     @PostMapping(value = "/chat/stream", consumes = MediaType.MULTIPART_FORM_DATA_VALUE,
-            produces = MediaType.TEXT_EVENT_STREAM_VALUE)
+            produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
     public SseEmitter chatStream(
-            @RequestParam("query") String query,
-            @RequestParam(value = "userId", defaultValue = "1") Long userId,
-            @RequestParam(value = "mode", defaultValue = "agent") String mode,
-            @RequestParam(value = "generatePlanFirst", defaultValue = "true") boolean generatePlanFirst,
+            AgentChatRequest request,
             @RequestPart(value = "file", required = false) MultipartFile file
     ) {
-        if (query == null || query.trim().isEmpty()) {
+        if (request.getQuery() == null || request.getQuery().trim().isEmpty()) {
             SseEmitter emitter = new SseEmitter();
             try {
                 emitter.send(SseEmitter.event().name("error").data(
@@ -56,6 +55,7 @@ public class TripAssistantController {
             emitter.complete();
             return emitter;
         }
-        return tripAssistantService.streamAgentChat(query.trim(), userId, mode, generatePlanFirst, file);
+        request.setQuery(request.getQuery().trim());
+        return tripAssistantService.streamAgentChat(request, file);
     }
 }
