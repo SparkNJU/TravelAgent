@@ -16,6 +16,7 @@ from services.file_parser import parse_uploaded_file
 from services.llm_service import LLMService
 from services.planner import MetaPlanner
 from services.react_agent import ReActAgent
+from services.reflection_agent import ReflectionAgent
 from services.serper_client import SerperClient
 from services.sse_events import sse_event, SSE_DONE
 from services.tool_registry import FileParserTool, ToolRegistry, WebSearchTool
@@ -46,6 +47,11 @@ _agent = ReActAgent(
     max_retries=config.agent.self_correction_retries,
 )
 
+_reflection_agent = ReflectionAgent(
+    llm=_llm,
+    react_agent=_agent,
+)
+
 
 @app.get("/health")
 def health() -> dict:
@@ -64,6 +70,7 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
     llm = _llm
     planner = _planner
     agent = _agent
+    reflection_agent = _reflection_agent
     if request.model or request.temperature is not None:
         llm = LLMService(
             base_url=config.llm.base_url,
@@ -79,6 +86,7 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             max_iterations=config.agent.max_iterations,
             max_retries=config.agent.self_correction_retries,
         )
+        reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
 
     def event_stream():
         try:
@@ -89,6 +97,21 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
 
             if request.mode == "plan":
                 for event_json in planner.generate_plan(request.query, file_summary):
+                    yield f"data: {event_json}\n\n"
+            elif request.mode == "reflection":
+                execution_plan = ""
+                if request.generate_plan_first:
+                    yield sse_event("plan", "Generating execution plan...", {})
+                    for event_json in planner.generate_plan(
+                        request.query, file_summary
+                    ):
+                        chunk = json.loads(event_json)
+                        execution_plan += chunk.get("content", "")
+                        yield f"data: {event_json}\n\n"
+
+                for event_json in reflection_agent.run(
+                    request.query, file_summary, execution_plan
+                ):
                     yield f"data: {event_json}\n\n"
             else:
                 execution_plan = ""

@@ -4,7 +4,7 @@ from pydantic import BaseModel
 class AgentChatRequest(BaseModel):
     query: str
     user_id: int = 1
-    mode: str = "agent"  # "plan" or "agent"
+    mode: str = "agent"  # "plan", "agent", or "reflection"
     generate_plan_first: bool = True
     model: str | None = None
     temperature: float | None = None
