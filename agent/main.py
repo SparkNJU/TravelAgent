@@ -1,27 +1,102 @@
+from __future__ import annotations
+
+import json
+import os
+
 from dotenv import load_dotenv
 
 load_dotenv()
 
 from fastapi import FastAPI
+from fastapi.responses import StreamingResponse
 
-from models import TripPlanRequest
+from config import config
+from models import AgentChatRequest
 from services.file_parser import parse_uploaded_file
-from services.planner import TripPlanner
+from services.llm_service import LLMService
+from services.planner import MetaPlanner
+from services.react_agent import ReActAgent
 from services.serper_client import SerperClient
+from services.sse_events import sse_event, SSE_DONE
+from services.tool_registry import FileParserTool, ToolRegistry, WebSearchTool
 
-app = FastAPI(title="Travel Assistant Agent", version="1.0.0")
+app = FastAPI(title="Travel Assistant Agent", version="2.0.0")
+
+# --- Initialize services ---
+
+_llm = LLMService(
+    base_url=config.llm.base_url,
+    api_key_env=config.llm.api_key_env,
+    model=config.llm.chat_model,
+    temperature=config.llm.temperature,
+    max_tokens=config.llm.max_tokens,
+)
 
 _serper = SerperClient()
-_planner = TripPlanner(_serper)
+
+_tool_registry = ToolRegistry()
+_tool_registry.register(WebSearchTool(_serper))
+
+if config.tools.weather_enabled:
+    weather_key = os.getenv(config.tools.weather_api_key_env, "")
+    if weather_key:
+        from services.weather_client import WeatherTool
+
+        _tool_registry.register(WeatherTool(weather_key, config.tools.weather_base_url))
+
+_tool_registry.register(FileParserTool())
+
+_planner = MetaPlanner(_llm)
+_agent = ReActAgent(
+    llm=_llm,
+    tool_registry=_tool_registry,
+    max_iterations=config.agent.max_iterations,
+    max_retries=config.agent.self_correction_retries,
+)
 
 
 @app.get("/health")
 def health() -> dict:
-    return {"ok": True, "serper_enabled": _serper.enabled}
+    return {
+        "ok": True,
+        "serper_enabled": _serper.enabled,
+        "tools_registered": [
+            t["function"]["name"] for t in _tool_registry.list_tools()
+        ],
+    }
 
 
-@app.post("/api/trip/plan")
-def trip_plan(request: TripPlanRequest) -> dict:
-    file_text = parse_uploaded_file(request.file_name, request.file_base64)
-    file_summary = file_text[:600] if file_text else ""
-    return _planner.generate(query=request.query, file_summary=file_summary)
+@app.post("/api/agent/chat")
+async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
+    def event_stream():
+        try:
+            file_summary = ""
+            if request.file_name and request.file_base64:
+                file_text = parse_uploaded_file(request.file_name, request.file_base64)
+                file_summary = file_text[:600] if file_text else ""
+
+            if request.mode == "plan":
+                for event_json in _planner.generate_plan(request.query, file_summary):
+                    yield f"data: {event_json}\n\n"
+            else:
+                execution_plan = ""
+                if request.generate_plan_first:
+                    yield sse_event("plan", "Generating execution plan...", {})
+                    for event_json in _planner.generate_plan(
+                        request.query, file_summary
+                    ):
+                        chunk = json.loads(event_json)
+                        execution_plan += chunk.get("content", "")
+                        yield f"data: {event_json}\n\n"
+
+                for event_json in _agent.run(
+                    request.query, file_summary, execution_plan
+                ):
+                    yield f"data: {event_json}\n\n"
+
+            yield SSE_DONE
+        except Exception as e:
+            yield sse_event("error", str(e), {})
+            yield SSE_DONE
+
+    return StreamingResponse(event_stream(), media_type="text/event-stream")
