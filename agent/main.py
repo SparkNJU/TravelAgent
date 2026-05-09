@@ -60,6 +60,26 @@ def health() -> dict:
 
 @app.post("/api/agent/chat")
 async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
+    # Per-request model/temperature override
+    llm = _llm
+    planner = _planner
+    agent = _agent
+    if request.model or request.temperature is not None:
+        llm = LLMService(
+            base_url=config.llm.base_url,
+            api_key_env=config.llm.api_key_env,
+            model=request.model or config.llm.chat_model,
+            temperature=request.temperature if request.temperature is not None else config.llm.temperature,
+            max_tokens=config.llm.max_tokens,
+        )
+        planner = MetaPlanner(llm)
+        agent = ReActAgent(
+            llm=llm,
+            tool_registry=_tool_registry,
+            max_iterations=config.agent.max_iterations,
+            max_retries=config.agent.self_correction_retries,
+        )
+
     def event_stream():
         try:
             file_summary = ""
@@ -68,20 +88,20 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                 file_summary = file_text[:600] if file_text else ""
 
             if request.mode == "plan":
-                for event_json in _planner.generate_plan(request.query, file_summary):
+                for event_json in planner.generate_plan(request.query, file_summary):
                     yield f"data: {event_json}\n\n"
             else:
                 execution_plan = ""
                 if request.generate_plan_first:
                     yield sse_event("plan", "Generating execution plan...", {})
-                    for event_json in _planner.generate_plan(
+                    for event_json in planner.generate_plan(
                         request.query, file_summary
                     ):
                         chunk = json.loads(event_json)
                         execution_plan += chunk.get("content", "")
                         yield f"data: {event_json}\n\n"
 
-                for event_json in _agent.run(
+                for event_json in agent.run(
                     request.query, file_summary, execution_plan
                 ):
                     yield f"data: {event_json}\n\n"
@@ -91,4 +111,4 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             yield sse_event("error", str(e), {})
             yield SSE_DONE
 
-    return StreamingResponse(event_stream(), media_type="text/event-stream")
+    return StreamingResponse(event_stream(), media_type="text/event-stream; charset=utf-8")
