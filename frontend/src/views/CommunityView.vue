@@ -51,10 +51,11 @@
             </div>
             <div class="card-footer">
               <div class="card-author">
-                <span class="avatar">{{ post.avatar || '' }}</span>
+                <img v-if="post.avatar" :src="post.avatar" class="avatar-img" />
+                <span v-else class="avatar">{{ (post.username || '').charAt(0) }}</span>
                 <span class="author-name">{{ post.username }}</span>
               </div>
-              <span class="stat"><SvgIcon name="heart" :size="14" /> {{ formatLikes(post.likes) }}</span>
+              <span class="stat" :class="{ liked: likedPosts.includes(post.id) }"><SvgIcon :name="likedPosts.includes(post.id) ? 'heart-fill' : 'heart'" :size="14" /> {{ formatLikes(post.likes) }}</span>
             </div>
           </div>
         </article>
@@ -71,7 +72,8 @@
           <div class="modal-content" @click.stop>
             <div class="modal-top">
               <div class="modal-user">
-                <span class="avatar lg">{{ selectedPost.avatar }}</span>
+                <img v-if="selectedPost.avatar" :src="selectedPost.avatar" class="avatar-img lg" />
+                <span v-else class="avatar lg">{{ (selectedPost.username || '').charAt(0) }}</span>
                 <div>
                   <span class="author-name">{{ selectedPost.username }}</span>
                   <span class="author-bio">{{ selectedPost.bio }}</span>
@@ -102,7 +104,8 @@
                 <h4>评论 ({{ selectedPost.comments }})</h4>
                 <div class="comments-list">
                   <div v-for="c in comments" :key="c.id" class="comment">
-                    <span class="avatar sm">{{ c.avatar }}</span>
+                    <img v-if="c.avatar" :src="c.avatar" class="avatar-img sm" />
+                    <span v-else class="avatar sm">{{ (c.username || '').charAt(0) }}</span>
                     <div class="comment-body">
                       <div class="comment-meta">
                         <span class="comment-author">{{ c.username }}</span>
@@ -122,9 +125,8 @@
               </div>
             </div>
             <div class="modal-actions">
-              <button class="modal-action like" :class="{ liked: likedPosts.includes(selectedPost.id) }" @click="handleLike(selectedPost)"><SvgIcon name="heart" :size="16" /> {{ selectedPost.likes }}</button>
+              <button class="modal-action like" :class="{ liked: likedPosts.includes(selectedPost.id) }" @click="handleLike(selectedPost)"><SvgIcon :name="likedPosts.includes(selectedPost.id) ? 'heart-fill' : 'heart'" :size="16" /> {{ selectedPost.likes }}</button>
               <button class="modal-action" :class="{ active: showComments }" @click="toggleComments"><SvgIcon name="message" :size="16" /> {{ selectedPost.comments }}</button>
-              <button class="modal-action share" @click="handleShare(selectedPost)"><SvgIcon name="share" :size="16" /> {{ selectedPost.shares }}</button>
             </div>
           </div>
         </div>
@@ -276,20 +278,6 @@ const handleLike = async (post) => {
         likedPosts.value.push(post.id)
         post.likes++
       }
-    }
-  } catch { /* ignore */ }
-}
-
-const handleShare = async (post) => {
-  if (!isLoggedIn.value) { showLogin(); return }
-  try {
-    const res = await fetch(`/api/community/posts/${post.id}/share`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '1' }
-    })
-    const data = await res.json()
-    if (data.code === 200) {
-      post.shares++
     }
   } catch { /* ignore */ }
 }
@@ -467,10 +455,18 @@ onMounted(loadPosts)
 .avatar.sm { width: 28px; height: 28px; font-size: 14px; }
 .avatar.lg { width: 40px; height: 40px; font-size: 18px; }
 
+.avatar-img {
+  width: 20px; height: 20px; border-radius: 50%;
+  object-fit: cover; flex-shrink: 0;
+}
+.avatar-img.sm { width: 28px; height: 28px; }
+.avatar-img.lg { width: 40px; height: 40px; }
+
 .author-name { font-size: 12px; font-weight: 500; color: var(--color-secondary); }
 .author-bio { display: block; font-size: 11px; color: var(--color-muted); }
 
-.stat { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--color-muted); }
+.stat { display: flex; align-items: center; gap: 3px; font-size: 12px; color: var(--color-muted); transition: color 0.2s; }
+.stat.liked { color: #ef4444; }
 
 /* Modal */
 .modal-overlay {
@@ -576,8 +572,7 @@ onMounted(loadPosts)
 }
 .modal-action:hover { background: var(--color-card); }
 .modal-action.like { color: var(--color-red-light); }
-.modal-action.like.liked { color: #ef4444; }
-.modal-action.share { color: #34d399; }
+.modal-action.like.liked { color: #ef4444; font-weight: 600; }
 
 .modal-enter-active, .modal-leave-active { transition: opacity 0.2s; }
 .modal-enter-from, .modal-leave-to { opacity: 0; }

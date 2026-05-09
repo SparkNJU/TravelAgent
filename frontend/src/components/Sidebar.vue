@@ -25,7 +25,8 @@
         <span>{{ theme === 'light' ? '深色' : '浅色' }}</span>
       </button>
       <template v-if="isLoggedIn">
-        <div class="user-avatar" :title="username">{{ avatarLetter }}</div>
+        <img v-if="avatar" :src="avatar" class="user-avatar-img" :title="username" />
+        <div v-else class="user-avatar" :title="username">{{ avatarLetter }}</div>
         <button class="nav-item logout" @click="handleLogout">
           <SvgIcon name="logout" :size="18" />
           <span>退出</span>
@@ -45,7 +46,7 @@ import SvgIcon from './SvgIcon.vue'
 import { useAuth } from '../composables/useAuth'
 import { useTheme } from '../composables/useTheme'
 
-const { isLoggedIn, username, logout } = useAuth()
+const { isLoggedIn, username, avatar, logout } = useAuth()
 const { theme, toggleTheme } = useTheme()
 const showLogin = inject('showLoginModal')
 
@@ -152,6 +153,13 @@ const handleLogout = () => {
   color: white;
   font-size: 14px;
   font-weight: 700;
+}
+
+.user-avatar-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .logout:hover {

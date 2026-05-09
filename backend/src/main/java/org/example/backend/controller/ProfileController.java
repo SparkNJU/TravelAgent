@@ -4,6 +4,9 @@ import org.example.backend.dto.*;
 import org.example.backend.entity.User;
 import org.example.backend.service.UserService;
 import org.springframework.beans.factory.annotation.Autowired;
+import jakarta.annotation.PostConstruct;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.core.io.FileSystemResource;
 import org.springframework.core.io.Resource;
@@ -14,7 +17,10 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
-import java.io.File;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.UUID;
 
 @RestController
@@ -22,11 +28,25 @@ import java.util.UUID;
 @CrossOrigin(origins = "*")
 public class ProfileController {
 
+    private static final Logger log = LoggerFactory.getLogger(ProfileController.class);
+
     @Autowired
     private UserService userService;
 
     @Value("${app.avatar.upload-dir:./uploads/avatars}")
     private String avatarUploadDir;
+
+    @PostConstruct
+    public void init() {
+        Path dir = Paths.get(avatarUploadDir).toAbsolutePath();
+        try {
+            Files.createDirectories(dir);
+            avatarUploadDir = dir.toString();
+            log.info("Avatar upload directory: {}", avatarUploadDir);
+        } catch (IOException e) {
+            log.error("Failed to create avatar upload directory: {}", dir, e);
+        }
+    }
 
     @GetMapping
     public ResponseEntity<ApiResponse<UserProfileResponse>> getProfile(
@@ -92,24 +112,22 @@ public class ProfileController {
                 return ResponseEntity.badRequest().body(ApiResponse.error("图片大小不能超过5MB"));
             }
 
-            File uploadPath = new File(avatarUploadDir);
-            if (!uploadPath.exists()) {
-                uploadPath.mkdirs();
-            }
-
             String originalFilename = file.getOriginalFilename();
             String extension = "jpg";
             if (originalFilename != null && originalFilename.contains(".")) {
                 extension = originalFilename.substring(originalFilename.lastIndexOf(".") + 1);
             }
             String newFilename = UUID.randomUUID().toString() + "." + extension;
-            file.transferTo(new File(avatarUploadDir, newFilename));
+
+            Path dest = Paths.get(avatarUploadDir, newFilename);
+            Files.copy(file.getInputStream(), dest);
 
             String avatarUrl = "/api/profile/avatars/" + newFilename;
             userService.updateProfilePicUrl(userId, avatarUrl);
 
             return ResponseEntity.ok(ApiResponse.success(avatarUrl, "头像上传成功"));
         } catch (Exception e) {
+            log.error("Avatar upload failed", e);
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(ApiResponse.error("头像上传失败"));
         }
@@ -117,11 +135,11 @@ public class ProfileController {
 
     @GetMapping("/avatars/{filename}")
     public ResponseEntity<Resource> getAvatar(@PathVariable String filename) {
-        File file = new File(avatarUploadDir, filename);
-        if (!file.exists()) {
+        Path filePath = Paths.get(avatarUploadDir, filename);
+        if (!Files.exists(filePath)) {
             return ResponseEntity.notFound().build();
         }
-        Resource resource = new FileSystemResource(file);
+        Resource resource = new FileSystemResource(filePath);
         return ResponseEntity.ok()
                 .header(HttpHeaders.CONTENT_TYPE, MediaType.IMAGE_JPEG_VALUE)
                 .body(resource);

@@ -105,7 +105,7 @@ const handleLogin = async () => {
     })
     const data = await res.json()
     if (data.success) {
-      login({ token: data.token, userId: data.userId, username: loginForm.value.username })
+      login({ token: data.token, userId: data.userId, username: loginForm.value.username, avatar: data.avatar || '' })
       emit('success')
     } else {
       errorMsg.value = data.message || '登录失败'
@@ -143,7 +143,7 @@ const handleRegister = async () => {
       })
       const loginData = await loginRes.json()
       if (loginData.success) {
-        login({ token: loginData.token, userId: loginData.userId, username: f.username })
+        login({ token: loginData.token, userId: loginData.userId, username: f.username, avatar: loginData.avatar || '' })
         emit('success')
       } else {
         successMsg.value = '注册成功，请登录'

@@ -79,7 +79,6 @@
         <p class="panel-meta">{{ activeConversation.result.destination }} · {{ activeConversation.result.days }}天</p>
         <div class="panel-actions">
           <button class="panel-btn primary" @click="saveToMyPlans">保存规划</button>
-          <button class="panel-btn" @click="shareToCommunity">分享</button>
         </div>
       </div>
       <div class="panel-map">
@@ -349,22 +348,6 @@ async function saveToMyPlans() {
   } catch {
     alert('保存失败，请重试')
   }
-}
-
-function shareToCommunity() {
-  if (!isLoggedIn.value) { showLogin(); return }
-  const result = activeConversation.value?.result
-  if (!result) return
-  fetch('/api/community/posts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '1' },
-    body: JSON.stringify({
-      title: result.title,
-      description: result.summary || '',
-      images: result.images?.map(i => i.imageUrl).filter(Boolean) || [],
-      tags: [result.destination, 'AI规划'].filter(Boolean),
-    }),
-  })
 }
 
 function handleUpdateItinerary(updated) {
