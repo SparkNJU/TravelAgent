@@ -1,5 +1,23 @@
 from pydantic import BaseModel
+from typing import List, Optional
+from enum import Enum
 
+class MessageRole(str, Enum):
+    USER = "user"
+    ASSISTANT = "assistant"
+    SYSTEM = "system"
+    TOOL = "tool"
+
+    # For compatibility, parse 'agent' to 'assistant'
+    @classmethod
+    def _missing_(cls, value):
+        if value == "agent":
+            return cls.ASSISTANT
+        return super()._missing_(value)
+
+class ChatMessage(BaseModel):
+    role: MessageRole
+    content: str
 
 class AgentChatRequest(BaseModel):
     query: str
@@ -11,3 +29,4 @@ class AgentChatRequest(BaseModel):
     file_name: str | None = None
     file_base64: str | None = None
     file_mime_type: str | None = None
+    chat_history: List[ChatMessage] = []

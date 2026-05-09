@@ -48,8 +48,12 @@ class ReActAgent:
         query: str,
         file_summary: str = "",
         execution_plan: str = "",
+        chat_history: list[dict] | None = None,
     ) -> Generator[str, None, None]:
         """Execute the ReAct loop. Yields SSE event JSON strings."""
+        if chat_history is None:
+            chat_history = []
+            
         tool_descriptions = "\n".join(
             f"- {t['function']['name']}: {t['function']['description']}"
             for t in self._tools.list_tools()
@@ -62,10 +66,12 @@ class ReActAgent:
         if execution_plan:
             user_parts.append(f"\nExecution plan to follow:\n{execution_plan}")
 
-        messages: list[dict] = [
-            {"role": "system", "content": system_prompt},
-            {"role": "user", "content": "\n".join(user_parts)},
-        ]
+        messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        
+        # Append chat history
+        messages.extend(chat_history)
+        
+        messages.append({"role": "user", "content": "\n".join(user_parts)})
 
         tools_spec = self._tools.list_tools()
 

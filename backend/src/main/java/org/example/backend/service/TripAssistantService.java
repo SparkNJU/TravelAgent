@@ -114,6 +114,20 @@ public class TripAssistantService {
                     payload.put("temperature", req.getTemperature());
                 }
 
+                if (req.getChatHistory() != null && !req.getChatHistory().isEmpty()) {
+                    payload.put("chat_history", req.getChatHistory());
+                } else if (req.getChatHistoryJson() != null && !req.getChatHistoryJson().isEmpty()) {
+                    try {
+                        List<Map<String, Object>> parsedHistory = objectMapper.readValue(
+                            req.getChatHistoryJson(),
+                            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}
+                        );
+                        payload.put("chat_history", parsedHistory);
+                    } catch (Exception e) {
+                        logger.warn("Failed to parse chatHistoryJson", e);
+                    }
+                }
+
                 if (file != null && !file.isEmpty()) {
                     payload.put("file_name", file.getOriginalFilename());
                     payload.put("file_mime_type", file.getContentType());

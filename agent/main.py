@@ -124,8 +124,11 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                         execution_plan += chunk.get("content", "")
                         yield f"data: {event_json}\n\n"
 
+                # Format chat_history
+                history = [{"role": msg.role.value, "content": msg.content} for msg in request.chat_history]
+
                 for event_json in agent.run(
-                    request.query, file_summary, execution_plan
+                    request.query, file_summary, execution_plan, chat_history=history
                 ):
                     yield f"data: {event_json}\n\n"
 

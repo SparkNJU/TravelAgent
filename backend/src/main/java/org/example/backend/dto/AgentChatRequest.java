@@ -1,5 +1,7 @@
 package org.example.backend.dto;
 
+import java.util.List;
+
 public class AgentChatRequest {
     private String query;
     private Long userId = 1L;
@@ -10,6 +12,10 @@ public class AgentChatRequest {
     private String fileName;
     private String fileBase64;
     private String fileMimeType;
+    private List<ChatMessage> chatHistory;
+    
+    // Fallback for form-data stringified JSON
+    private String chatHistoryJson;
 
     public String getQuery() { return query; }
     public void setQuery(String query) { this.query = query; }
@@ -37,4 +43,10 @@ public class AgentChatRequest {
 
     public String getFileMimeType() { return fileMimeType; }
     public void setFileMimeType(String fileMimeType) { this.fileMimeType = fileMimeType; }
+
+    public List<ChatMessage> getChatHistory() { return chatHistory; }
+    public void setChatHistory(List<ChatMessage> chatHistory) { this.chatHistory = chatHistory; }
+
+    public String getChatHistoryJson() { return chatHistoryJson; }
+    public void setChatHistoryJson(String chatHistoryJson) { this.chatHistoryJson = chatHistoryJson; }
 }
