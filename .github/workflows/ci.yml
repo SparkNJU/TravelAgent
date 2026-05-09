@@ -33,8 +33,7 @@ jobs:
 
       - name: Build with Maven (skip tests)
         run: |
-          chmod +x ./mvnw || true
-          ./mvnw -B -DskipTests package
+          mvn -B -DskipTests package
 
   frontend:
     name: Frontend - Node build
