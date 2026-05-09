@@ -6,16 +6,27 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
+import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStreamReader;
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.client.RestTemplate;
-import java.util.Base64;
-import java.util.LinkedHashMap;
-import java.util.Map;
 
 @Service
 public class TripAssistantService {
@@ -24,14 +35,22 @@ public class TripAssistantService {
 
     private final RestTemplate restTemplate;
     private final ObjectMapper objectMapper = new ObjectMapper();
+    private final ExecutorService sseExecutor = Executors.newCachedThreadPool();
+    private final HttpClient httpClient = HttpClient.newHttpClient();
 
     @Value("${app.agent.base-url:http://localhost:8000/api/trip/plan}")
     private String agentBaseUrl;
+
+    @Value("${app.agent.chat-url:http://localhost:8000/api/agent/chat}")
+    private String agentChatUrl;
 
     public TripAssistantService(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
     }
 
+    /**
+     * Legacy synchronous endpoint (backward compatible).
+     */
     public Map<String, Object> generateTripPlan(String query, MultipartFile file, Long userId) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("query", query);
@@ -57,7 +76,6 @@ public class TripAssistantService {
 
             HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
             ResponseEntity<String> response = restTemplate.postForEntity(agentBaseUrl, entity, String.class);
-            // Use getStatusCode().value() for maximum compatibility across Spring versions
             int status = response.getStatusCode().value();
             if (status >= 200 && status < 300) {
                 @SuppressWarnings("unchecked")
@@ -69,6 +87,86 @@ public class TripAssistantService {
         } catch (IOException e) {
             return fallbackPlan(query, file, e.getMessage());
         }
+    }
+
+    /**
+     * SSE streaming endpoint: proxies the Python agent's SSE stream to the frontend.
+     */
+    public SseEmitter streamAgentChat(String query, Long userId, String mode,
+                                       boolean generatePlanFirst, MultipartFile file) {
+        SseEmitter emitter = new SseEmitter(300_000L); // 5 min timeout
+
+        sseExecutor.execute(() -> {
+            try {
+                Map<String, Object> payload = new LinkedHashMap<>();
+                payload.put("query", query);
+                payload.put("user_id", userId);
+                payload.put("mode", mode);
+                payload.put("generate_plan_first", generatePlanFirst);
+
+                if (file != null && !file.isEmpty()) {
+                    payload.put("file_name", file.getOriginalFilename());
+                    payload.put("file_mime_type", file.getContentType());
+                    payload.put("file_base64", Base64.getEncoder().encodeToString(file.getBytes()));
+                }
+
+                String jsonBody = objectMapper.writeValueAsString(payload);
+                logger.info("Agent SSE request: mode={}, query={}", mode, query);
+
+                HttpRequest request = HttpRequest.newBuilder()
+                        .uri(URI.create(agentChatUrl))
+                        .header("Content-Type", "application/json")
+                        .header("Accept", "text/event-stream")
+                        .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                        .build();
+
+                HttpResponse<java.io.InputStream> response = httpClient.send(
+                        request, HttpResponse.BodyHandlers.ofInputStream());
+
+                if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                    String errorBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+                    logger.warn("Agent SSE error: status={}, body={}", response.statusCode(), errorBody);
+                    emitter.send(SseEmitter.event().name("error").data(
+                            Map.of("type", "error", "content", "Agent returned HTTP " + response.statusCode())));
+                    emitter.complete();
+                    return;
+                }
+
+                try (BufferedReader reader = new BufferedReader(
+                        new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                    String line;
+                    while ((line = reader.readLine()) != null) {
+                        if (line.isEmpty()) {
+                            continue;
+                        }
+                        if (line.startsWith("data: ")) {
+                            String data = line.substring(6);
+                            if ("[DONE]".equals(data)) {
+                                emitter.send(SseEmitter.event().name("done").data(
+                                        Map.of("type", "done", "content", "")));
+                                break;
+                            }
+                            // Forward the SSE data line as-is to the frontend
+                            emitter.send(SseEmitter.event().name("agent").data(data));
+                        }
+                    }
+                }
+
+                emitter.complete();
+            } catch (Exception e) {
+                logger.error("Agent SSE proxy error", e);
+                try {
+                    emitter.send(SseEmitter.event().name("error").data(
+                            Map.of("type", "error", "content", e.getMessage())));
+                } catch (IOException ignored) {}
+                emitter.completeWithError(e);
+            }
+        });
+
+        emitter.onTimeout(emitter::complete);
+        emitter.onError(t -> emitter.complete());
+
+        return emitter;
     }
 
     private Map<String, Object> fallbackPlan(String query, MultipartFile file, String reason) {
