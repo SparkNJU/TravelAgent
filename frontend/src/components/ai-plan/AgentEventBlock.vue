@@ -3,7 +3,9 @@
     <button class="event-header" @click="toggle">
       <span class="event-icon"><SvgIcon :name="iconName" :size="14" /></span>
       <span class="event-label">{{ label }}</span>
-      <span v-if="toolName" class="tool-tag">{{ toolName }}</span>
+      <span v-if="actionSummary" class="event-summary">{{ actionSummary }}</span>
+      <span v-else-if="toolName" class="tool-tag">{{ toolName }}</span>
+      <span v-if="observationSummary" class="event-summary">{{ observationSummary }}</span>
       <span class="expand-arrow" :class="{ open: expanded }">
         <SvgIcon name="chevron-right" :size="12" />
       </span>
@@ -64,6 +66,35 @@ const labelMap = {
 }
 
 const iconName = computed(() => iconMap[props.type] || 'sparkles')
+
+const actionSummary = computed(() => {
+  if (props.type !== 'action') return ''
+  const content = props.content || ''
+  // Backend sends "Calling tool: tool_name({json_args})"
+  const match = content.match(/Calling tool: (\w+)\((.*)\)/s)
+    || content.match(/^(\w+)\((.*)\)$/s)
+  if (!match) return ''
+  const name = match[1]
+  try {
+    const args = JSON.parse(match[2])
+    if (name === 'web_search') return `搜索: ${args.query || ''}`
+    if (name === 'parse_file') return `解析文件: ${args.file_name || ''}`
+    const firstStr = Object.values(args).find(v => typeof v === 'string')
+    return firstStr || ''
+  } catch {
+    return ''
+  }
+})
+
+const observationSummary = computed(() => {
+  if (props.type !== 'observation') return ''
+  try {
+    const arr = JSON.parse(props.content || '')
+    if (Array.isArray(arr)) return `搜索到 ${arr.length} 个相关结果`
+  } catch {}
+  return ''
+})
+
 const label = computed(() => {
   if (props.type === 'action' && props.toolName) {
     return `调用工具: ${props.toolName}`
@@ -131,6 +162,15 @@ const label = computed(() => {
   border-radius: var(--radius-pill);
   background: rgba(249, 115, 22, 0.1);
   color: #f97316;
+  white-space: nowrap;
+}
+
+.event-summary {
+  font-size: 12px;
+  color: var(--color-body);
+  max-width: 280px;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
