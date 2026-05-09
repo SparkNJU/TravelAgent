@@ -460,7 +460,7 @@ onMounted(() => {
   height: 100%;
   display: flex;
   flex-direction: column;
-  background: #f5f5f5;
+  background: var(--color-surface);
 }
 
 .search-box {
@@ -471,7 +471,7 @@ onMounted(() => {
   padding: 6px 10px;
   display: flex;
   gap: 8px;
-  background: white;
+  background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: 4px;
   box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
@@ -484,7 +484,7 @@ onMounted(() => {
   border: none;
   font-size: 13px;
   font-family: var(--font-family);
-  background: white;
+  background: var(--color-card);
 }
 
 .search-input:focus {
@@ -571,7 +571,7 @@ onMounted(() => {
   transform: translateY(-50%);
   width: 14px;
   height: 48px;
-  background: white;
+  background: var(--color-card);
   border: 1px solid var(--color-border);
   border-right: none;
   border-radius: 4px 0 0 4px;
@@ -602,7 +602,7 @@ onMounted(() => {
   top: 0;
   bottom: 0;
   width: 240px;
-  background: white;
+  background: var(--color-card);
   border-left: 1px solid var(--color-border);
   display: flex;
   flex-direction: column;
@@ -635,7 +635,7 @@ onMounted(() => {
 .location-count {
   margin: 0;
   font-size: 12px;
-  color: #666666;
+  color: var(--color-secondary);
 }
 
 .location-list {
@@ -690,7 +690,7 @@ onMounted(() => {
 .location-name {
   font-size: 13px;
   font-weight: 600;
-  color: #0a0a0a;
+  color: var(--color-title);
   margin-bottom: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -705,14 +705,14 @@ onMounted(() => {
 
 .location-desc {
   font-size: 11px;
-  color: #333333;
+  color: var(--color-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
 
 .location-arrow {
-  color: #999999;
+  color: var(--color-hint);
   font-size: 16px;
   flex-shrink: 0;
 }
@@ -722,7 +722,7 @@ onMounted(() => {
   position: absolute;
   bottom: 20px;
   left: 20px;
-  background: white;
+  background: var(--color-card);
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
   min-width: 280px;
@@ -735,7 +735,7 @@ onMounted(() => {
   position: absolute;
   bottom: 20px;
   right: 20px;
-  background: white;
+  background: var(--color-card);
   border-radius: 8px;
   box-shadow: 0 2px 12px rgba(0, 0, 0, 0.15);
   min-width: 240px;
@@ -769,7 +769,7 @@ onMounted(() => {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
-  color: #0a0a0a;
+  color: var(--color-title);
 }
 
 .close-btn {
@@ -845,7 +845,7 @@ onMounted(() => {
   border: none;
   font-size: 13px;
   font-family: var(--font-family);
-  background: white;
+  background: var(--color-card);
 }
 
 .search-input:focus {
@@ -926,7 +926,7 @@ onMounted(() => {
 .location-name {
   font-size: 13px;
   font-weight: 600;
-  color: #0a0a0a;
+  color: var(--color-title);
   margin-bottom: 2px;
   white-space: nowrap;
   overflow: hidden;
@@ -941,7 +941,7 @@ onMounted(() => {
 
 .location-desc {
   font-size: 11px;
-  color: #333333;
+  color: var(--color-body);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -978,7 +978,7 @@ onMounted(() => {
   margin: 0;
   font-size: 16px;
   font-weight: 700;
-  color: #0a0a0a;
+  color: var(--color-title);
 }
 
 .close-btn {

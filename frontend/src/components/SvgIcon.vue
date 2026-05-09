@@ -140,6 +140,60 @@
       <rect x="3" y="11" width="18" height="11" rx="2" ry="2" />
       <path d="M7 11V7a5 5 0 0 1 10 0v4" />
     </template>
+
+    <template v-else-if="name === 'moon'">
+      <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z" />
+    </template>
+
+    <template v-else-if="name === 'sun'">
+      <circle cx="12" cy="12" r="5" />
+      <line x1="12" y1="1" x2="12" y2="3" />
+      <line x1="12" y1="21" x2="12" y2="23" />
+      <line x1="4.22" y1="4.22" x2="5.64" y2="5.64" />
+      <line x1="18.36" y1="18.36" x2="19.78" y2="19.78" />
+      <line x1="1" y1="12" x2="3" y2="12" />
+      <line x1="21" y1="12" x2="23" y2="12" />
+      <line x1="4.22" y1="19.78" x2="5.64" y2="18.36" />
+      <line x1="18.36" y1="5.64" x2="19.78" y2="4.22" />
+    </template>
+
+    <template v-else-if="name === 'chevron-down'">
+      <polyline points="6 9 12 15 18 9" />
+    </template>
+
+    <template v-else-if="name === 'chevron-right'">
+      <polyline points="9 18 15 12 9 6" />
+    </template>
+
+    <template v-else-if="name === 'menu'">
+      <line x1="3" y1="12" x2="21" y2="12" />
+      <line x1="3" y1="6" x2="21" y2="6" />
+      <line x1="3" y1="18" x2="21" y2="18" />
+    </template>
+
+    <template v-else-if="name === 'trash'">
+      <polyline points="3 6 5 6 21 6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
+    </template>
+
+    <template v-else-if="name === 'plus-circle'">
+      <circle cx="12" cy="12" r="10" />
+      <line x1="12" y1="8" x2="12" y2="16" />
+      <line x1="8" y1="12" x2="16" y2="12" />
+    </template>
+
+    <template v-else-if="name === 'brain'">
+      <path d="M9.5 2a3.5 3.5 0 0 0-3.2 2.1A3.5 3.5 0 0 0 4 7.5 3.5 3.5 0 0 0 6 10.5V22h4v-6h4v6h4V10.5a3.5 3.5 0 0 0 2-3 3.5 3.5 0 0 0-2.3-3.4A3.5 3.5 0 0 0 14.5 2a3.5 3.5 0 0 0-2.5 1A3.5 3.5 0 0 0 9.5 2z" />
+    </template>
+
+    <template v-else-if="name === 'wrench'">
+      <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+    </template>
+
+    <template v-else-if="name === 'eye'">
+      <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+      <circle cx="12" cy="12" r="3" />
+    </template>
   </svg>
 </template>
 

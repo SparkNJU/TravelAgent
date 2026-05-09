@@ -382,8 +382,8 @@ const parsedItinerary = computed(() => {
   border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 12px;
-  background: white;
-  color: #0a0a0a;
+  background: var(--color-card);
+  color: var(--color-title);
 }
 
 .edit-input:focus {
@@ -396,8 +396,8 @@ const parsedItinerary = computed(() => {
   border: 1px solid var(--color-border);
   border-radius: 6px;
   font-size: 12px;
-  background: white;
-  color: #0a0a0a;
+  background: var(--color-card);
+  color: var(--color-title);
   min-height: 60px;
   resize: vertical;
 }
@@ -548,8 +548,8 @@ const parsedItinerary = computed(() => {
 .summary-btn {
   padding: 8px 16px;
   border: 1.5px solid var(--color-red-light);
-  background: #0a0a0a;
-  color: #f8fafc;
+  background: var(--color-bg);
+  color: var(--color-title);
   border-radius: 6px;
   font-size: 12px;
   font-weight: 500;
@@ -559,7 +559,7 @@ const parsedItinerary = computed(() => {
 }
 
 .summary-btn:hover {
-  background: #1a1a1a;
+  background: var(--color-surface);
   border-color: var(--color-red);
 }
 
@@ -584,7 +584,7 @@ const parsedItinerary = computed(() => {
 }
 
 .summary-modal {
-  background: white;
+  background: var(--color-card);
   border-radius: 12px;
   width: 90%;
   max-width: 500px;
@@ -611,14 +611,14 @@ const parsedItinerary = computed(() => {
   align-items: center;
   padding: 20px;
   border-bottom: 1px solid var(--color-border);
-  background: #f8fafc;
+  background: var(--color-surface);
 }
 
 .modal-header h3 {
   margin: 0;
   font-size: 22px;
   font-weight: 700;
-  color: #0a0a0a;
+  color: var(--color-title);
 }
 
 .modal-close {
@@ -645,7 +645,7 @@ const parsedItinerary = computed(() => {
   padding: 20px;
   max-height: calc(70vh - 80px);
   overflow-y: auto;
-  color: #0a0a0a;
+  color: var(--color-title);
 }
 
 .modal-body :deep(h1),
@@ -658,7 +658,7 @@ const parsedItinerary = computed(() => {
 .modal-body :deep(b) {
   font-size: 15px !important;
   font-weight: 600 !important;
-  color: #0a0a0a !important;
+  color: var(--color-title) !important;
   margin: 8px 0 4px !important;
   line-height: 1.4 !important;
 }
@@ -667,7 +667,7 @@ const parsedItinerary = computed(() => {
 .modal-body :deep(li) {
   margin: 6px 0;
   font-size: 14px;
-  color: #0a0a0a !important;
+  color: var(--color-title) !important;
   line-height: 1.8;
 }
 
@@ -677,6 +677,6 @@ const parsedItinerary = computed(() => {
 }
 
 .modal-body :deep(*) {
-  color: #0a0a0a !important;
+  color: var(--color-title) !important;
 }
 </style>

@@ -20,6 +20,10 @@
     </nav>
 
     <div class="sidebar-bottom">
+      <button class="nav-item theme-toggle" @click="toggleTheme" :title="theme === 'light' ? '切换深色模式' : '切换浅色模式'">
+        <SvgIcon :name="theme === 'light' ? 'moon' : 'sun'" :size="18" />
+        <span>{{ theme === 'light' ? '深色' : '浅色' }}</span>
+      </button>
       <template v-if="isLoggedIn">
         <div class="user-avatar" :title="username">{{ avatarLetter }}</div>
         <button class="nav-item logout" @click="handleLogout">
@@ -39,8 +43,10 @@
 import { inject, computed } from 'vue'
 import SvgIcon from './SvgIcon.vue'
 import { useAuth } from '../composables/useAuth'
+import { useTheme } from '../composables/useTheme'
 
 const { isLoggedIn, username, logout } = useAuth()
+const { theme, toggleTheme } = useTheme()
 const showLogin = inject('showLoginModal')
 
 const avatarLetter = computed(() => {
@@ -158,5 +164,9 @@ const handleLogout = () => {
 .login-btn:hover {
   background: rgba(230, 57, 70, 0.1);
   color: var(--color-red-light);
+}
+
+.theme-toggle {
+  margin-bottom: 4px;
 }
 </style>
