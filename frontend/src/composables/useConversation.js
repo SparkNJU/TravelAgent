@@ -119,10 +119,10 @@ export function useConversation() {
     persist()
   }
 
-  function updateLastAgentMessage(content) {
+  function updateLastAssistantMessage(content) {
     const conv = activeConversation.value
     if (!conv) return
-    const last = [...conv.messages].reverse().find((m) => m.role === 'agent')
+    const last = [...conv.messages].reverse().find((m) => m.role === 'assistant')
     if (last) {
       last.content = content
     }
@@ -188,7 +188,7 @@ export function useConversation() {
     deleteConversation,
     addMessage,
     setResult,
-    updateLastAgentMessage,
+    updateLastAssistantMessage,
     loadFromBackend,
   }
 }

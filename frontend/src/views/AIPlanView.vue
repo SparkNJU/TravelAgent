@@ -48,7 +48,7 @@
               />
               <MessageBubble
                 v-if="msg.answer"
-                role="agent"
+                role="assistant"
                 :content="msg.answer"
               />
               </div>
@@ -242,7 +242,7 @@ function handleSend({ query, file }) {
   if (!activeConversation.value) newConversation()
 
   addMessage({ role: 'user', content: query })
-  addMessage({ role: 'agent', content: '', events: [], planContent: '' })
+  addMessage({ role: 'assistant', content: '', events: [], planContent: '' })
 
   loading.value = true
   scrollToBottom()
@@ -253,6 +253,12 @@ function handleSend({ query, file }) {
   formData.append('mode', selectedMode.value)
   formData.append('generatePlanFirst', selectedMode.value === 'plan' ? 'false' : 'true')
   formData.append('model', selectedModel.value)
+
+  // Append history (excluding the two we just added for this current turn)
+  const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
+  const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
+  formData.append('chatHistoryJson', JSON.stringify(historyToSent))
+
   if (file) formData.append('file', file)
 
   const agentMsg = () => activeConversation.value?.messages.at(-1)
@@ -297,7 +303,7 @@ function handleSend({ query, file }) {
     (err) => {
       loading.value = false
       console.error('SSE error:', err)
-      addMessage({ role: 'agent', content: `请求失败: ${err.message}`, events: [] })
+      addMessage({ role: 'assistant', content: `请求失败: ${err.message}`, events: [] })
     },
   )
 }

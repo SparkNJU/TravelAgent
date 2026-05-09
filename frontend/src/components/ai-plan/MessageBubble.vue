@@ -1,6 +1,6 @@
 <template>
   <div :class="['message-row', role]">
-    <div v-if="role === 'agent'" class="avatar agent-avatar">
+    <div v-if="role === 'assistant'" class="avatar agent-avatar">
       <SvgIcon name="sparkles" :size="16" />
     </div>
     <div class="bubble" v-html="rendered" />
@@ -17,7 +17,7 @@ import DOMPurify from 'dompurify'
 import SvgIcon from '../SvgIcon.vue'
 
 const props = defineProps({
-  role: { type: String, required: true }, // 'user' | 'agent'
+  role: { type: String, required: true }, // 'user' | 'assistant'
   content: { type: String, default: '' },
 })
 
@@ -50,7 +50,7 @@ function escapeHtml(str) {
   flex-direction: row-reverse;
 }
 
-.message-row.agent {
+.message-row.assistant {
   max-width: 100%;
 }
 
@@ -89,13 +89,13 @@ function escapeHtml(str) {
   border-bottom-right-radius: 4px;
 }
 
-.agent .bubble {
+.assistant .bubble {
   background: var(--color-surface);
   color: var(--color-body);
   border-bottom-left-radius: 4px;
 }
 
-.agent .bubble :deep(p) {
+.assistant .bubble :deep(p) {
   margin: 0 0 8px;
 }
 
