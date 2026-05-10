@@ -28,12 +28,14 @@
             </select>
           </div>
           <select
+            v-if="mode !== 'auto'"
             :value="modelName"
             class="model-select"
             @change="$emit('update:selectedModel', $event.target.value)"
           >
             <option v-for="m in models" :key="m.value" :value="m.value">{{ m.label }}</option>
           </select>
+          <div v-else class="model-auto-pill">随机模型对比</div>
           <div v-if="!compact" class="quick-tags">
             <button
               v-for="tag in tags"
@@ -44,15 +46,27 @@
             >{{ tag }}</button>
           </div>
         </div>
+
         <button
+          v-if="loading"
+          class="stop-btn"
+          @click="emit('stop')"
+        >
+          <SvgIcon name="close" :size="14" />
+          <span>停止</span>
+        </button>
+
+        <button
+          v-else
           class="send-btn"
           :disabled="!canSend"
           @click="handleSubmit"
         >
-          <SvgIcon v-if="loading" name="loader" :size="16" spin />
-          <SvgIcon v-else name="send" :size="16" />
+          <SvgIcon name="send" :size="16" />
         </button>
+
       </div>
+
     </div>
   </div>
 </template>
@@ -70,7 +84,7 @@ const props = defineProps({
   selectedModel: { type: String, default: 'deepseek-v4-flash' },
 })
 
-const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel'])
+const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop'])
 
 const mode = ref(props.modelValue)
 const modelName = ref(props.selectedModel)
@@ -82,6 +96,7 @@ const modes = [
   { value: 'agent', label: 'Agent' },
   { value: 'plan', label: 'Plan' },
   { value: 'reflection', label: 'Reflection' },
+  { value: 'auto', label: 'Auto' },
 ]
 
 const models = [
@@ -296,6 +311,37 @@ function handleSubmit() {
 
 .model-select:hover {
   border-color: var(--color-secondary);
+}
+
+.model-auto-pill {
+  padding: 3px 10px;
+
+  border: 1px dashed var(--color-border);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--color-secondary);
+  background: var(--color-surface);
+  white-space: nowrap;
+}
+
+
+
+.stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(230, 57, 70, 0.12);
+  color: var(--color-red-light);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(230, 57, 70, 0.2);
+  transition: all 0.15s;
+}
+
+.stop-btn:hover {
+  background: rgba(230, 57, 70, 0.2);
 }
 
 .send-btn {

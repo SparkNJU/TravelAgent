@@ -88,6 +88,14 @@
       <circle cx="12" cy="7" r="4" />
     </template>
 
+    <template v-else-if="name === 'trophy'">
+      <path d="M8 21h8" />
+      <path d="M12 17v4" />
+      <path d="M7 4h10v4a5 5 0 0 1-10 0V4z" />
+      <path d="M5 6H3a2 2 0 0 0 0 4h2" />
+      <path d="M19 6h2a2 2 0 1 1 0 4h-2" />
+    </template>
+
     <template v-else-if="name === 'logout'">
       <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4" />
       <polyline points="16 17 21 12 16 7" />

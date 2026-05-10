@@ -24,6 +24,7 @@
         </div>
       </div>
 
+
       <!-- 标签切换 -->
       <div class="tabs-wrapper">
         <button
@@ -218,6 +219,7 @@ import SvgIcon from '../components/SvgIcon.vue'
 import { useAuth } from '../composables/useAuth'
 
 const { isLoggedIn, userId, updateUsername, updateAvatar } = useAuth()
+
 
 const profile = ref({ username: '', email: '', phone: '', profilePicUrl: '', createdAt: '' })
 const plans = ref([])
@@ -441,6 +443,7 @@ onMounted(() => {
   background: var(--color-card); border-radius: var(--radius-card);
   padding: 20px 24px; border: 1px solid var(--color-border); margin-bottom: 20px;
 }
+
 
 .avatar-wrapper {
   position: relative; width: 64px; height: 64px; border-radius: 50%;

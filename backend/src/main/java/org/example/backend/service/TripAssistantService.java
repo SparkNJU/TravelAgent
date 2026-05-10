@@ -196,6 +196,94 @@ public class TripAssistantService {
         return emitter;
     }
 
+    public String fetchAgentAnswer(AgentChatRequest req, MultipartFile file) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("query", req.getQuery());
+            payload.put("user_id", req.getUserId());
+            payload.put("mode", req.getMode());
+            payload.put("generate_plan_first", req.isGeneratePlanFirst());
+
+            if (req.getModel() != null && !req.getModel().isEmpty()) {
+                payload.put("model", req.getModel());
+            }
+            if (req.getTemperature() != null) {
+                payload.put("temperature", req.getTemperature());
+            }
+
+            if (req.getChatHistory() != null && !req.getChatHistory().isEmpty()) {
+                payload.put("chat_history", req.getChatHistory());
+            } else if (req.getChatHistoryJson() != null && !req.getChatHistoryJson().isEmpty()) {
+                try {
+                    List<Map<String, Object>> parsedHistory = objectMapper.readValue(
+                        req.getChatHistoryJson(),
+                        new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}
+                    );
+                    payload.put("chat_history", parsedHistory);
+                } catch (Exception e) {
+                    logger.warn("Failed to parse chatHistoryJson", e);
+                }
+            }
+
+            if (file != null && !file.isEmpty()) {
+                payload.put("file_name", file.getOriginalFilename());
+                payload.put("file_mime_type", file.getContentType());
+                payload.put("file_base64", Base64.getEncoder().encodeToString(file.getBytes()));
+            }
+
+            String jsonBody = objectMapper.writeValueAsString(payload);
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(agentChatUrl))
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .header("Accept", "text/event-stream")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody, StandardCharsets.UTF_8))
+                    .build();
+
+            HttpResponse<java.io.InputStream> response = httpClient.send(
+                    request, HttpResponse.BodyHandlers.ofInputStream());
+
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                String errorBody = new String(response.body().readAllBytes(), StandardCharsets.UTF_8);
+                logger.warn("Agent SSE error: status={}, body={}", response.statusCode(), errorBody);
+                return "Agent returned HTTP " + response.statusCode();
+            }
+
+            StringBuilder answer = new StringBuilder();
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    if (line.startsWith("data: ")) {
+                        String data = line.substring(6).trim();
+                        if ("[DONE]".equals(data)) {
+                            break;
+                        }
+                        try {
+                            @SuppressWarnings("unchecked")
+                            Map<String, Object> event = objectMapper.readValue(data, Map.class);
+                            if ("answer".equals(event.get("type"))) {
+                                Object content = event.get("content");
+                                if (content != null) {
+                                    answer.append(content.toString());
+                                }
+                            }
+                            if ("error".equals(event.get("type"))) {
+                                Object content = event.get("content");
+                                return content != null ? content.toString() : "Agent error";
+                            }
+                        } catch (Exception e) {
+                            logger.debug("Failed to parse SSE data: {}", data, e);
+                        }
+                    }
+                }
+            }
+            return answer.toString();
+        } catch (Exception e) {
+            logger.error("Fetch agent answer failed", e);
+            return "Agent error: " + e.getMessage();
+        }
+    }
+
     private Map<String, Object> fallbackPlan(String query, MultipartFile file, String reason) {
         Map<String, Object> result = new LinkedHashMap<>();
         String title = "旅行计划草案";

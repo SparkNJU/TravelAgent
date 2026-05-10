@@ -2,6 +2,7 @@ import { createRouter, createWebHistory } from 'vue-router'
 import CommunityView from '../views/CommunityView.vue'
 import AIPlanView from '../views/AIPlanView.vue'
 import ProfileView from '../views/ProfileView.vue'
+import ModelLeaderboardView from '../views/ModelLeaderboardView.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -9,6 +10,7 @@ const router = createRouter({
     { path: '/', name: 'discover', component: CommunityView },
     { path: '/ai-plan', name: 'aiPlan', component: AIPlanView },
     { path: '/profile', name: 'profile', component: ProfileView },
+    { path: '/leaderboard', name: 'leaderboard', component: ModelLeaderboardView },
     { path: '/login', redirect: '/' },
     { path: '/register', redirect: '/' },
   ]

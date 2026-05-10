@@ -17,6 +17,10 @@
         <SvgIcon name="user" :size="20" />
         <span>我的</span>
       </router-link>
+      <router-link to="/leaderboard" class="nav-item" :class="{ active: $route.path === '/leaderboard' }">
+        <SvgIcon name="trophy" :size="20" />
+        <span>排行榜</span>
+      </router-link>
     </nav>
 
     <div class="sidebar-bottom">

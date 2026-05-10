@@ -20,7 +20,7 @@
           <h1>TravelMind AI</h1>
           <p>描述你的旅行想法，智能生成个性化行程方案</p>
         </div>
-        <ChatInput :loading="loading" v-model="selectedMode" :selectedModel="selectedModel" @update:selectedModel="selectedModel = $event" @submit="handleSend" />
+        <ChatInput :loading="loading" v-model="selectedMode" :selectedModel="selectedModel" @update:selectedModel="selectedModel = $event" @submit="handleSend" @stop="stopActiveRequest" />
       </div>
 
       <!-- Active conversation: messages + compact input -->
@@ -32,25 +32,37 @@
 
             <!-- Agent message: events + answer -->
             <template v-else>
-              <div class="agent-content-wrapper">
-              <AgentPlanBlock
-                v-if="msg.planContent"
-                :content="msg.planContent"
-                :streaming="loading && i === activeConversation.messages.length - 1"
-              />
-              <AgentEventBlock
-                v-for="(ev, j) in msg.events"
-                :key="j"
-                :type="ev.type"
-                :content="ev.content"
-                :toolName="ev.metadata?.tool_name || ''"
-                :metadata="ev.metadata"
-              />
-              <MessageBubble
-                v-if="msg.answer"
-                role="assistant"
-                :content="msg.answer"
-              />
+              <div class="agent-content-wrapper" :class="{ arena: msg.arena }">
+                <ModelArenaCompare
+                  v-if="msg.arena"
+                  :modelA="msg.arena.modelA"
+                  :modelB="msg.arena.modelB"
+                  :answerA="msg.arena.answerA"
+                  :answerB="msg.arena.answerB"
+                  :loading="msg.arena.loading"
+                  :voted="msg.arena.voted"
+                  @vote="handleArenaVote(msg, $event)"
+                />
+                <template v-else>
+                  <AgentPlanBlock
+                    v-if="msg.planContent"
+                    :content="msg.planContent"
+                    :streaming="loading && i === activeConversation.messages.length - 1"
+                  />
+                  <AgentEventBlock
+                    v-for="(ev, j) in msg.events"
+                    :key="j"
+                    :type="ev.type"
+                    :content="ev.content"
+                    :toolName="ev.metadata?.tool_name || ''"
+                    :metadata="ev.metadata"
+                  />
+                  <MessageBubble
+                    v-if="msg.answer"
+                    role="assistant"
+                    :content="msg.answer"
+                  />
+                </template>
               </div>
             </template>
           </template>
@@ -67,6 +79,7 @@
             :selectedModel="selectedModel"
             @update:selectedModel="selectedModel = $event"
             @submit="handleSend"
+            @stop="stopActiveRequest"
           />
         </div>
       </div>
@@ -118,6 +131,7 @@ import AgentEventBlock from '../components/ai-plan/AgentEventBlock.vue'
 import AgentPlanBlock from '../components/ai-plan/AgentPlanBlock.vue'
 import StreamingIndicator from '../components/ai-plan/StreamingIndicator.vue'
 import ConversationSidebar from '../components/ai-plan/ConversationSidebar.vue'
+import ModelArenaCompare from '../components/ai-plan/ModelArenaCompare.vue'
 
 const route = useRoute()
 const { isLoggedIn } = useAuth()
@@ -240,6 +254,11 @@ function handleSend({ query, file }) {
   if (!query) return
   if (!activeConversation.value) newConversation()
 
+  if (selectedMode.value === 'auto') {
+    handleAutoSend({ query, file })
+    return
+  }
+
   addMessage({ role: 'user', content: query })
   addMessage({ role: 'assistant', content: '', events: [], planContent: '' })
 
@@ -286,6 +305,7 @@ function handleSend({ query, file }) {
     },
     () => {
       loading.value = false
+      activeController.value = null
       const msg = agentMsg()
       if (msg?.answer) {
         try {
@@ -301,10 +321,124 @@ function handleSend({ query, file }) {
     },
     (err) => {
       loading.value = false
+      activeController.value = null
       console.error('SSE error:', err)
       addMessage({ role: 'assistant', content: `请求失败: ${err.message}`, events: [] })
     },
   )
+}
+
+async function handleAutoSend({ query, file }) {
+  addMessage({ role: 'user', content: query })
+  addMessage({
+    role: 'assistant',
+    content: '',
+    events: [],
+    arena: {
+      loading: true,
+      modelA: '',
+      modelB: '',
+      answerA: '',
+      answerB: '',
+      voted: '',
+    },
+  })
+
+  loading.value = true
+  scrollToBottom()
+
+  const formData = new FormData()
+  formData.append('query', query)
+  formData.append('userId', localStorage.getItem('userId') || '1')
+
+  const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
+  const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
+  formData.append('chatHistoryJson', JSON.stringify(historyToSent))
+
+  if (file) formData.append('file', file)
+
+  const arenaMsg = () => activeConversation.value?.messages.at(-1)
+
+  const controller = new AbortController()
+  activeController.value = controller
+
+  try {
+    const res = await fetch('/api/arena/auto', {
+      method: 'POST',
+      body: formData,
+      signal: controller.signal,
+    })
+    const data = await res.json()
+    if (data.code !== 200 || !data.data) {
+      throw new Error(data.message || '请求失败')
+    }
+    const msg = arenaMsg()
+    if (msg?.arena) {
+      msg.arena.loading = false
+      msg.arena.modelA = data.data.modelA
+      msg.arena.modelB = data.data.modelB
+      msg.arena.answerA = data.data.answerA
+      msg.arena.answerB = data.data.answerB
+      msg.content = `Auto对比：${data.data.modelA} vs ${data.data.modelB}`
+      activeConversation.value.messages = [...activeConversation.value.messages]
+    }
+  } catch (err) {
+    const errorMessage = err instanceof Error ? err.message : String(err)
+    const aborted = err && err.name === 'AbortError'
+    const msg = arenaMsg()
+    if (msg?.arena) {
+      msg.arena.loading = false
+      msg.arena.answerA = aborted ? '已停止' : `请求失败：${errorMessage}`
+      msg.arena.answerB = ''
+      msg.content = aborted ? 'Auto对比已停止' : 'Auto对比失败'
+      activeConversation.value.messages = [...activeConversation.value.messages]
+    }
+  } finally {
+    loading.value = false
+    activeController.value = null
+    persist()
+  }
+}
+
+function stopActiveRequest() {
+  if (!loading.value || !activeController.value) return
+  activeController.value.abort()
+  activeController.value = null
+  loading.value = false
+
+  const conv = activeConversation.value
+  if (!conv) return
+  const last = [...conv.messages].reverse().find(m => m.role === 'assistant')
+  if (last?.arena) {
+    last.arena.loading = false
+    if (!last.arena.answerA) last.arena.answerA = '已停止'
+  } else if (last) {
+    if (!last.events) last.events = []
+    last.events.push({ type: 'observation', content: '已停止', metadata: {} })
+  }
+  conv.messages = [...conv.messages]
+  persist()
+}
+
+async function handleArenaVote(msg, result) {
+  if (!msg?.arena || msg.arena.voted) return
+  msg.arena.voted = result
+  activeConversation.value.messages = [...activeConversation.value.messages]
+  try {
+    await fetch('/api/arena/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        modelA: msg.arena.modelA,
+        modelB: msg.arena.modelB,
+        result,
+      }),
+    })
+  } catch {
+    msg.arena.voted = ''
+    activeConversation.value.messages = [...activeConversation.value.messages]
+  }
+  persist()
 }
 
 async function loadSavedPlan(planId) {
@@ -442,6 +576,10 @@ function handleUpdateItinerary(updated) {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.agent-content-wrapper.arena {
+  max-width: 100%;
 }
 
 .compact-input-area {
