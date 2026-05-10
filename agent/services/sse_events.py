@@ -14,6 +14,8 @@ def sse_event(event_type: str, content: str, metadata: dict[str, Any] | None = N
     - "thought": agent reasoning step
     - "action": tool invocation
     - "observation": tool result
+    - "ask_user": agent is waiting for user input (questions in metadata.questions)
+    - "suggestions": follow-up question suggestions (questions in metadata.questions)
     - "answer": final travel plan
     - "error": error message
     - "done": stream complete signal

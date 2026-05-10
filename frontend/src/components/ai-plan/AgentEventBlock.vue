@@ -57,6 +57,7 @@ const iconMap = {
   action: 'wrench',
   observation: 'eye',
   reflection: 'refresh',
+  ask_user: 'message',
 }
 
 const labelMap = {
@@ -65,6 +66,7 @@ const labelMap = {
   action: '调用工具',
   observation: '观察结果',
   reflection: '自我反思',
+  ask_user: '等待用户确认',
 }
 
 const iconName = computed(() => iconMap[props.type] || 'sparkles')
@@ -153,6 +155,7 @@ const label = computed(() => {
 .action .event-icon { color: #f97316; }
 .observation .event-icon { color: #22c55e; }
 .reflection .event-icon { color: #06b6d4; }
+.ask_user .event-icon { color: #3b82f6; }
 
 .event-label {
   flex: 1;
