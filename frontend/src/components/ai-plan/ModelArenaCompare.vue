@@ -25,10 +25,10 @@
     </div>
 
     <div class="arena-actions">
-      <button class="arena-btn" :disabled="voted" @click="emitVote('A')">A 更好</button>
-      <button class="arena-btn" :disabled="voted" @click="emitVote('B')">B 更好</button>
-      <button class="arena-btn ghost" :disabled="voted" @click="emitVote('BOTH_GOOD')">都好</button>
-      <button class="arena-btn ghost" :disabled="voted" @click="emitVote('BOTH_BAD')">都不好</button>
+      <button class="arena-btn" :disabled="isDisabled" @click="emitVote('A')">A 更好</button>
+      <button class="arena-btn" :disabled="isDisabled" @click="emitVote('B')">B 更好</button>
+      <button class="arena-btn ghost" :disabled="isDisabled" @click="emitVote('BOTH_GOOD')">都好</button>
+      <button class="arena-btn ghost" :disabled="isDisabled" @click="emitVote('BOTH_BAD')">都不好</button>
       <span v-if="votedLabel" class="arena-voted">已投票：{{ votedLabel }}</span>
     </div>
   </div>
@@ -62,6 +62,10 @@ const votedLabel = computed(() => {
   if (props.voted === 'BOTH_GOOD') return '都好'
   if (props.voted === 'BOTH_BAD') return '都不好'
   return ''
+})
+
+const isDisabled = computed(() => {
+  return Boolean(props.voted) || props.loading
 })
 
 function emitVote(result) {
@@ -186,7 +190,7 @@ function emitVote(result) {
   transition: all 0.15s;
 }
 
-.arena-btn:hover {
+.arena-btn:hover:not(:disabled) {
   filter: brightness(1.05);
 }
 
@@ -199,25 +203,5 @@ function emitVote(result) {
   background: transparent;
   color: var(--color-secondary);
   border: 1px solid var(--color-border);
-}
-
-.arena-btn.ghost:hover {
-  color: var(--color-title);
-  border-color: var(--color-red-light);
-}
-
-.arena-voted {
-  font-size: 12px;
-  color: var(--color-secondary);
-}
-
-@media (max-width: 900px) {
-  .arena-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .arena-answer {
-    max-height: 240px;
-  }
 }
 </style>
