@@ -1,0 +1,71 @@
+server:
+  port: 8080
+
+spring:
+  application:
+    name: tripagent-backend
+  datasource:
+    url: jdbc:h2:./data/tripagent;MODE=MySQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=false
+    username: sa
+    password:
+    driver-class-name: org.h2.Driver
+  h2:
+    console:
+      enabled: true
+      path: /h2-console
+  jpa:
+    hibernate:
+      ddl-auto: none
+    show-sql: false
+    properties:
+      hibernate:
+        format_sql: true
+  servlet:
+    multipart:
+      max-file-size: 1MB
+      max-request-size: 2MB
+  sql:
+    init:
+      mode: always
+      schema-locations: classpath:db/schema.sql
+
+agent:
+  base-url: http://localhost:8000
+
+# OpenAI 兼容 LLM 配置（player + judge 共用）
+# 优先从环境变量读取；本地开发也可放在 .env（启动时自动合并，见 DotenvEnvironmentPostProcessor）。
+# 可选：TRIPAGENT_DOTENV_PATH=C:\path\to\.env 指定单个文件。
+# PowerShell: $env:MODELSCOPE_API_KEY="ms-xxx"
+# Linux:      export MODELSCOPE_API_KEY=ms-xxx
+# 仅配置了 API_KEY 时，会映射为 MODELSCOPE_API_KEY（与 tripAgent/.env 示例一致）。
+# 官方 Python 示例中的 MODELSCOPE_ACCESS_TOKEN 与本项目的 MODELSCOPE_API_KEY 等价，.env 中任写其一即可。
+llm:
+  openai-compatible:
+    base-url: https://api-inference.modelscope.cn/v1
+    api-key: ${MODELSCOPE_API_KEY:}
+    judge-api-key: ${JUDGE_API_KEY:}
+    timeout-seconds: 60
+    max-retries: 2
+
+# Bradley-Terry 拟合参数
+bt:
+  bootstrap-rounds: 200
+  elo-anchor: 1000
+  elo-scale: 400
+  fit-max-iter: 200
+  fit-lr: 0.1
+
+logging:
+  level:
+    root: info
+
+eval:
+  export:
+    cleanup:
+      enabled: true
+      retention-days: 7
+      interval-ms: 3600000
+    monitor:
+      failure-rate-alert-threshold: 0.3
+      retry-rate-alert-threshold: 0.2
+      pending-alert-minutes: 10
