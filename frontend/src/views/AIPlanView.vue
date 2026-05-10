@@ -155,7 +155,7 @@ const loading = ref(false)
 const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
-const selectedModel = ref('deepseek-v4-flash')
+const selectedModel = ref('qwen3.6-plus')
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
 

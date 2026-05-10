@@ -20,7 +20,8 @@
       "Bash(curl -s -w \"\\\\nHTTP_CODE:%{http_code}\" http://localhost:8080/api/auth/login -X POST -H \"Content-Type: application/json\" -d '{\"username\":\"testuser\",\"password\":\"123456\"}')",
       "Bash(curl -s -w \"\\\\nHTTP_CODE:%{http_code}\" http://localhost:8080/api/profile -H \"X-User-Id: 3\")",
       "Bash(curl -s -w \"\\\\nHTTP_CODE:%{http_code}\" http://localhost:8080/api/profile -X PUT -H \"Content-Type: application/json\" -H \"X-User-Id: 3\" -d '{\"username\":\"testuser2\",\"email\":\"test2@test.com\",\"phone\":\"13800000002\",\"bio\":\"测试简介\"}')",
-      "Bash(curl *)"
+      "Bash(curl *)",
+      "WebSearch"
     ]
   }
 }

@@ -188,7 +188,7 @@ class SuggestQuestionsTool(Tool):
     def description(self) -> str:
         return (
             "Generate 3 suggested follow-up questions the user might want to ask next. "
-            "Call this at the end of your response to help the user continue the conversation."
+            "Call this alongside the finish tool when you are ready to complete the travel plan."
         )
 
     @property
@@ -226,3 +226,35 @@ class SuggestQuestionsTool(Tool):
         except Exception:
             pass
         return []
+
+
+class FinishTool(Tool):
+    @property
+    def name(self) -> str:
+        return "finish"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Call this tool when you have completed the travel plan and are ready to finish. "
+            "The 'answer' parameter should contain the complete travel plan in Markdown format. "
+            "You may call other tools (like suggest_questions) in the same turn."
+        )
+
+    @property
+    def parameters_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "answer": {
+                    "type": "string",
+                    "description": "The complete travel plan in Markdown format to present to the user",
+                },
+            },
+            "required": ["answer"],
+        }
+
+    def execute(self, answer: str) -> str:
+        return json.dumps(
+            {"status": "finished", "answer": answer}, ensure_ascii=False
+        )
