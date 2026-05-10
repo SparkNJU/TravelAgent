@@ -1,0 +1,86 @@
+### OS ###
+.DS_Store
+Thumbs.db
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+
+### Frontend ###
+frontend/node_modules/
+frontend/dist/
+frontend/build/
+frontend/.npm
+frontend/.vite/
+frontend/npm-debug.log*
+frontend/yarn-debug.log*
+frontend/yarn-error.log*
+frontend/**/*.tsbuildinfo
+frontend/src/**/*.js
+
+### Docs ###
+docs/
+
+### Backend ###
+backend/target/
+backend/data/
+backend/build/
+backend/.gradle/
+backend/.idea/
+backend/*.iml
+backend/out/
+backend/bin/
+backend/**/*.mv.db
+backend/**/*.trace.db
+
+### Agent ###
+agent/.venv313/
+agent/.venv/
+agent/venv/
+agent/env/
+agent/ENV/
+agent/__pycache__/
+agent/app/__pycache__/
+agent/.pytest_cache/
+agent/.mypy_cache/
+agent/.ruff_cache/
+agent/*.egg-info/
+agent/.eggs/
+agent/dist/
+agent/build/
+agent/.coverage
+agent/htmlcov/
+agent/.tox/
+agent/**/*.py[cod]
+
+### Environment ###
+.env
+.env.local
+.env.*.local
+.env.development.local
+.env.test.local
+.env.production.local
+frontend/.env.local
+agent/.env
+
+### IDE ###
+.vscode/
+.idea/
+*.iml
+*.sublime-project
+*.sublime-workspace
+*.swp
+*.swo
+*~
+
+### Logs ###
+*.log
+logs/
+*.pid
+*.seed
+*.pid.lock
+
+### Temp / caches ###
+*.tmp
+.cache/
+.parcel-cache/
