@@ -5,9 +5,9 @@
         <div class="login-panel" @click.stop>
           <div class="login-header">
             <div class="logo-circle">
-              <SvgIcon name="plane" :size="20" />
+              <img src="/logo.svg" alt="TravelMind" class="logo-img" />
             </div>
-            <h3>旅行计划助手</h3>
+            <h3>TravelMind AI</h3>
             <button class="close-btn" @click="$emit('close')">
               <SvgIcon name="close" :size="18" />
             </button>
@@ -181,6 +181,10 @@ const handleRegister = async () => {
   width: 36px; height: 36px; border-radius: 10px;
   background: var(--gradient-brand); display: flex;
   align-items: center; justify-content: center; color: white; flex-shrink: 0;
+  overflow: hidden;
+}
+.logo-img {
+  width: 100%; height: 100%; object-fit: cover; border-radius: 10px;
 }
 .login-header h3 {
   font-size: 16px; font-weight: 700; color: var(--color-title); margin: 0;

@@ -16,8 +16,8 @@
       <!-- Empty state: centered input -->
       <div v-if="!activeConversation || !activeConversation.messages.length" class="empty-state">
         <div class="brand-greeting">
-          <div class="brand-icon"><SvgIcon name="sparkles" :size="32" /></div>
-          <h1>AI 旅行规划</h1>
+          <div class="brand-icon"><img src="/logo.svg" alt="TravelMind" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" /></div>
+          <h1>TravelMind AI</h1>
           <p>描述你的旅行想法，智能生成个性化行程方案</p>
         </div>
         <ChatInput :loading="loading" v-model="selectedMode" :selectedModel="selectedModel" @update:selectedModel="selectedModel = $event" @submit="handleSend" />

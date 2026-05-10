@@ -1,7 +1,7 @@
 <template>
   <aside class="sidebar">
     <div class="sidebar-logo" @click="$router.push('/')">
-      <SvgIcon name="plane" :size="22" />
+      <img src="/logo.svg" alt="TravelMind" class="sidebar-logo-img" />
     </div>
 
     <nav class="sidebar-nav">
@@ -77,9 +77,9 @@ const handleLogout = () => {
 }
 
 .sidebar-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   background: var(--gradient-brand);
   display: flex;
   align-items: center;
@@ -89,6 +89,13 @@ const handleLogout = () => {
   margin-bottom: 24px;
   flex-shrink: 0;
   transition: transform 0.2s;
+  overflow: hidden;
+}
+
+.sidebar-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .sidebar-logo:hover {
