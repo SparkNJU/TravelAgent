@@ -25,7 +25,8 @@ Important:
 - Always search for up-to-date information about the destination
 - Check weather forecasts for the travel dates
 - If a tool call fails, try with different parameters or use a different approach
-- Structure your final answer as a detailed day-by-day itinerary with specific attractions, restaurants, and activities"""
+- Structure your final answer as a detailed day-by-day itinerary with specific attractions, restaurants, and activities
+- Use ask_user to clarify user preferences (budget, dates, travel style, dietary needs, etc.) when the information is essential but missing"""
 
 
 class ReActAgent:
@@ -130,6 +131,21 @@ class ReActAgent:
                         "content": result_str[:4000],
                     }
                 )
+
+                # Detect ask_user and break the loop
+                if tool_name == "ask_user":
+                    try:
+                        parsed_result = json.loads(result_str)
+                        if parsed_result.get("status") == "waiting_for_user":
+                            yield self._emit(
+                                "ask_user",
+                                parsed_result.get("message", ""),
+                                {"questions": parsed_result.get("questions", [])},
+                            )
+                            yield self._emit("done", "", {})
+                            return
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
 
         yield self._emit(
             "error",
