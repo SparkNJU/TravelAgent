@@ -32,7 +32,14 @@ function syncActiveToBackend() {
   const body = {
     userId,
     title: conv.title,
-    messagesJson: JSON.stringify(conv.messages),
+    messagesJson: JSON.stringify(
+      conv.messages.map(m => {
+        if (m.role === 'assistant') {
+          return { role: 'assistant', content: m.answer || m.content || '' }
+        }
+        return { role: m.role, content: m.content || '' }
+      })
+    ),
     resultJson: conv.result ? JSON.stringify(conv.result) : null,
   }
 

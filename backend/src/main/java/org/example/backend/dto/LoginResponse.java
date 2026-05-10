@@ -6,11 +6,14 @@ public class LoginResponse {
     private String token; // For future JWT use
     private Long userId;
 
-    public LoginResponse(boolean success, String message, String token, Long userId) {
+    private String avatar;
+
+    public LoginResponse(boolean success, String message, String token, Long userId, String avatar) {
         this.success = success;
         this.message = message;
         this.token = token;
         this.userId = userId;
+        this.avatar = avatar;
     }
 
     public LoginResponse(boolean success, String message, String token) {
@@ -34,5 +37,9 @@ public class LoginResponse {
 
     public Long getUserId() {
         return userId;
+    }
+
+    public String getAvatar() {
+        return avatar;
     }
 }

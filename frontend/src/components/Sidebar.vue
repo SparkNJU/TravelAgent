@@ -1,7 +1,7 @@
 <template>
   <aside class="sidebar">
     <div class="sidebar-logo" @click="$router.push('/')">
-      <SvgIcon name="plane" :size="22" />
+      <img src="/logo.svg" alt="TravelMind" class="sidebar-logo-img" />
     </div>
 
     <nav class="sidebar-nav">
@@ -25,7 +25,8 @@
         <span>{{ theme === 'light' ? '深色' : '浅色' }}</span>
       </button>
       <template v-if="isLoggedIn">
-        <div class="user-avatar" :title="username">{{ avatarLetter }}</div>
+        <img v-if="avatar" :src="avatar" class="user-avatar-img" :title="username" />
+        <div v-else class="user-avatar" :title="username">{{ avatarLetter }}</div>
         <button class="nav-item logout" @click="handleLogout">
           <SvgIcon name="logout" :size="18" />
           <span>退出</span>
@@ -45,7 +46,7 @@ import SvgIcon from './SvgIcon.vue'
 import { useAuth } from '../composables/useAuth'
 import { useTheme } from '../composables/useTheme'
 
-const { isLoggedIn, username, logout } = useAuth()
+const { isLoggedIn, username, avatar, logout } = useAuth()
 const { theme, toggleTheme } = useTheme()
 const showLogin = inject('showLoginModal')
 
@@ -76,9 +77,9 @@ const handleLogout = () => {
 }
 
 .sidebar-logo {
-  width: 40px;
-  height: 40px;
-  border-radius: 12px;
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
   background: var(--gradient-brand);
   display: flex;
   align-items: center;
@@ -88,6 +89,13 @@ const handleLogout = () => {
   margin-bottom: 24px;
   flex-shrink: 0;
   transition: transform 0.2s;
+  overflow: hidden;
+}
+
+.sidebar-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .sidebar-logo:hover {
@@ -152,6 +160,13 @@ const handleLogout = () => {
   color: white;
   font-size: 14px;
   font-weight: 700;
+}
+
+.user-avatar-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .logout:hover {

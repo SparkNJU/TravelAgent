@@ -7,7 +7,7 @@ DROP TABLE IF EXISTS comments;
 DROP TABLE IF EXISTS community_posts;
 DROP TABLE IF EXISTS plan_highlights;
 DROP TABLE IF EXISTS travel_plans;
-DROP TABLE IF EXISTS orders;
+
 DROP TABLE IF EXISTS ai_planning_history;
 DROP TABLE IF EXISTS destinations;
 DROP TABLE IF EXISTS users;
@@ -78,24 +78,6 @@ CREATE TABLE IF NOT EXISTS plan_highlights (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     FOREIGN KEY (plan_id) REFERENCES travel_plans(id) ON DELETE CASCADE,
     INDEX idx_plan_id (plan_id)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
--- Orders Table
-CREATE TABLE IF NOT EXISTS orders (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    user_id BIGINT NOT NULL,
-    plan_id BIGINT,
-    order_number VARCHAR(50) NOT NULL UNIQUE,
-    total_amount DECIMAL(10, 2),
-    status VARCHAR(20) DEFAULT 'pending',
-    payment_method VARCHAR(50),
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    FOREIGN KEY (plan_id) REFERENCES travel_plans(id) ON DELETE SET NULL,
-    INDEX idx_user_id (user_id),
-    INDEX idx_order_number (order_number),
-    INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- AI Planning History Table (for tracking AI requests)

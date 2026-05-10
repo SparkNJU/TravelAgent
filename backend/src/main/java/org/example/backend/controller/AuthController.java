@@ -27,8 +27,9 @@ public class AuthController {
         Optional<User> user = userService.authenticate(request.getUsername(), request.getPassword());
         
         if (user.isPresent()) {
-            String token = "token_" + System.currentTimeMillis() + "_" + user.get().getId();
-            return new LoginResponse(true, "Authentication successful", token, user.get().getId());
+            User u = user.get();
+            String token = "token_" + System.currentTimeMillis() + "_" + u.getId();
+            return new LoginResponse(true, "Authentication successful", token, u.getId(), u.getProfilePicUrl());
         } else {
             return new LoginResponse(false, "Invalid username or password", null);
         }

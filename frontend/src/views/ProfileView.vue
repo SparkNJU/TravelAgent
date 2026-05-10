@@ -217,7 +217,7 @@ import { ref, onMounted } from 'vue'
 import SvgIcon from '../components/SvgIcon.vue'
 import { useAuth } from '../composables/useAuth'
 
-const { isLoggedIn, userId, updateUsername } = useAuth()
+const { isLoggedIn, userId, updateUsername, updateAvatar } = useAuth()
 
 const profile = ref({ username: '', email: '', phone: '', profilePicUrl: '', createdAt: '' })
 const plans = ref([])
@@ -268,6 +268,9 @@ const fetchProfile = async () => {
         email: data.data.email || '',
         phone: data.data.phone || '',
         bio: data.data.bio || ''
+      }
+      if (data.data.profilePicUrl) {
+        updateAvatar(data.data.profilePicUrl)
       }
     }
   } catch { /* ignore */ }
@@ -340,6 +343,10 @@ const formatItinerary = (itinerary) => {
 const handleUpdateProfile = async () => {
   editError.value = ''
   if (!editForm.value.username.trim()) { editError.value = '用户名不能为空'; return }
+  if (editForm.value.phone && !/^1[3-9]\d{9}$/.test(editForm.value.phone)) {
+    editError.value = '手机号格式不正确（需为11位大陆手机号）'
+    return
+  }
   editLoading.value = true
   try {
     const res = await fetch('/api/profile', {
@@ -407,6 +414,7 @@ const handleAvatarChange = async (e) => {
     const data = await res.json()
     if (data.code === 200) {
       profile.value.profilePicUrl = data.data
+      updateAvatar(data.data)
     }
   } catch { /* ignore */ }
   e.target.value = ''

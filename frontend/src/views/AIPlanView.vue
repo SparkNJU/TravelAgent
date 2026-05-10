@@ -16,8 +16,8 @@
       <!-- Empty state: centered input -->
       <div v-if="!activeConversation || !activeConversation.messages.length" class="empty-state">
         <div class="brand-greeting">
-          <div class="brand-icon"><SvgIcon name="sparkles" :size="32" /></div>
-          <h1>AI 旅行规划</h1>
+          <div class="brand-icon"><img src="/logo.svg" alt="TravelMind" style="width:100%;height:100%;object-fit:cover;border-radius:12px;" /></div>
+          <h1>TravelMind AI</h1>
           <p>描述你的旅行想法，智能生成个性化行程方案</p>
         </div>
         <ChatInput :loading="loading" v-model="selectedMode" :selectedModel="selectedModel" @update:selectedModel="selectedModel = $event" @submit="handleSend" />
@@ -96,7 +96,6 @@
         <p class="panel-meta">{{ activeConversation.result.destination }} · {{ activeConversation.result.days }}天</p>
         <div class="panel-actions">
           <button class="panel-btn primary" @click="saveToMyPlans">保存规划</button>
-          <button class="panel-btn" @click="shareToCommunity">分享</button>
         </div>
       </div>
       <div class="panel-map">
@@ -397,22 +396,6 @@ async function saveToMyPlans() {
   } catch {
     alert('保存失败，请重试')
   }
-}
-
-function shareToCommunity() {
-  if (!isLoggedIn.value) { showLogin(); return }
-  const result = activeConversation.value?.result
-  if (!result) return
-  fetch('/api/community/posts', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'X-User-Id': localStorage.getItem('userId') || '1' },
-    body: JSON.stringify({
-      title: result.title,
-      description: result.summary || '',
-      images: result.images?.map(i => i.imageUrl).filter(Boolean) || [],
-      tags: [result.destination, 'AI规划'].filter(Boolean),
-    }),
-  })
 }
 
 function handleUpdateItinerary(updated) {
