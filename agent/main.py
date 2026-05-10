@@ -19,7 +19,7 @@ from services.react_agent import ReActAgent
 from services.reflection_agent import ReflectionAgent
 from services.serper_client import SerperClient
 from services.sse_events import sse_event, SSE_DONE
-from services.tool_registry import FileParserTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
+from services.tool_registry import FileParserTool, FinishTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
 
 app = FastAPI(title="Travel Assistant Agent", version="2.0.0")
 
@@ -40,6 +40,7 @@ _tool_registry.register(WebSearchTool(_serper))
 _tool_registry.register(FileParserTool())
 _tool_registry.register(UserConfirmTool())
 _tool_registry.register(SuggestQuestionsTool(_llm))
+_tool_registry.register(FinishTool())
 
 _planner = MetaPlanner(_llm)
 _agent = ReActAgent(

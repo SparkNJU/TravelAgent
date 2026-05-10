@@ -16,17 +16,21 @@ You have access to the following tools:
 
 Follow the ReAct pattern:
 1. THINK: Analyze what information you need next
-2. ACT: Call a tool to gather information, or reason through a step
+2. ACT: Call a tool to gather information
 3. OBSERVE: Review the tool's result
 
-When you have gathered enough information, produce a comprehensive travel plan in Markdown format.
+When you have gathered enough information:
+- Output the complete travel plan as your message content (for the user to see during your process)
+- Call the `finish` tool with the complete travel plan in the 'answer' parameter to finalize
+- You may call `suggest_questions` in the same turn before or after `finish`
 
 Important:
 - Always search for up-to-date information about the destination
 - Check weather forecasts for the travel dates
 - If a tool call fails, try with different parameters or use a different approach
 - Structure your final answer as a detailed day-by-day itinerary with specific attractions, restaurants, and activities
-- Use ask_user to clarify user preferences (budget, dates, travel style, dietary needs, etc.) when the information is essential but missing"""
+- Use ask_user to clarify user preferences when essential information is missing
+- Do NOT end your response without calling the `finish` tool"""
 
 
 class ReActAgent:
@@ -86,12 +90,9 @@ class ReActAgent:
             if msg.content:
                 yield self._emit("thought", msg.content, {"step": step})
 
-            # No tool calls -> LLM is done, produce final answer
+            # No tool calls -> continue to next iteration
             if not msg.tool_calls:
-                final = msg.content or ""
-                yield self._emit("answer", final, {"step": step})
-                yield self._emit("done", "", {})
-                return
+                continue
 
             # ACT
             messages.append(msg.model_dump())
@@ -131,6 +132,17 @@ class ReActAgent:
                         "content": result_str[:4000],
                     }
                 )
+
+                # Detect finish -> extract answer and end
+                if tool_name == "finish":
+                    try:
+                        parsed_result = json.loads(result_str)
+                        answer = parsed_result.get("answer", "")
+                        yield self._emit("answer", answer, {"step": step})
+                    except (json.JSONDecodeError, AttributeError):
+                        pass
+                    yield self._emit("done", "", {})
+                    return
 
                 # Detect ask_user and break the loop
                 if tool_name == "ask_user":
