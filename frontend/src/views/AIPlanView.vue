@@ -41,6 +41,7 @@
                   :answerB="msg.arena.answerB"
                   :loading="msg.arena.loading"
                   :voted="msg.arena.voted"
+                  :events="msg.arena.events || []"
                   @vote="handleArenaVote(msg, $event)"
                 />
                 <template v-else>
@@ -151,6 +152,7 @@ const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
 const selectedModel = ref('deepseek-v4-flash')
+const arenaTraceTimers = []
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -235,6 +237,38 @@ function scrollToBottom() {
   nextTick(() => {
     const el = messagesRef.value
     if (el) el.scrollTop = el.scrollHeight
+  })
+}
+
+function clearArenaTraceTimers() {
+  while (arenaTraceTimers.length) {
+    clearTimeout(arenaTraceTimers.pop())
+  }
+}
+
+function pushArenaTrace(msg, type, content, metadata = {}) {
+  if (!msg?.arena) return
+  if (!Array.isArray(msg.arena.events)) msg.arena.events = []
+  msg.arena.events.push({ type, content, metadata })
+  activeConversation.value.messages = [...activeConversation.value.messages]
+  scrollToBottom()
+}
+
+function scheduleArenaTrace(msg) {
+  clearArenaTraceTimers()
+  const steps = [
+    { delay: 0, type: 'thought', content: '从候选池中随机抽取两个匿名模型进行对比。', metadata: { step: 1 } },
+    { delay: 800, type: 'action', content: '并行发起两路回答请求，保持同一输入和上下文。', metadata: { step: 2 } },
+    { delay: 1700, type: 'observation', content: '正在等待两路输出返回，开始整理对比结果。', metadata: { step: 3 } },
+    { delay: 2600, type: 'reflection', content: '回答已经生成完毕，投票后会揭晓具体模型名。', metadata: { step: 4 } },
+  ]
+
+  steps.forEach((step) => {
+    const timer = setTimeout(() => {
+      if (!msg?.arena?.loading) return
+      pushArenaTrace(msg, step.type, step.content, step.metadata)
+    }, step.delay)
+    arenaTraceTimers.push(timer)
   })
 }
 
@@ -341,6 +375,7 @@ async function handleAutoSend({ query, file }) {
       answerA: '',
       answerB: '',
       voted: '',
+      events: [],
     },
   })
 
@@ -358,6 +393,7 @@ async function handleAutoSend({ query, file }) {
   if (file) formData.append('file', file)
 
   const arenaMsg = () => activeConversation.value?.messages.at(-1)
+  scheduleArenaTrace(arenaMsg())
 
   const controller = new AbortController()
   activeController.value = controller
@@ -379,7 +415,7 @@ async function handleAutoSend({ query, file }) {
       msg.arena.modelB = data.data.modelB
       msg.arena.answerA = data.data.answerA
       msg.arena.answerB = data.data.answerB
-      msg.content = `Auto对比：${data.data.modelA} vs ${data.data.modelB}`
+      msg.content = 'Auto对比已完成，等待投票后揭晓模型名。'
       activeConversation.value.messages = [...activeConversation.value.messages]
     }
   } catch (err) {
@@ -394,6 +430,7 @@ async function handleAutoSend({ query, file }) {
       activeConversation.value.messages = [...activeConversation.value.messages]
     }
   } finally {
+    clearArenaTraceTimers()
     loading.value = false
     activeController.value = null
     persist()
@@ -412,6 +449,7 @@ function stopActiveRequest() {
   if (last?.arena) {
     last.arena.loading = false
     if (!last.arena.answerA) last.arena.answerA = '已停止'
+    clearArenaTraceTimers()
   } else if (last) {
     if (!last.events) last.events = []
     last.events.push({ type: 'observation', content: '已停止', metadata: {} })

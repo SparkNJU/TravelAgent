@@ -3,7 +3,6 @@
     <div class="leaderboard-header">
       <div>
         <h3>模型排行榜</h3>
-        <p>基于 Bradley-Terry 的对战评分</p>
       </div>
       <button class="refresh-btn" :disabled="loading" @click="$emit('refresh')">
         <SvgIcon name="refresh" :size="14" />

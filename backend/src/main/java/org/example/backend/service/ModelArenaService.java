@@ -17,6 +17,9 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Random;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class ModelArenaService {
@@ -54,23 +57,67 @@ public class ModelArenaService {
         AgentChatRequest reqA = new AgentChatRequest();
         reqA.setQuery(query);
         reqA.setUserId(userId);
-        reqA.setMode("agent");
-        reqA.setGeneratePlanFirst(true);
+        reqA.setMode("agent");             
+        reqA.setGeneratePlanFirst(true);    
         reqA.setModel(modelA);
         reqA.setChatHistoryJson(chatHistoryJson);
 
         AgentChatRequest reqB = new AgentChatRequest();
         reqB.setQuery(query);
         reqB.setUserId(userId);
-        reqB.setMode("agent");
-        reqB.setGeneratePlanFirst(true);
+        reqB.setMode("agent");              
+        reqB.setGeneratePlanFirst(true);    
         reqB.setModel(modelB);
         reqB.setChatHistoryJson(chatHistoryJson);
 
-        String answerA = tripAssistantService.fetchAgentAnswer(reqA, file);
-        String answerB = tripAssistantService.fetchAgentAnswer(reqB, file);
+        CompletableFuture<String> futureA = CompletableFuture.supplyAsync(() -> {
+            try {
+                System.out.println("开始请求模型 A: " + modelA + " (mode: agent, generatePlanFirst: true)");
+                String result = tripAssistantService.fetchAgentAnswer(reqA, file);
+                System.out.println("模型 A 响应完成: " + modelA);
+                return result;
+            } catch (Exception e) {
+                System.out.println("模型 A 请求失败: " + modelA + ", 错误: " + e.getMessage());
+                return "模型A请求失败: " + e.getMessage();
+            }
+        });
+        
+        CompletableFuture<String> futureB = CompletableFuture.supplyAsync(() -> {
+            try {
+                System.out.println("开始请求模型 B: " + modelB + " (mode: agent, generatePlanFirst: true)");
+                String result = tripAssistantService.fetchAgentAnswer(reqB, file);
+                System.out.println("模型 B 响应完成: " + modelB);
+                return result;
+            } catch (Exception e) {
+                System.out.println("模型 B 请求失败: " + modelB + ", 错误: " + e.getMessage());
+                return "模型B请求失败: " + e.getMessage();
+            }
+        });
 
-        return new ArenaAutoResponse(modelA, modelB, answerA, answerB);
+        CompletableFuture<Void> combinedFuture = CompletableFuture.allOf(futureA, futureB);
+        
+        try {
+            combinedFuture.get(600, TimeUnit.SECONDS); // 增加超时时间到600秒(10分钟)
+            String answerA = futureA.get();
+            String answerB = futureB.get();
+            
+            return new ArenaAutoResponse(modelA, modelB, answerA, answerB);
+        } catch (TimeoutException e) {
+            throw new RuntimeException("模型响应超时", e);
+        } catch (Exception e) {
+            throw new RuntimeException("获取模型响应时出错: " + e.getMessage(), e);
+        }
+    }
+
+    private AgentChatRequest createRequest(String query, Long userId, String model, String chatHistoryJson) {
+        AgentChatRequest req = new AgentChatRequest();
+        req.setQuery(query);
+        req.setUserId(userId);
+        req.setMode("agent");
+        req.setGeneratePlanFirst(true);
+        req.setModel(model);
+        req.setChatHistoryJson(chatHistoryJson);
+        return req;
     }
 
     public void recordVote(ArenaVoteRequest request) {
