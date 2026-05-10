@@ -21,6 +21,7 @@ public class JudgeResponseParser {
     }
     String body = stripCodeFence(rawText.trim());
 
+    
     try {
       JsonNode node = objectMapper.readTree(body);
       String winner = node.path("winner").asText("").trim().toUpperCase();
