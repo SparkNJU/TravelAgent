@@ -8,6 +8,7 @@ import org.example.backend.service.ModelArenaService;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
 
 import java.util.List;
 
@@ -41,6 +42,16 @@ public class ModelArenaController {
                 query.trim(), userId, chatHistoryJson, file
         );
         return ApiResponse.success(response);
+    }
+
+    @PostMapping(value = "/auto/stream", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
+    public SseEmitter autoCompareStream(
+            @RequestParam("query") String query,
+            @RequestParam(value = "userId", defaultValue = "1") Long userId,
+            @RequestParam(value = "chatHistoryJson", required = false) String chatHistoryJson,
+            @RequestPart(value = "file", required = false) MultipartFile file
+    ) {
+        return modelArenaService.streamAutoComparison(query.trim(), userId, chatHistoryJson, file);
     }
 
     @PostMapping("/vote")

@@ -10,34 +10,19 @@
         <span class="arena-loading-title">正在生成对比回答</span>
         <span class="arena-loading-dots"><span class="dot" /><span class="dot" /><span class="dot" /></span>
       </div>
-      <div v-if="traceEvents.length" class="arena-trace">
-        <AgentEventBlock
-          v-for="(ev, index) in traceEvents"
-          :key="`${ev.type}-${index}`"
-          :type="ev.type"
-          :content="ev.content"
-          :metadata="ev.metadata"
-        />
-      </div>
-      <div v-else class="arena-loading-note">正在抽取匿名模型并并行生成回答，投票后再揭晓具体模型名。</div>
+      <ArenaTimeline :stages="stages" :loading="loading" compact />
+      <div class="arena-loading-note">正在抽取匿名模型并并行生成回答，投票后再揭晓具体模型名。</div>
     </div>
 
     <template v-else>
-      <div v-if="traceEvents.length" class="arena-trace revealed">
-        <AgentEventBlock
-          v-for="(ev, index) in traceEvents"
-          :key="`${ev.type}-${index}`"
-          :type="ev.type"
-          :content="ev.content"
-          :metadata="ev.metadata"
-        />
-      </div>
+      <ArenaTimeline v-if="stages.length" :stages="stages" :loading="false" class="arena-trace revealed" />
 
       <div class="arena-grid">
         <div class="arena-col">
           <div class="arena-col-header">
             <span class="arena-label">A</span>
             <span class="arena-model">{{ displayModelA }}</span>
+            <button class="arena-expand-btn" @click="openFullscreen('A')">全屏</button>
           </div>
           <div class="arena-answer" v-html="renderedA" />
         </div>
@@ -45,6 +30,7 @@
           <div class="arena-col-header">
             <span class="arena-label">B</span>
             <span class="arena-model">{{ displayModelB }}</span>
+            <button class="arena-expand-btn" @click="openFullscreen('B')">全屏</button>
           </div>
           <div class="arena-answer" v-html="renderedB" />
         </div>
@@ -59,14 +45,39 @@
       <span v-if="votedLabel" class="arena-voted">已投票：{{ votedLabel }}</span>
       <span v-else-if="!loading" class="arena-voted muted">投票后揭晓具体模型名</span>
     </div>
+
+    <div v-if="fullscreen.open" class="arena-fullscreen-mask" @click.self="closeFullscreen">
+      <section class="arena-fullscreen-panel">
+        <header class="arena-fullscreen-head">
+          <div class="arena-fullscreen-title">回答 {{ fullscreen.target }} · {{ fullscreen.target === 'A' ? displayModelA : displayModelB }}</div>
+          <div class="arena-fullscreen-actions">
+            <button class="arena-fullscreen-switch" @click="toggleFullscreenMode">{{ fullscreen.mode === 'split' ? '单栏' : '双栏' }}</button>
+            <button class="arena-fullscreen-switch" @click="switchFullscreen('A')">看 A</button>
+            <button class="arena-fullscreen-switch" @click="switchFullscreen('B')">看 B</button>
+            <button class="arena-fullscreen-close" @click="closeFullscreen">关闭</button>
+          </div>
+        </header>
+        <div v-if="fullscreen.mode === 'single'" class="arena-fullscreen-body" v-html="fullscreen.target === 'A' ? renderedA : renderedB"></div>
+        <div v-else class="arena-fullscreen-split">
+          <section class="split-col">
+            <header class="split-col-head">A · {{ displayModelA }}</header>
+            <div ref="fullscreenScrollA" class="split-col-body" @scroll="syncScroll('A')" v-html="renderedA"></div>
+          </section>
+          <section class="split-col">
+            <header class="split-col-head">B · {{ displayModelB }}</header>
+            <div ref="fullscreenScrollB" class="split-col-body" @scroll="syncScroll('B')" v-html="renderedB"></div>
+          </section>
+        </div>
+      </section>
+    </div>
   </div>
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, nextTick } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
-import AgentEventBlock from './AgentEventBlock.vue'
+import ArenaTimeline from './ArenaTimeline.vue'
 
 const props = defineProps({
   modelA: { type: String, default: '' },
@@ -75,17 +86,21 @@ const props = defineProps({
   answerB: { type: String, default: '' },
   loading: { type: Boolean, default: false },
   voted: { type: String, default: '' },
-  events: { type: Array, default: () => [] },
+  stages: { type: Array, default: () => [] },
 })
 
 const emit = defineEmits(['vote'])
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
+const fullscreen = ref({ open: false, target: 'A', mode: 'single' })
+const fullscreenScrollA = ref(null)
+const fullscreenScrollB = ref(null)
+let syncingScroll = false
 
 const renderedA = computed(() => DOMPurify.sanitize(md.render(props.answerA || '')))
 const renderedB = computed(() => DOMPurify.sanitize(md.render(props.answerB || '')))
-const traceEvents = computed(() => Array.isArray(props.events) ? props.events : [])
 const revealed = computed(() => Boolean(props.voted))
+const stages = computed(() => Array.isArray(props.stages) ? props.stages : [])
 const displayModelA = computed(() => (revealed.value ? props.modelA || '模型 A' : '模型 A'))
 const displayModelB = computed(() => (revealed.value ? props.modelB || '模型 B' : '模型 B'))
 
@@ -103,6 +118,42 @@ const isDisabled = computed(() => Boolean(props.voted) || props.loading)
 function emitVote(result) {
   if (props.loading || props.voted) return
   emit('vote', result)
+}
+
+function openFullscreen(target) {
+  fullscreen.value = { open: true, target, mode: 'single' }
+}
+
+function closeFullscreen() {
+  fullscreen.value = { open: false, target: 'A', mode: 'single' }
+}
+
+function switchFullscreen(target) {
+  fullscreen.value = { ...fullscreen.value, open: true, target }
+}
+
+function toggleFullscreenMode() {
+  const nextMode = fullscreen.value.mode === 'single' ? 'split' : 'single'
+  fullscreen.value = { ...fullscreen.value, mode: nextMode }
+  if (nextMode === 'split') {
+    nextTick(() => {
+      if (fullscreenScrollA.value && fullscreenScrollB.value) {
+        fullscreenScrollB.value.scrollTop = fullscreenScrollA.value.scrollTop
+      }
+    })
+  }
+}
+
+function syncScroll(source) {
+  if (fullscreen.value.mode !== 'split' || syncingScroll) return
+  const fromEl = source === 'A' ? fullscreenScrollA.value : fullscreenScrollB.value
+  const toEl = source === 'A' ? fullscreenScrollB.value : fullscreenScrollA.value
+  if (!fromEl || !toEl) return
+  syncingScroll = true
+  toEl.scrollTop = fromEl.scrollTop
+  requestAnimationFrame(() => {
+    syncingScroll = false
+  })
 }
 </script>
 
@@ -239,6 +290,16 @@ function emitVote(result) {
   color: var(--color-title);
 }
 
+.arena-expand-btn {
+  margin-left: auto;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  border-radius: 8px;
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
 .arena-answer {
   padding: 12px;
   font-size: 13px;
@@ -298,6 +359,125 @@ function emitVote(result) {
 .arena-voted.muted {
   color: var(--color-muted);
   font-weight: 500;
+}
+
+.arena-fullscreen-mask {
+  position: fixed;
+  inset: 0;
+  background: rgba(15, 23, 42, 0.52);
+  z-index: 2500;
+  padding: 24px;
+}
+
+.arena-fullscreen-panel {
+  width: min(1100px, 100%);
+  height: min(88vh, 960px);
+  margin: 0 auto;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  box-shadow: var(--shadow-card);
+  display: flex;
+  flex-direction: column;
+}
+
+.arena-fullscreen-head {
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.arena-fullscreen-title {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-title);
+}
+
+.arena-fullscreen-actions {
+  margin-left: auto;
+  display: inline-flex;
+  gap: 8px;
+}
+
+.arena-fullscreen-switch,
+.arena-fullscreen-close {
+  border-radius: 8px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.arena-fullscreen-close {
+  border-color: rgba(248, 113, 113, 0.45);
+  color: #b91c1c;
+}
+
+.arena-fullscreen-body {
+  flex: 1;
+  overflow: auto;
+  padding: 16px 18px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--color-body);
+}
+
+.arena-fullscreen-body :deep(p) {
+  margin: 0 0 12px;
+}
+
+.arena-fullscreen-split {
+  flex: 1;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0;
+  min-height: 0;
+}
+
+.split-col {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+
+.split-col + .split-col {
+  border-left: 1px solid var(--color-border);
+}
+
+.split-col-head {
+  font-size: 12px;
+  color: var(--color-title);
+  font-weight: 600;
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.split-col-body {
+  flex: 1;
+  overflow: auto;
+  padding: 14px 16px;
+  font-size: 14px;
+  line-height: 1.75;
+  color: var(--color-body);
+}
+
+.split-col-body :deep(p) {
+  margin: 0 0 12px;
+}
+
+@media (max-width: 960px) {
+  .arena-fullscreen-split {
+    grid-template-columns: 1fr;
+  }
+
+  .split-col + .split-col {
+    border-left: none;
+    border-top: 1px solid var(--color-border);
+  }
 }
 
 @keyframes arenaPulse {

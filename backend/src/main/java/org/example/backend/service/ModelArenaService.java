@@ -9,6 +9,8 @@ import org.example.backend.entity.ModelArenaVote;
 import org.example.backend.repository.ModelArenaVoteRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.servlet.mvc.method.annotation.SseEmitter;
+import jakarta.annotation.PreDestroy;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -18,6 +20,10 @@ import java.util.List;
 import java.util.Map;
 import java.util.Random;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
@@ -35,6 +41,7 @@ public class ModelArenaService {
     private final TripAssistantService tripAssistantService;
     private final ModelArenaVoteRepository voteRepository;
     private final Random random = new Random();
+    private final ExecutorService arenaExecutor = Executors.newFixedThreadPool(4);
 
     public ModelArenaService(TripAssistantService tripAssistantService, ModelArenaVoteRepository voteRepository) {
         this.tripAssistantService = tripAssistantService;
@@ -54,21 +61,8 @@ public class ModelArenaService {
         String modelA = models.get(0);
         String modelB = models.get(1);
 
-        AgentChatRequest reqA = new AgentChatRequest();
-        reqA.setQuery(query);
-        reqA.setUserId(userId);
-        reqA.setMode("agent");             
-        reqA.setGeneratePlanFirst(true);    
-        reqA.setModel(modelA);
-        reqA.setChatHistoryJson(chatHistoryJson);
-
-        AgentChatRequest reqB = new AgentChatRequest();
-        reqB.setQuery(query);
-        reqB.setUserId(userId);
-        reqB.setMode("agent");              
-        reqB.setGeneratePlanFirst(true);    
-        reqB.setModel(modelB);
-        reqB.setChatHistoryJson(chatHistoryJson);
+        AgentChatRequest reqA = createRequest(query, userId, modelA, chatHistoryJson);
+        AgentChatRequest reqB = createRequest(query, userId, modelB, chatHistoryJson);
 
         CompletableFuture<String> futureA = CompletableFuture.supplyAsync(() -> {
             try {
@@ -80,7 +74,7 @@ public class ModelArenaService {
                 System.out.println("模型 A 请求失败: " + modelA + ", 错误: " + e.getMessage());
                 return "模型A请求失败: " + e.getMessage();
             }
-        });
+        }, arenaExecutor);
         
         CompletableFuture<String> futureB = CompletableFuture.supplyAsync(() -> {
             try {
@@ -92,12 +86,12 @@ public class ModelArenaService {
                 System.out.println("模型 B 请求失败: " + modelB + ", 错误: " + e.getMessage());
                 return "模型B请求失败: " + e.getMessage();
             }
-        });
+        }, arenaExecutor);
 
         CompletableFuture<Void> combinedFuture = CompletableFuture.allOf(futureA, futureB);
         
         try {
-            combinedFuture.get(600, TimeUnit.SECONDS); // 增加超时时间到600秒(10分钟)
+            combinedFuture.get(600, TimeUnit.SECONDS); 
             String answerA = futureA.get();
             String answerB = futureB.get();
             
@@ -106,6 +100,180 @@ public class ModelArenaService {
             throw new RuntimeException("模型响应超时", e);
         } catch (Exception e) {
             throw new RuntimeException("获取模型响应时出错: " + e.getMessage(), e);
+        }
+    }
+
+    public SseEmitter streamAutoComparison(String query, Long userId, String chatHistoryJson, MultipartFile file) {
+        SseEmitter emitter = new SseEmitter(600_000L);
+
+        List<String> models = new ArrayList<>(DEFAULT_MODELS);
+        if (models.size() < 2) {
+            safeSend(emitter, Map.of(
+                    "type", "arena_error",
+                    "content", "模型配置不足"
+            ));
+            completeStream(emitter);
+            return emitter;
+        }
+
+        Collections.shuffle(models, random);
+        String modelA = models.get(0);
+        String modelB = models.get(1);
+
+        AgentChatRequest reqA = createRequest(query, userId, modelA, chatHistoryJson);
+        AgentChatRequest reqB = createRequest(query, userId, modelB, chatHistoryJson);
+
+        StringBuilder answerA = new StringBuilder();
+        StringBuilder answerB = new StringBuilder();
+        AtomicInteger doneCount = new AtomicInteger(0);
+        AtomicBoolean finished = new AtomicBoolean(false);
+
+        safeSend(emitter, Map.of(
+                "type", "arena_init",
+                "content", "已创建双模型流式对比任务",
+                "metadata", Map.of("sourceA", "A", "sourceB", "B")
+        ));
+
+        CompletableFuture<Void> streamA = CompletableFuture.runAsync(() ->
+                streamSingleModel(emitter, reqA, file, "A", answerA, doneCount, finished), arenaExecutor);
+        CompletableFuture<Void> streamB = CompletableFuture.runAsync(() ->
+                streamSingleModel(emitter, reqB, file, "B", answerB, doneCount, finished), arenaExecutor);
+
+        CompletableFuture.allOf(streamA, streamB)
+                .whenComplete((unused, throwable) -> {
+                    if (finished.compareAndSet(false, true)) {
+                        safeSend(emitter, Map.of(
+                                "type", "arena_complete",
+                                "content", "双模型对比完成",
+                                "metadata", Map.of(
+                                        "modelA", modelA,
+                                        "modelB", modelB,
+                                        "answerA", answerA.toString(),
+                                        "answerB", answerB.toString()
+                                )
+                        ));
+                        completeStream(emitter);
+                    }
+                });
+
+        emitter.onTimeout(() -> {
+            if (finished.compareAndSet(false, true)) {
+                safeSend(emitter, Map.of("type", "arena_error", "content", "对比超时"));
+                completeStream(emitter);
+            }
+        });
+        emitter.onError(t -> {
+            if (finished.compareAndSet(false, true)) {
+                completeStream(emitter);
+            }
+        });
+
+        return emitter;
+    }
+
+    private void streamSingleModel(
+            SseEmitter emitter,
+            AgentChatRequest req,
+            MultipartFile file,
+            String source,
+            StringBuilder answerBuffer,
+            AtomicInteger doneCount,
+            AtomicBoolean finished
+    ) {
+        try {
+            tripAssistantService.streamAgentEvents(
+                    req,
+                    file,
+                    event -> {
+                        if (finished.get()) {
+                            return;
+                        }
+                        String eventType = String.valueOf(event.getOrDefault("type", "unknown"));
+                        Object content = event.getOrDefault("content", "");
+
+                        if ("answer".equals(eventType)) {
+                            String chunk = content == null ? "" : content.toString();
+                            answerBuffer.append(chunk);
+                            safeSend(emitter, Map.of(
+                                    "type", "arena_answer_chunk",
+                                    "content", chunk,
+                                    "metadata", Map.of("source", source)
+                            ));
+                            return;
+                        }
+
+                        if ("error".equals(eventType)) {
+                            safeSend(emitter, Map.of(
+                                    "type", "arena_model_error",
+                                    "content", content == null ? "模型调用失败" : content.toString(),
+                                    "metadata", Map.of("source", source)
+                            ));
+                            return;
+                        }
+
+                        if (List.of("thought", "action", "observation", "reflection", "plan").contains(eventType)) {
+                            Object metadata = event.get("metadata");
+                            safeSend(emitter, Map.of(
+                                    "type", "arena_model_event",
+                                    "content", content == null ? "" : content.toString(),
+                                    "metadata", Map.of(
+                                            "source", source,
+                                            "eventType", eventType,
+                                            "eventMetadata", metadata == null ? Map.of() : metadata
+                                    )
+                            ));
+                        }
+                    },
+                    () -> {
+                        if (finished.get()) {
+                            return;
+                        }
+                        int count = doneCount.incrementAndGet();
+                        safeSend(emitter, Map.of(
+                                "type", "arena_model_done",
+                                "content", "模型输出完成",
+                                "metadata", Map.of("source", source, "doneCount", count)
+                        ));
+                    },
+                    err -> {
+                        if (finished.get()) {
+                            return;
+                        }
+                        safeSend(emitter, Map.of(
+                                "type", "arena_model_error",
+                                "content", err,
+                                "metadata", Map.of("source", source)
+                        ));
+                    }
+            );
+        } catch (Exception ex) {
+            if (finished.get()) {
+                return;
+            }
+            safeSend(emitter, Map.of(
+                    "type", "arena_model_error",
+                    "content", "模型流式调用异常: " + ex.getMessage(),
+                    "metadata", Map.of("source", source)
+            ));
+        }
+    }
+
+    private void safeSend(SseEmitter emitter, Map<String, Object> payload) {
+        synchronized (emitter) {
+            try {
+                emitter.send(SseEmitter.event().name("arena").data(payload));
+            } catch (Exception ignored) {
+            }
+        }
+    }
+
+    private void completeStream(SseEmitter emitter) {
+        synchronized (emitter) {
+            try {
+                emitter.send(SseEmitter.event().name("done").data("[DONE]"));
+            } catch (Exception ignored) {
+            }
+            emitter.complete();
         }
     }
 
@@ -118,6 +286,11 @@ public class ModelArenaService {
         req.setModel(model);
         req.setChatHistoryJson(chatHistoryJson);
         return req;
+    }
+
+    @PreDestroy
+    public void shutdownArenaExecutor() {
+        arenaExecutor.shutdown();
     }
 
     public void recordVote(ArenaVoteRequest request) {

@@ -3,7 +3,6 @@
     <header class="leaderboard-header">
       <div>
         <h1>模型排行榜</h1>
-        <p>基于 Bradley-Terry 的对战评分</p>
       </div>
       <button class="refresh-btn" :disabled="loading" @click="loadLeaderboard">
         <SvgIcon name="refresh" :size="14" />
@@ -69,12 +68,6 @@ onMounted(loadLeaderboard)
   font-size: 18px;
   color: var(--color-title);
   margin: 0 0 4px;
-}
-
-.leaderboard-header p {
-  margin: 0;
-  font-size: 12px;
-  color: var(--color-muted);
 }
 
 .leaderboard-main {

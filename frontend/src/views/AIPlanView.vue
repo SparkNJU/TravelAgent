@@ -41,7 +41,7 @@
                   :answerB="msg.arena.answerB"
                   :loading="msg.arena.loading"
                   :voted="msg.arena.voted"
-                  :events="msg.arena.events || []"
+                  :stages="msg.arena.stages || []"
                   @vote="handleArenaVote(msg, $event)"
                 />
                 <template v-else>
@@ -152,7 +152,6 @@ const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
 const selectedModel = ref('deepseek-v4-flash')
-const arenaTraceTimers = []
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -240,36 +239,180 @@ function scrollToBottom() {
   })
 }
 
-function clearArenaTraceTimers() {
-  while (arenaTraceTimers.length) {
-    clearTimeout(arenaTraceTimers.pop())
-  }
+function timeTag() {
+  return new Date().toTimeString().slice(0, 8)
 }
 
-function pushArenaTrace(msg, type, content, metadata = {}) {
+function createInitialArenaStages(query) {
+  return [
+    {
+      id: 'pick',
+      title: '匿名模型抽取',
+      status: 'running',
+      time: timeTag(),
+      expanded: true,
+      detail: `已接收问题：${query}\n从候选池随机抽取两个模型，并映射到匿名标签 A/B。`,
+    },
+    {
+      id: 'dispatch',
+      title: '并行请求派发',
+      status: 'pending',
+      time: '--:--:--',
+      expanded: false,
+      detail: '等待派发请求。',
+    },
+    {
+      id: 'reasoning',
+      title: '模型思考与草拟',
+      status: 'pending',
+      time: '--:--:--',
+      expanded: false,
+      detail: '等待模型生成过程。',
+    },
+    {
+      id: 'merge',
+      title: '结果整理与匿名展示',
+      status: 'pending',
+      time: '--:--:--',
+      expanded: true,
+      detail: '等待汇总回答。',
+    },
+  ]
+}
+
+function updateArenaStage(msg, stageId, patch = {}) {
   if (!msg?.arena) return
-  if (!Array.isArray(msg.arena.events)) msg.arena.events = []
-  msg.arena.events.push({ type, content, metadata })
+  if (!Array.isArray(msg.arena.stages)) msg.arena.stages = []
+  const index = msg.arena.stages.findIndex((item) => item.id === stageId)
+  if (index < 0) return
+  msg.arena.stages[index] = { ...msg.arena.stages[index], ...patch }
   activeConversation.value.messages = [...activeConversation.value.messages]
   scrollToBottom()
 }
 
-function scheduleArenaTrace(msg) {
-  clearArenaTraceTimers()
-  const steps = [
-    { delay: 0, type: 'thought', content: '从候选池中随机抽取两个匿名模型进行对比。', metadata: { step: 1 } },
-    { delay: 800, type: 'action', content: '并行发起两路回答请求，保持同一输入和上下文。', metadata: { step: 2 } },
-    { delay: 1700, type: 'observation', content: '正在等待两路输出返回，开始整理对比结果。', metadata: { step: 3 } },
-    { delay: 2600, type: 'reflection', content: '回答已经生成完毕，投票后会揭晓具体模型名。', metadata: { step: 4 } },
-  ]
-
-  steps.forEach((step) => {
-    const timer = setTimeout(() => {
-      if (!msg?.arena?.loading) return
-      pushArenaTrace(msg, step.type, step.content, step.metadata)
-    }, step.delay)
-    arenaTraceTimers.push(timer)
+function appendArenaReasoningLog(msg, source, eventType, content) {
+  if (!msg?.arena) return
+  if (!msg.arena.reasoningLogs) {
+    msg.arena.reasoningLogs = { A: [], B: [] }
+  }
+  const safeContent = String(content || '').trim()
+  if (!safeContent) return
+  const logs = msg.arena.reasoningLogs[source] || []
+  logs.push(`[${timeTag()}][${eventType}] ${safeContent}`)
+  msg.arena.reasoningLogs[source] = logs.slice(-10)
+  updateArenaStage(msg, 'reasoning', {
+    detail: [
+      '模型 A 事件流：',
+      ...(msg.arena.reasoningLogs.A || []).map(item => `- ${item}`),
+      '',
+      '模型 B 事件流：',
+      ...(msg.arena.reasoningLogs.B || []).map(item => `- ${item}`),
+    ].join('\n'),
   })
+}
+
+function handleArenaStreamEvent(msg, event) {
+  if (!msg?.arena || !event) return
+  const metadata = event.metadata || {}
+  const source = metadata.source || 'A'
+
+  if (event.type === 'arena_init') {
+    updateArenaStage(msg, 'pick', {
+      status: 'done',
+      detail: '已完成匿名映射：模型不会在投票前展示真实名称。',
+    })
+    updateArenaStage(msg, 'dispatch', {
+      status: 'running',
+      time: timeTag(),
+      expanded: true,
+      detail: '后端已开始并行建立双路模型流。',
+    })
+    return
+  }
+
+  if (event.type === 'arena_model_event') {
+    updateArenaStage(msg, 'dispatch', {
+      status: 'done',
+      detail: '并行流已建立，正在持续接收模型事件。',
+    })
+    updateArenaStage(msg, 'reasoning', {
+      status: 'running',
+      time: msg.arena.reasoningStartedAt || timeTag(),
+      expanded: true,
+    })
+    msg.arena.reasoningStartedAt = msg.arena.reasoningStartedAt || timeTag()
+    appendArenaReasoningLog(msg, source, metadata.eventType || 'event', event.content)
+    return
+  }
+
+  if (event.type === 'arena_answer_chunk') {
+    if (source === 'A') msg.arena.answerA = (msg.arena.answerA || '') + (event.content || '')
+    if (source === 'B') msg.arena.answerB = (msg.arena.answerB || '') + (event.content || '')
+    updateArenaStage(msg, 'reasoning', {
+      status: 'running',
+      expanded: true,
+    })
+    activeConversation.value.messages = [...activeConversation.value.messages]
+    scrollToBottom()
+    return
+  }
+
+  if (event.type === 'arena_model_done') {
+    if (!msg.arena.doneFlags) msg.arena.doneFlags = { A: false, B: false }
+    msg.arena.doneFlags[source] = true
+    appendArenaReasoningLog(msg, source, 'done', '该模型已完成流式输出。')
+    if (msg.arena.doneFlags.A && msg.arena.doneFlags.B) {
+      updateArenaStage(msg, 'reasoning', { status: 'done' })
+      updateArenaStage(msg, 'merge', {
+        status: 'running',
+        time: timeTag(),
+        expanded: true,
+        detail: '双路输出已完成，正在整理匿名对比结果。',
+      })
+    }
+    return
+  }
+
+  if (event.type === 'arena_model_error') {
+    appendArenaReasoningLog(msg, source, 'error', event.content || '模型流式调用失败')
+    updateArenaStage(msg, 'reasoning', { status: 'error' })
+    updateArenaStage(msg, 'merge', {
+      status: 'error',
+      time: timeTag(),
+      detail: '模型流中断，结果可能不完整。',
+    })
+    return
+  }
+
+  if (event.type === 'arena_complete') {
+    const finalMeta = metadata || {}
+    msg.arena.modelA = finalMeta.modelA || msg.arena.modelA
+    msg.arena.modelB = finalMeta.modelB || msg.arena.modelB
+    msg.arena.answerA = finalMeta.answerA || msg.arena.answerA
+    msg.arena.answerB = finalMeta.answerB || msg.arena.answerB
+    msg.arena.loading = false
+    msg.content = 'Auto对比已完成，等待投票后揭晓模型名。'
+    updateArenaStage(msg, 'merge', {
+      status: 'done',
+      detail: '双路回答已完成并匿名展示，当前进入投票阶段。',
+    })
+    activeConversation.value.messages = [...activeConversation.value.messages]
+    return
+  }
+
+  if (event.type === 'arena_error') {
+    msg.arena.loading = false
+    msg.content = event.content || 'Auto对比失败'
+    updateArenaStage(msg, 'reasoning', {
+      status: 'error',
+      detail: '对比流执行失败。',
+    })
+    updateArenaStage(msg, 'merge', {
+      status: 'error',
+      time: timeTag(),
+      detail: event.content || '结果整理失败。',
+    })
+  }
 }
 
 watch(() => activeConversation.value?.messages?.length, scrollToBottom)
@@ -375,7 +518,9 @@ async function handleAutoSend({ query, file }) {
       answerA: '',
       answerB: '',
       voted: '',
-      events: [],
+      stages: [],
+      reasoningLogs: { A: [], B: [] },
+      doneFlags: { A: false, B: false },
     },
   })
 
@@ -393,48 +538,55 @@ async function handleAutoSend({ query, file }) {
   if (file) formData.append('file', file)
 
   const arenaMsg = () => activeConversation.value?.messages.at(-1)
-  scheduleArenaTrace(arenaMsg())
-
-  const controller = new AbortController()
-  activeController.value = controller
-
-  try {
-    const res = await fetch('/api/arena/auto', {
-      method: 'POST',
-      body: formData,
-      signal: controller.signal,
-    })
-    const data = await res.json()
-    if (data.code !== 200 || !data.data) {
-      throw new Error(data.message || '请求失败')
-    }
-    const msg = arenaMsg()
-    if (msg?.arena) {
-      msg.arena.loading = false
-      msg.arena.modelA = data.data.modelA
-      msg.arena.modelB = data.data.modelB
-      msg.arena.answerA = data.data.answerA
-      msg.arena.answerB = data.data.answerB
-      msg.content = 'Auto对比已完成，等待投票后揭晓模型名。'
-      activeConversation.value.messages = [...activeConversation.value.messages]
-    }
-  } catch (err) {
-    const errorMessage = err instanceof Error ? err.message : String(err)
-    const aborted = err && err.name === 'AbortError'
-    const msg = arenaMsg()
-    if (msg?.arena) {
-      msg.arena.loading = false
-      msg.arena.answerA = aborted ? '已停止' : `请求失败：${errorMessage}`
-      msg.arena.answerB = ''
-      msg.content = aborted ? 'Auto对比已停止' : 'Auto对比失败'
-      activeConversation.value.messages = [...activeConversation.value.messages]
-    }
-  } finally {
-    clearArenaTraceTimers()
-    loading.value = false
-    activeController.value = null
-    persist()
+  const msg = arenaMsg()
+  if (msg?.arena) {
+    msg.arena.stages = createInitialArenaStages(query)
+    activeConversation.value.messages = [...activeConversation.value.messages]
   }
+
+  activeController.value = streamPost(
+    '/api/arena/auto/stream',
+    formData,
+    (event) => {
+      const current = arenaMsg()
+      handleArenaStreamEvent(current, event)
+    },
+    () => {
+      const current = arenaMsg()
+      if (current?.arena?.loading) {
+        current.arena.loading = false
+        updateArenaStage(current, 'merge', {
+          status: 'done',
+          detail: '流式连接结束，已停止接收新事件。',
+        })
+        activeConversation.value.messages = [...activeConversation.value.messages]
+      }
+      loading.value = false
+      activeController.value = null
+      persist()
+    },
+    (err) => {
+      const current = arenaMsg()
+      if (current?.arena) {
+        current.arena.loading = false
+        current.content = `Auto对比失败: ${err.message}`
+        updateArenaStage(current, 'reasoning', {
+          status: 'error',
+          time: timeTag(),
+          detail: `流式事件处理失败：${err.message}`,
+        })
+        updateArenaStage(current, 'merge', {
+          status: 'error',
+          time: timeTag(),
+          detail: '对比流程中断。',
+        })
+        activeConversation.value.messages = [...activeConversation.value.messages]
+      }
+      loading.value = false
+      activeController.value = null
+      persist()
+    },
+  )
 }
 
 function stopActiveRequest() {
@@ -449,7 +601,16 @@ function stopActiveRequest() {
   if (last?.arena) {
     last.arena.loading = false
     if (!last.arena.answerA) last.arena.answerA = '已停止'
-    clearArenaTraceTimers()
+    updateArenaStage(last, 'reasoning', {
+      status: 'error',
+      time: timeTag(),
+      detail: '用户手动停止了请求。',
+    })
+    updateArenaStage(last, 'merge', {
+      status: 'error',
+      time: timeTag(),
+      detail: '未能完成最终整理。',
+    })
   } else if (last) {
     if (!last.events) last.events = []
     last.events.push({ type: 'observation', content: '已停止', metadata: {} })
