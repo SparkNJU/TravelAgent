@@ -58,6 +58,23 @@
           <StreamingIndicator v-if="loading" />
         </div>
 
+        <!-- UserConfirmBlock: aligned with agent-content-wrapper -->
+        <div v-if="pendingAskUser && !loading" class="agent-content-wrapper">
+          <UserConfirmBlock
+            :message="pendingAskUser.message"
+            :questions="pendingAskUser.questions"
+            @confirm="handleConfirmResponse"
+          />
+        </div>
+
+        <!-- SuggestionChips: aligned with agent-content-wrapper -->
+        <div v-if="activeSuggestions.length && !loading" class="agent-content-wrapper">
+          <SuggestionChips
+            :questions="activeSuggestions"
+            @select="handleSuggestionSelect"
+          />
+        </div>
+
         <div class="compact-input-area">
           <ChatInput
             compact
@@ -119,6 +136,8 @@ import AgentEventBlock from '../components/ai-plan/AgentEventBlock.vue'
 import AgentPlanBlock from '../components/ai-plan/AgentPlanBlock.vue'
 import StreamingIndicator from '../components/ai-plan/StreamingIndicator.vue'
 import ConversationSidebar from '../components/ai-plan/ConversationSidebar.vue'
+import UserConfirmBlock from '../components/ai-plan/UserConfirmBlock.vue'
+import SuggestionChips from '../components/ai-plan/SuggestionChips.vue'
 
 const route = useRoute()
 const { isLoggedIn } = useAuth()
@@ -138,6 +157,8 @@ const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
 const selectedModel = ref('deepseek-v4-flash')
+const pendingAskUser = ref(null)
+const activeSuggestions = ref([])
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -237,21 +258,24 @@ function handleNewConversation() {
   sidebarCollapsed.value = false
 }
 
-function handleSend({ query, file }) {
-  if (!query) return
-  if (!activeConversation.value) newConversation()
+function startStream(query, mode = selectedMode.value, generatePlanFirst = null, file = null) {
+  if (generatePlanFirst === null) {
+    generatePlanFirst = false
+  }
 
   addMessage({ role: 'user', content: query })
   addMessage({ role: 'assistant', content: '', events: [], planContent: '' })
 
   loading.value = true
+  pendingAskUser.value = null
+  activeSuggestions.value = []
   scrollToBottom()
 
   const formData = new FormData()
   formData.append('query', query)
   formData.append('userId', localStorage.getItem('userId') || '1')
-  formData.append('mode', selectedMode.value)
-  formData.append('generatePlanFirst', selectedMode.value === 'plan' ? 'false' : 'true')
+  formData.append('mode', mode)
+  formData.append('generatePlanFirst', String(generatePlanFirst))
   formData.append('model', selectedModel.value)
 
   // Append history (excluding the two we just added for this current turn)
@@ -276,13 +300,20 @@ function handleSend({ query, file }) {
         msg.planContent += event.content
       } else if (event.type === 'done') {
         return
+      } else if (event.type === 'ask_user') {
+        pendingAskUser.value = {
+          message: event.content,
+          questions: event.metadata?.questions || [],
+        }
+        msg.events.push({ type: 'ask_user', content: event.content, metadata: event.metadata })
+      } else if (event.type === 'suggestions') {
+        activeSuggestions.value = event.metadata?.questions || []
       } else if (['thought', 'action', 'observation', 'reflection'].includes(event.type)) {
         msg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
       } else if (event.type === 'error') {
         msg.events.push({ type: 'observation', content: `Error: ${event.content}`, metadata: {} })
       }
       scrollToBottom()
-      // Force reactivity update
       activeConversation.value.messages = [...activeConversation.value.messages]
     },
     () => {
@@ -306,6 +337,23 @@ function handleSend({ query, file }) {
       addMessage({ role: 'assistant', content: `请求失败: ${err.message}`, events: [] })
     },
   )
+}
+
+function handleSend({ query, file }) {
+  if (!query) return
+  if (!activeConversation.value) newConversation()
+  startStream(query, selectedMode.value, null, file)
+}
+
+function handleConfirmResponse({ answers }) {
+  const parts = answers.map(a => `${a.question}: ${a.answer}`)
+  const message = `[用户确认信息] ${parts.join('; ')}`
+  startStream(message, 'agent', false)
+}
+
+function handleSuggestionSelect(question) {
+  activeSuggestions.value = []
+  startStream(question, selectedMode.value)
 }
 
 async function loadSavedPlan(planId) {
