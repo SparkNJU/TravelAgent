@@ -43,6 +43,19 @@ public class LlmGateway {
 
   /** 直接通过 ModelProfile 对象调 LLM (避免重复查 DB)。 */
   public LlmChatResponse invokeProfile(ModelProfile profile, List<LlmChatRequest.Message> messages) {
+    return invokeProfile(profile, messages, null, null);
+  }
+
+  /**
+   * 直接通过 ModelProfile 对象调 LLM，并允许温度/maxTokens 覆盖默认参数。
+   * 覆盖值优先级高于 profile.defaultParams。
+   */
+  public LlmChatResponse invokeProfile(
+      ModelProfile profile,
+      List<LlmChatRequest.Message> messages,
+      Double temperatureOverride,
+      Integer maxTokensOverride
+  ) {
     if (!Boolean.TRUE.equals(profile.getEnabled())) {
       throw new IllegalStateException("模型已禁用: " + profile.getModelId());
     }
@@ -76,6 +89,12 @@ public class LlmGateway {
         }
       } catch (Exception ignored) {
       }
+    }
+    if (temperatureOverride != null) {
+      temperature = temperatureOverride;
+    }
+    if (maxTokensOverride != null && maxTokensOverride > 0) {
+      maxTokens = maxTokensOverride;
     }
 
     LlmChatRequest req = new LlmChatRequest(

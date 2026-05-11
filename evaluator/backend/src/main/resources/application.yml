@@ -60,6 +60,10 @@ logging:
     root: info
 
 eval:
+  bt:
+    player-parallelism: 3
+    judge-parallelism: 4
+    skip-judge-when-player-failed: true
   export:
     cleanup:
       enabled: true

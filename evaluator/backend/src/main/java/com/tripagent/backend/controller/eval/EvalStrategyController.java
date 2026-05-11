@@ -2,11 +2,10 @@ package com.tripagent.backend.controller.eval;
 
 import com.tripagent.backend.dto.eval.CreateCustomMetricRequest;
 import com.tripagent.backend.dto.eval.CreateEvalStrategyRequest;
-import com.tripagent.backend.dto.eval.CreateStrategyVersionRequest;
 import com.tripagent.backend.dto.eval.CustomMetricResponse;
 import com.tripagent.backend.dto.eval.EvalApiResponse;
 import com.tripagent.backend.dto.eval.EvalStrategyResponse;
-import com.tripagent.backend.dto.eval.EvalStrategyVersionResponse;
+import com.tripagent.backend.dto.eval.UpdateEvalStrategyRequest;
 import com.tripagent.backend.service.eval.CustomMetricService;
 import com.tripagent.backend.service.eval.EvalStrategyService;
 import jakarta.validation.Valid;
@@ -15,6 +14,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -53,12 +53,12 @@ public class EvalStrategyController {
     return ResponseEntity.ok(EvalApiResponse.success(evalStrategyService.getStrategy(strategyId)));
   }
 
-  @PostMapping("/strategies/{strategyId}/versions")
-  public ResponseEntity<EvalApiResponse<EvalStrategyVersionResponse>> createStrategyVersion(
+  @PutMapping("/strategies/{strategyId}")
+  public ResponseEntity<EvalApiResponse<EvalStrategyResponse>> updateStrategy(
       @PathVariable Long strategyId,
-      @RequestBody CreateStrategyVersionRequest request
+      @RequestBody UpdateEvalStrategyRequest request
   ) {
-    EvalStrategyVersionResponse response = evalStrategyService.createStrategyVersion(strategyId, request);
+    EvalStrategyResponse response = evalStrategyService.updateStrategy(strategyId, request);
     return ResponseEntity.ok(EvalApiResponse.success(response));
   }
 
