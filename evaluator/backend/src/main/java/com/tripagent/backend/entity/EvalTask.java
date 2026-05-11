@@ -64,9 +64,6 @@ public class EvalTask {
   @Column(name = "strategy_config")
   private String strategyConfig;
 
-  @Column(name = "strategy_version")
-  private Long strategyVersion;
-
   @Lob
   @Column(name = "selected_model_ids")
   private String selectedModelIds;

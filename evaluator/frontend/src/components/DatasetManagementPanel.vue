@@ -13,8 +13,8 @@
     <div class="filter-bar">
       <select v-model="filterSource">
         <option value="">全部来源</option>
-        <option value="BUILTIN">BUILTIN（内置）</option>
-        <option value="USER">USER（用户上传）</option>
+        <option value="BUILTIN">内置（BUILTIN）</option>
+        <option value="USER">用户上传（USER）</option>
       </select>
       <label class="inline-check">
         <input v-model="onlyEnabled" type="checkbox" />
@@ -27,7 +27,7 @@
         <thead>
           <tr>
             <th>ID</th>
-            <th>name</th>
+            <th>名称</th>
             <th>显示名</th>
             <th>来源</th>
             <th>样本数</th>
@@ -74,7 +74,7 @@
             <input ref="fileInput" type="file" accept=".json,.csv" @change="onFileSelected" />
           </label>
           <label>
-            数据集 name（唯一，3-80 位字母/数字/下划线/连字符）
+            数据集名称（唯一，3-80 位字母/数字/下划线/连字符）
             <input v-model.trim="uploadForm.name" type="text" placeholder="trip-custom-001" />
           </label>
           <label>
@@ -106,9 +106,9 @@
             <thead>
               <tr>
                 <th>序号</th>
-                <th>sample_key</th>
-                <th>input</th>
-                <th>expectedOutput</th>
+                <th>样本键</th>
+                <th>输入</th>
+                <th>期望输出</th>
               </tr>
             </thead>
             <tbody>
@@ -177,7 +177,7 @@ async function loadDatasets(): Promise<void> {
     datasets.value = await listDatasets();
     notice.value = `共 ${datasets.value.length} 个数据集（启用 ${datasets.value.filter((d) => d.enabled).length}）`;
   } catch (err: any) {
-    notice.value = `加载失败: ${err.message || String(err)}`;
+    notice.value = `加载失败：${err.message || String(err)}`;
   }
 }
 
@@ -196,7 +196,7 @@ async function submitUpload(): Promise<void> {
     return;
   }
   if (!uploadForm.name) {
-    notice.value = 'name 必填';
+    notice.value = '数据集名称必填';
     return;
   }
   try {
@@ -215,7 +215,7 @@ async function submitUpload(): Promise<void> {
     if (fileInput.value) fileInput.value.value = '';
     await loadDatasets();
   } catch (err: any) {
-    notice.value = `上传失败: ${err.message || String(err)}`;
+    notice.value = `上传失败：${err.message || String(err)}`;
   }
 }
 
@@ -224,7 +224,7 @@ async function preview(d: Dataset): Promise<void> {
     previewing.value = d;
     previewSamples.value = await getDatasetSamples(d.datasetId, 10);
   } catch (err: any) {
-    notice.value = `预览失败: ${err.message || String(err)}`;
+    notice.value = `预览失败：${err.message || String(err)}`;
   }
 }
 
@@ -235,15 +235,30 @@ async function removeOne(d: Dataset): Promise<void> {
     await deleteDataset(d.datasetId);
     await loadDatasets();
   } catch (err: any) {
-    notice.value = `删除失败: ${err.message || String(err)}`;
+    notice.value = `删除失败：${err.message || String(err)}`;
   }
 }
 </script>
 
 <style scoped>
+.filter-bar {
+  grid-template-columns: minmax(240px, 360px) auto;
+  align-items: center;
+}
+
+.inline-check {
+  min-height: 42px;
+}
+
 .preview-modal {
   max-width: 80vw;
   max-height: 80vh;
   overflow: auto;
+}
+
+@media (max-width: 640px) {
+  .filter-bar {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

@@ -1,7 +1,7 @@
 package com.tripagent.backend.dto.eval;
 
-public record CreateStrategyVersionRequest(
-    Integer version,
+public record UpdateEvalStrategyRequest(
+    String strategyName,
     String metricDefinitions,
     String weightConfig,
     String thresholdConfig

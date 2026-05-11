@@ -2,15 +2,15 @@
   <section class="dashboard-page monitor-workspace">
     <article class="surface monitor-hero">
       <div class="monitor-hero-main">
-        <div class="monitor-kicker">Run Observatory</div>
-        <h2>样本监控 · Run #{{ runId }}</h2>
+        <div class="monitor-kicker">运行观测台</div>
+        <h2>样本监控 · 运行 #{{ runId }}</h2>
         <p>
           实时追踪执行进度、事件流、样本结果和工具轨迹，重点定位失败样本与耗时异常。
         </p>
       </div>
       <div class="monitor-hero-actions">
         <span class="live-pill" :class="currentRun?.status === 'RUNNING' ? 'is-live' : 'is-static'">
-          {{ currentRun?.status === 'RUNNING' ? 'LIVE' : currentRun?.status || 'IDLE' }}
+          {{ currentRun?.status === 'RUNNING' ? '运行中' : statusLabel(currentRun?.status) || '空闲' }}
         </span>
         <RouterLink :to="`/runs/${runId}`" class="ghost monitor-link">返回运行详情</RouterLink>
         <button type="button" class="ghost" @click="reload">刷新</button>
@@ -20,7 +20,7 @@
     <section class="monitor-summary-grid">
       <article class="surface summary-card emphasis">
         <span class="summary-label">任务状态</span>
-        <strong>{{ currentRun?.status || '-' }}</strong>
+        <strong>{{ statusLabel(currentRun?.status) || '-' }}</strong>
         <small>{{ taskName || '未绑定任务名称' }}</small>
       </article>
       <article class="surface summary-card">
@@ -44,7 +44,7 @@
         <small>首字 {{ metrics?.firstTokenP95 != null ? `${metrics.firstTokenP95} ms` : '-' }}</small>
       </article>
       <article class="surface summary-card">
-        <span class="summary-label">总 Token</span>
+        <span class="summary-label">总Token</span>
         <strong>{{ metrics?.totalTokens?.toLocaleString?.() ?? '-' }}</strong>
         <small>{{ metricsHint }}</small>
       </article>
@@ -55,9 +55,9 @@
         <div class="pane-head">
           <div>
             <h3>运行事件流</h3>
-            <p class="pane-sub">按时间顺序查看当前 run 的状态推进和关键节点。</p>
+            <p class="pane-sub">按时间顺序查看当前运行的状态推进和关键节点。</p>
           </div>
-          <span class="mini-badge">{{ timeline.length }} events</span>
+          <span class="mini-badge">{{ timeline.length }} 条事件</span>
         </div>
 
         <ol class="event-feed">
@@ -117,7 +117,7 @@
             </div>
             <p>{{ record.preview }}</p>
             <div class="sample-meta">
-              <span>{{ record.traceSteps.length }} tools</span>
+              <span>{{ record.traceSteps.length }} 个工具</span>
               <span>{{ record.endToEndLatencyMs != null ? `${record.endToEndLatencyMs} ms` : '-' }}</span>
               <span>{{ record.tokenSummary }}</span>
             </div>
@@ -132,10 +132,10 @@
         <div class="pane-head">
           <div>
             <h3>样本详情</h3>
-            <p class="pane-sub">参考 LangSmith 的问题定位思路，集中展示输入、响应、错误和工具链路。</p>
+            <p class="pane-sub">参考业界问题定位思路，集中展示输入、响应、错误和工具链路。</p>
           </div>
           <span v-if="selectedRecord" class="mini-badge">
-            Sample #{{ selectedRecord.index }}
+            样本 #{{ selectedRecord.index }}
           </span>
         </div>
 
@@ -147,7 +147,7 @@
             <span class="detail-chip neutral">{{ selectedRecord.endToEndLatencyMs != null ? `${selectedRecord.endToEndLatencyMs} ms` : '无延迟数据' }}</span>
             <span class="detail-chip neutral">{{ selectedRecord.tokenSummary }}</span>
             <span v-if="selectedRecord.modelProfileId != null" class="detail-chip neutral">
-              model #{{ selectedRecord.modelProfileId }}
+              模型 #{{ selectedRecord.modelProfileId }}
             </span>
           </div>
 
@@ -170,7 +170,7 @@
           <div v-if="selectedRecord.errorMessage" class="detail-block error">
             <span class="detail-label">失败原因</span>
             <div class="detail-content">
-              <strong>{{ selectedRecord.errorCode || 'RUN_FAILED' }}</strong>
+              <strong>{{ selectedRecord.errorCode || '运行失败' }}</strong>
               <p>{{ selectedRecord.errorMessage }}</p>
             </div>
           </div>
@@ -178,7 +178,7 @@
           <div class="detail-block">
             <div class="trace-headline">
               <span class="detail-label">工具轨迹</span>
-              <span class="trace-count">{{ selectedRecord.traceSteps.length }} steps</span>
+              <span class="trace-count">{{ selectedRecord.traceSteps.length }} 步</span>
             </div>
             <div v-if="selectedRecord.traceSteps.length" class="trace-stack">
               <div v-for="(step, idx) in selectedRecord.traceSteps" :key="`${selectedRecord.qaId}-${idx}`" class="trace-step">
@@ -458,14 +458,14 @@ function describeEvent(eventName: string, payload: Record<string, any>): Omit<Mo
     case 'run_state':
       return {
         title: '运行状态同步',
-        summary: `状态 ${payload.status ?? '-'}，当前进度 ${payload.successCount ?? 0}/${payload.totalCount ?? payload.total ?? 0}`,
+        summary: `状态 ${statusLabel(payload.status) || payload.status || '-'}，当前进度 ${payload.successCount ?? 0}/${payload.totalCount ?? payload.total ?? 0}`,
         payload: prettyPayload(payload),
         tone: 'info',
       };
     case 'run_started':
       return {
         title: '任务开始',
-        summary: `Run #${payload.runId ?? props.runId} 已进入执行阶段。`,
+        summary: `运行 #${payload.runId ?? props.runId} 已进入执行阶段。`,
         payload: prettyPayload(payload),
         tone: 'info',
       };
@@ -479,7 +479,7 @@ function describeEvent(eventName: string, payload: Record<string, any>): Omit<Mo
     case 'sample_collected':
       return {
         title: '样本已采集',
-        summary: `第 ${payload.index ?? '-'} 条样本已拿到模型/Agent 输出，等待评分。`,
+        summary: `第 ${payload.index ?? '-'} 条样本已拿到模型/应用输出，等待评分。`,
         payload: prettyPayload(payload),
         tone: 'info',
       };
@@ -493,7 +493,7 @@ function describeEvent(eventName: string, payload: Record<string, any>): Omit<Mo
     case 'ragas_started':
       return {
         title: 'Ragas 评分开始',
-        summary: `开始对 ${payload.samples ?? '-'} 条样本做 Judge 评分。`,
+        summary: `开始对 ${payload.samples ?? '-'} 条样本做裁判评分。`,
         payload: prettyPayload(payload),
         tone: 'warning',
       };
@@ -528,7 +528,7 @@ function describeEvent(eventName: string, payload: Record<string, any>): Omit<Mo
     case 'run_terminated':
       return {
         title: '流已关闭',
-        summary: `SSE 连接已结束，最终状态 ${payload.status ?? '-'}`,
+        summary: `SSE 连接已结束，最终状态 ${statusLabel(payload.status) || payload.status || '-'}`,
         payload: prettyPayload(payload),
         tone: 'idle',
       };
@@ -548,30 +548,39 @@ function parseTraceSteps(raw: string | null): TraceStep[] {
     const parsed = JSON.parse(raw);
     if (!Array.isArray(parsed)) return [];
     return parsed.map((item) => ({
-      tool: String(item?.tool ?? 'tool'),
+      tool: String(item?.tool ?? '工具'),
       input: stringifyValue(item?.input),
       output: stringifyValue(item?.output),
-      costLabel: item?.costMs != null ? `${item.costMs} ms` : 'n/a',
+      costLabel: item?.costMs != null ? `${item.costMs} ms` : '暂无',
     }));
   } catch {
     return [{
       tool: 'tool_trace',
       input: '-',
       output: raw,
-      costLabel: 'n/a',
+      costLabel: '暂无',
     }];
   }
 }
 
 function parseTokenSummary(raw: string | null): string {
-  if (!raw) return 'tokens n/a';
+  if (!raw) return 'Token：暂无';
   try {
     const parsed = JSON.parse(raw);
     const total = typeof parsed?.totalTokens === 'number' ? parsed.totalTokens : null;
-    return total != null ? `${total} tokens` : 'tokens n/a';
+    return total != null ? `Token：${total}` : 'Token：暂无';
   } catch {
-    return 'tokens n/a';
+    return 'Token：暂无';
   }
+}
+
+function statusLabel(status?: string | null): string {
+  if (!status) return '';
+  if (status === 'READY') return '就绪';
+  if (status === 'RUNNING') return '运行中';
+  if (status === 'SUCCEEDED') return '成功';
+  if (status === 'FAILED') return '失败';
+  return status;
 }
 
 function summarizeText(text: string | null | undefined, max = 56): string {

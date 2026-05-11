@@ -2,6 +2,7 @@ package com.tripagent.backend.service.eval;
 
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.tripagent.backend.config.EvalBtRuntimeProperties;
 import com.tripagent.backend.dto.eval.EvalRunResponse;
 import com.tripagent.backend.dto.eval.MetricSnapshotResponse;
 import com.tripagent.backend.dto.eval.QaRecordResponse;
@@ -25,7 +26,6 @@ import com.tripagent.backend.entity.enums.TaskStatus;
 import com.tripagent.backend.repository.CustomMetricRepository;
 import com.tripagent.backend.repository.EvalComparisonRepository;
 import com.tripagent.backend.repository.EvalRunRepository;
-import com.tripagent.backend.repository.EvalStrategyVersionRepository;
 import com.tripagent.backend.repository.EvalTaskRepository;
 import com.tripagent.backend.repository.MetricSnapshotRepository;
 import com.tripagent.backend.repository.QaRecordRepository;
@@ -44,8 +44,12 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.regex.Pattern;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
@@ -69,7 +73,6 @@ public class EvalRunService {
   private final EvalTaskRepository evalTaskRepository;
   private final QaRecordRepository qaRecordRepository;
   private final MetricSnapshotRepository metricSnapshotRepository;
-  private final EvalStrategyVersionRepository evalStrategyVersionRepository;
   private final CustomMetricRepository customMetricRepository;
   private final EvalDatasetLoaderService evalDatasetLoaderService;
   private final AgentGatewayService agentGatewayService;
@@ -83,18 +86,19 @@ public class EvalRunService {
   private final EvalComparisonRepository evalComparisonRepository;
   private final RatingService ratingService;
   private final RagasGatewayService ragasGatewayService;
+  private final EvalBtRuntimeProperties evalBtRuntimeProperties;
   private static final Pattern KEYWORD_SPLIT_PATTERN = Pattern.compile("[+,/;，；、\\s]+");
   private static final String RAGAS_FAITHFULNESS = "faithfulness";
   private static final String RAGAS_ANSWER_CORRECTNESS = "answer_correctness";
 
   private final Map<Long, CopyOnWriteArrayList<SseEmitter>> runEmitters = new ConcurrentHashMap<>();
+  private final Set<Long> cancelRequestedRuns = ConcurrentHashMap.newKeySet();
 
   public EvalRunService(
       EvalRunRepository evalRunRepository,
       EvalTaskRepository evalTaskRepository,
       QaRecordRepository qaRecordRepository,
       MetricSnapshotRepository metricSnapshotRepository,
-      EvalStrategyVersionRepository evalStrategyVersionRepository,
       CustomMetricRepository customMetricRepository,
       EvalDatasetLoaderService evalDatasetLoaderService,
       AgentGatewayService agentGatewayService,
@@ -107,13 +111,13 @@ public class EvalRunService {
       PerformanceComparator performanceComparator,
       EvalComparisonRepository evalComparisonRepository,
       RatingService ratingService,
-      RagasGatewayService ragasGatewayService
+      RagasGatewayService ragasGatewayService,
+      EvalBtRuntimeProperties evalBtRuntimeProperties
   ) {
     this.evalRunRepository = evalRunRepository;
     this.evalTaskRepository = evalTaskRepository;
     this.qaRecordRepository = qaRecordRepository;
     this.metricSnapshotRepository = metricSnapshotRepository;
-    this.evalStrategyVersionRepository = evalStrategyVersionRepository;
     this.customMetricRepository = customMetricRepository;
     this.evalDatasetLoaderService = evalDatasetLoaderService;
     this.agentGatewayService = agentGatewayService;
@@ -127,6 +131,7 @@ public class EvalRunService {
     this.evalComparisonRepository = evalComparisonRepository;
     this.ratingService = ratingService;
     this.ragasGatewayService = ragasGatewayService;
+    this.evalBtRuntimeProperties = evalBtRuntimeProperties;
   }
 
   @Transactional
@@ -147,6 +152,22 @@ public class EvalRunService {
   public EvalRunResponse getRun(Long runId) {
     EvalRun run = getRunOrThrow(runId);
     return toRunResponse(run);
+  }
+
+  @Transactional
+  public EvalRunResponse requestCancelLatestRunForTask(Long taskId) {
+    EvalRun latestRun = evalRunRepository.findTopByTaskTaskIdOrderByRunIdDesc(taskId)
+        .orElseThrow(() -> new IllegalArgumentException("No run found for taskId=" + taskId));
+    if (latestRun.getStatus() != RunStatus.RUNNING) {
+      throw new IllegalStateException("Task is not running: taskId=" + taskId + ", runId=" + latestRun.getRunId());
+    }
+    cancelRequestedRuns.add(latestRun.getRunId());
+    emitRunEvent(latestRun.getRunId(), "run_cancel_requested", Map.of(
+        "runId", latestRun.getRunId(),
+        "taskId", taskId,
+        "timestamp", LocalDateTime.now().toString()
+    ));
+    return toRunResponse(latestRun);
   }
 
   @Transactional(readOnly = true)
@@ -305,11 +326,13 @@ public class EvalRunService {
     }
 
     try {
+      throwIfRunCancelled(runId);
       emitRunEvent(runId, "run_started", Map.of("runId", runId, "taskId", task.getTaskId()));
 
       List<EvalDatasetSample> samples = evalDatasetLoaderService.loadSamples(task.getDatasetId());
       int total = samples.size();
-      ModelProfile selectedSingleModel = resolveSingleModel(task);
+      InferenceRuntimeConfig inferenceConfig = parseInferenceRuntimeConfig(task.getStrategyConfig());
+      ModelProfile selectedSingleModel = resolveSingleModel(task, inferenceConfig.modelProfileId());
 
       run.setTotalCount(total);
       evalRunRepository.save(run);
@@ -317,11 +340,12 @@ public class EvalRunService {
       // Phase 1: invoke agent / model for every sample, collect outputs.
       List<AgentSampleResult> agentResults = new ArrayList<>(total);
       for (int i = 0; i < samples.size(); i++) {
+        throwIfRunCancelled(runId);
         EvalDatasetSample sample = samples.get(i);
         emitRunEvent(runId, "sample_start", Map.of("runId", runId, "index", i + 1, "total", total));
         AgentSampleResult agentResult = selectedSingleModel == null
             ? invokeAgentForSample(runId, i + 1, sample)
-            : invokeModelForSample(selectedSingleModel, sample);
+            : invokeModelForSample(selectedSingleModel, sample, inferenceConfig);
         agentResults.add(agentResult);
         emitRunEvent(runId, "sample_collected", Map.of(
             "runId", runId, "index", i + 1, "total", total
@@ -332,6 +356,7 @@ public class EvalRunService {
       RagasScoreResult ragasResult = null;
       EvaluationMethod method = task.getEvaluationMethod();
       if (method == EvaluationMethod.JUDGE || method == EvaluationMethod.HYBRID) {
+        throwIfRunCancelled(runId);
         List<RagasGatewayService.RagasSample> ragasSamples = new ArrayList<>(total);
         for (int i = 0; i < samples.size(); i++) {
           EvalDatasetSample s = samples.get(i);
@@ -367,6 +392,7 @@ public class EvalRunService {
       int safeResponseCount = 0;
 
       for (int i = 0; i < samples.size(); i++) {
+        throwIfRunCancelled(runId);
         EvalDatasetSample sample = samples.get(i);
         AgentSampleResult agentResult = agentResults.get(i);
         long firstTokenLatency = agentResult.firstTokenLatencyMs();
@@ -487,6 +513,7 @@ public class EvalRunService {
       snapshot.setJudgeReason(buildJudgeReason(strategyEvalResult, customMetricResults, ragasResult));
       metricSnapshotRepository.save(snapshot);
 
+      throwIfRunCancelled(runId);
       emitRunEvent(runId, "strategy_applied", Map.of(
           "runId", runId,
           "overallScore", strategyEvalResult.overallScore(),
@@ -503,17 +530,12 @@ public class EvalRunService {
         emitRunEvent(runId, "run_done", Map.of("runId", runId, "status", RunStatus.SUCCEEDED));
         completeRunEmitters(runId);
       });
+    } catch (RunCancelledException cancelEx) {
+      markRunFailed(taskId, runId, run, cancelEx.getMessage() == null ? "Run cancelled by user" : cancelEx.getMessage());
     } catch (Exception ex) {
-      run.setStatus(RunStatus.FAILED);
-      run.setEndTime(LocalDateTime.now());
-      evalRunRepository.save(run);
-      evalRunRepository.flush();
-      evalTaskStatusService.refreshTaskStatus(taskId);
-
-      afterCommit(() -> {
-        emitRunEvent(runId, "run_failed", Map.of("runId", runId, "message", ex.getMessage()));
-        completeRunEmitters(runId);
-      });
+      markRunFailed(taskId, runId, run, ex.getMessage());
+    } finally {
+      clearCancelRequest(runId);
     }
   }
 
@@ -528,6 +550,34 @@ public class EvalRunService {
         action.run();
       }
     });
+  }
+
+  private void markRunFailed(Long taskId, Long runId, EvalRun run, String message) {
+    run.setStatus(RunStatus.FAILED);
+    if (run.getEndTime() == null) {
+      run.setEndTime(LocalDateTime.now());
+    }
+    evalRunRepository.save(run);
+    evalRunRepository.flush();
+    evalTaskStatusService.refreshTaskStatus(taskId);
+
+    final String safeMessage = (message == null || message.isBlank()) ? "Run failed" : message;
+    afterCommit(() -> {
+      emitRunEvent(runId, "run_failed", Map.of("runId", runId, "message", safeMessage));
+      completeRunEmitters(runId);
+    });
+  }
+
+  private void throwIfRunCancelled(Long runId) {
+    if (runId != null && cancelRequestedRuns.contains(runId)) {
+      throw new RunCancelledException("Run cancelled by user");
+    }
+  }
+
+  private void clearCancelRequest(Long runId) {
+    if (runId != null) {
+      cancelRequestedRuns.remove(runId);
+    }
   }
 
   private AgentSampleResult invokeAgentForSample(Long runId, int index, EvalDatasetSample sample) {
@@ -584,11 +634,20 @@ public class EvalRunService {
     return new AgentSampleResult(actualOutput, toolTrace, firstToken, endToEnd, tokenUsage, null);
   }
 
-  private AgentSampleResult invokeModelForSample(ModelProfile model, EvalDatasetSample sample) {
-    LlmChatResponse response = llmGateway.invokeProfile(model, List.of(
+  private AgentSampleResult invokeModelForSample(
+      ModelProfile model,
+      EvalDatasetSample sample,
+      InferenceRuntimeConfig inferenceConfig
+  ) {
+    LlmChatResponse response = llmGateway.invokeProfile(
+        model,
+        List.of(
         LlmChatRequest.Message.system(BT_PLAYER_SYSTEM_PROMPT),
         LlmChatRequest.Message.user(sample.input())
-    ));
+        ),
+        inferenceConfig.temperature(),
+        inferenceConfig.maxTokens()
+    );
     long latency = response.latencyMs();
     long totalTokens = response.totalTokens();
     if (totalTokens <= 0) {
@@ -607,12 +666,58 @@ public class EvalRunService {
     );
   }
 
-  private ModelProfile resolveSingleModel(EvalTask task) {
+  private ModelProfile resolveSingleModel(EvalTask task, Long fallbackModelProfileId) {
     List<Long> modelIds = parseSelectedModelIdsList(task.getSelectedModelIds());
-    if (modelIds.size() != 1) {
-      return null;
+    if (modelIds.size() == 1) {
+      return modelProfileService.resolvePlayers(modelIds).get(0);
     }
-    return modelProfileService.resolvePlayers(modelIds).get(0);
+    if (modelIds.isEmpty() && fallbackModelProfileId != null && fallbackModelProfileId > 0) {
+      return modelProfileService.resolvePlayers(List.of(fallbackModelProfileId)).get(0);
+    }
+    return null;
+  }
+
+  private InferenceRuntimeConfig parseInferenceRuntimeConfig(String strategyConfig) {
+    if (strategyConfig == null || strategyConfig.isBlank()) {
+      return new InferenceRuntimeConfig(null, null, null);
+    }
+    try {
+      Map<String, Object> root = objectMapper.readValue(
+          strategyConfig, new TypeReference<Map<String, Object>>() {});
+      Object inferenceObj = root.get("inference");
+      if (!(inferenceObj instanceof Map<?, ?> inferenceMap)) {
+        return new InferenceRuntimeConfig(null, null, null);
+      }
+
+      Double temperature = null;
+      Integer maxTokens = null;
+      Long modelProfileId = null;
+
+      Object t = inferenceMap.get("temperature");
+      if (t instanceof Number number) {
+        temperature = number.doubleValue();
+      }
+
+      Object mt = inferenceMap.get("maxTokens");
+      if (!(mt instanceof Number)) {
+        mt = inferenceMap.get("max_tokens");
+      }
+      if (mt instanceof Number number) {
+        maxTokens = number.intValue();
+      }
+
+      Object extraObj = inferenceMap.get("extra");
+      if (extraObj instanceof Map<?, ?> extraMap) {
+        Object modelIdObj = extraMap.get("modelProfileId");
+        if (modelIdObj instanceof Number number) {
+          modelProfileId = number.longValue();
+        }
+      }
+
+      return new InferenceRuntimeConfig(modelProfileId, temperature, maxTokens);
+    } catch (Exception ignored) {
+      return new InferenceRuntimeConfig(null, null, null);
+    }
   }
 
   private String stripSsePrefix(String rawChunk) {
@@ -1001,8 +1106,7 @@ public class EvalRunService {
     double safetyMin = 0.7D;
 
     // Single source of truth: task.strategyConfig (a JSON blob with optional weightConfig /
-    // thresholdConfig). The legacy fallback to EvalStrategyVersion was removed — at task creation
-    // time the chosen strategy version is copied into strategyConfig.
+    // thresholdConfig).
     Map<String, Double> embeddedWeights = parseEmbeddedWeights(task.getStrategyConfig());
     if (!embeddedWeights.isEmpty()) {
       mergeWeightConfigMap(weights, embeddedWeights);
@@ -1019,7 +1123,7 @@ public class EvalRunService {
 
     boolean passed = overallScore >= overallThreshold && safetyScore >= safetyMin;
 
-    return new StrategyEvalResult(overallScore, passed, weights, overallThreshold, safetyMin, task.getStrategyVersion());
+    return new StrategyEvalResult(overallScore, passed, weights, overallThreshold, safetyMin);
   }
 
   private Map<String, Double> parseEmbeddedWeights(String strategyConfig) {
@@ -1125,7 +1229,6 @@ public class EvalRunService {
   ) {
     Map<String, Object> reason = new LinkedHashMap<>();
     reason.put("summary", "Applied strategy weights and custom-metric aggregation");
-    reason.put("strategyVersionId", strategyEvalResult.strategyVersionId());
     reason.put("weights", strategyEvalResult.weights());
     reason.put("overallScore", strategyEvalResult.overallScore());
     reason.put("overallThreshold", strategyEvalResult.overallThreshold());
@@ -1199,9 +1302,14 @@ public class EvalRunService {
       boolean passed,
       Map<String, Double> weights,
       double overallThreshold,
-      double safetyMin,
-      Long strategyVersionId
+      double safetyMin
   ) {
+  }
+
+  private static final class RunCancelledException extends RuntimeException {
+    RunCancelledException(String message) {
+      super(message);
+    }
   }
 
     private record AgentSampleResult(
@@ -1214,14 +1322,21 @@ public class EvalRunService {
     ) {
     }
 
-    private record EvaluationResult(
+  private record EvaluationResult(
       boolean passed,
       String errorCode,
       String errorMessage,
       boolean hasValidToolTrace,
       boolean safeOutput
-    ) {
-    }
+  ) {
+  }
+
+  private record InferenceRuntimeConfig(
+      Long modelProfileId,
+      Double temperature,
+      Integer maxTokens
+  ) {
+  }
 
     // ============================================================
     // BT multi-model evaluation flow
@@ -1267,8 +1382,11 @@ public class EvalRunService {
       Long runId = run.getRunId();
       EvalTask task = run.getTask();
       Long taskId = task.getTaskId();
+      ExecutorService playerExecutor = null;
+      ExecutorService judgeExecutor = null;
 
       try {
+        throwIfRunCancelled(runId);
         emitRunEvent(runId, "run_started", Map.of(
             "runId", runId,
             "taskId", taskId,
@@ -1294,6 +1412,14 @@ public class EvalRunService {
           dimensions.add(EvaluationDimension.EFFECTIVENESS);
         }
         boolean swapEnabled = task.getPositionSwapEnabled() != null && task.getPositionSwapEnabled();
+        boolean skipJudgeWhenPlayerFailed = !Boolean.FALSE.equals(
+            evalBtRuntimeProperties.getSkipJudgeWhenPlayerFailed());
+        int playerParallelism = resolveParallelism(
+            evalBtRuntimeProperties.getPlayerParallelism(), players.size());
+        int judgeParallelism = resolveParallelism(
+            evalBtRuntimeProperties.getJudgeParallelism(), 4);
+        playerExecutor = Executors.newFixedThreadPool(playerParallelism);
+        judgeExecutor = Executors.newFixedThreadPool(judgeParallelism);
 
         List<EvalDatasetSample> samples = evalDatasetLoaderService.loadSamples(task.getDatasetId());
         int totalSamples = samples.size();
@@ -1313,10 +1439,14 @@ public class EvalRunService {
             "judgeModel", judge.getModelId(),
             "dimensions", dimensions.stream().map(Enum::name).toList(),
             "positionSwap", swapEnabled,
-            "totalSamples", totalSamples
+            "totalSamples", totalSamples,
+            "playerParallelism", playerParallelism,
+            "judgeParallelism", judgeParallelism,
+            "skipJudgeWhenPlayerFailed", skipJudgeWhenPlayerFailed
         ));
 
         for (int sampleIdx = 0; sampleIdx < totalSamples; sampleIdx++) {
+          throwIfRunCancelled(runId);
           EvalDatasetSample sample = samples.get(sampleIdx);
           int oneBased = sampleIdx + 1;
 
@@ -1324,10 +1454,19 @@ public class EvalRunService {
               "runId", runId, "index", oneBased, "total", totalSamples
           ));
 
-          // Phase 1: invoke every player model for this sample.
-          List<QaRecord> sampleRecords = new ArrayList<>(players.size());
+          // Phase 1: invoke player models in parallel for this sample.
+          List<CompletableFuture<BtPlayerResult>> playerFutures = new ArrayList<>(players.size());
           for (ModelProfile player : players) {
-            BtPlayerResult playerResult = invokeBtPlayer(player, sample);
+            playerFutures.add(CompletableFuture.supplyAsync(
+                () -> invokeBtPlayer(player, sample),
+                playerExecutor
+            ));
+          }
+
+          List<QaRecord> sampleRecords = new ArrayList<>(players.size());
+          for (int playerIdx = 0; playerIdx < players.size(); playerIdx++) {
+            ModelProfile player = players.get(playerIdx);
+            BtPlayerResult playerResult = playerFutures.get(playerIdx).join();
             QaRecord record = buildBtQaRecord(run, sample, player, playerResult);
             QaRecord saved = qaRecordRepository.save(record);
             sampleRecords.add(saved);
@@ -1349,7 +1488,9 @@ public class EvalRunService {
           // Phase 2: sample comparison pairs.
           List<int[]> pairs = comparisonSamplerService.allPairs(players.size());
 
-          // Phase 3: run judge comparisons for each pair and dimension.
+          // Phase 3: run comparisons (judge dimensions in parallel).
+          List<BtComparisonPayload> readyComparisons = new ArrayList<>();
+          List<CompletableFuture<BtComparisonPayload>> judgeFutures = new ArrayList<>();
           for (int[] pair : pairs) {
             int idxA = pair[0];
             int idxB = pair[1];
@@ -1362,43 +1503,65 @@ public class EvalRunService {
               if (dim == EvaluationDimension.PERFORMANCE) {
                 ComparisonResult perfResult = performanceComparator.compare(
                     recordA.getEndToEndLatencyMs(), recordB.getEndToEndLatencyMs());
-                saveComparison(run, oneBased, dim, modelA, modelB, recordA, recordB,
+                readyComparisons.add(new BtComparisonPayload(
+                    oneBased, dim, modelA, modelB, recordA, recordB,
                     false, perfResult, null,
                     "performance: latencyA=" + recordA.getEndToEndLatencyMs()
                         + ", latencyB=" + recordB.getEndToEndLatencyMs(),
-                    0L, 0L, 0L);
+                    0L, 0L, 0L
+                ));
                 continue;
               }
 
-              // EFFECTIVENESS / SAFETY / OVERALL use the judge LLM.
-              PairwiseJudgeService.JudgeOutcome outcome = pairwiseJudgeService.judgeOnce(
-                  judge, dim, task.getEvaluationMode(), task.getEvaluationMethod(),
-                  sample.input(), sample.expectedOutput(),
-                  recordA.getToolTrace(), recordB.getToolTrace(),
-                  recordA.getActualOutput(), recordB.getActualOutput()
-              );
-              saveComparison(run, oneBased, dim, modelA, modelB, recordA, recordB,
-                  false, outcome.result(), judge.getModelProfileId(),
-                  outcome.reason(), outcome.latencyMs(),
-                  outcome.promptTokens(), outcome.completionTokens());
+              ComparisonResult autoResult = skipJudgeWhenPlayerFailed
+                  ? resolveJudgeByPlayerFailure(recordA, recordB)
+                  : null;
+              if (autoResult != null) {
+                String autoReason = buildAutoJudgeReason(modelA, modelB, recordA, recordB, autoResult);
+                readyComparisons.add(new BtComparisonPayload(
+                    oneBased, dim, modelA, modelB, recordA, recordB,
+                    false, autoResult, null, autoReason,
+                    0L, 0L, 0L
+                ));
+                if (swapEnabled) {
+                  readyComparisons.add(new BtComparisonPayload(
+                      oneBased, dim, modelA, modelB, recordA, recordB,
+                      true, autoResult, null, "[swap] " + autoReason,
+                      0L, 0L, 0L
+                  ));
+                }
+                continue;
+              }
+
+              judgeFutures.add(CompletableFuture.supplyAsync(
+                  () -> runJudgeComparison(
+                      runId, oneBased, dim, task, sample, judge, modelA, modelB, recordA, recordB, false
+                  ),
+                  judgeExecutor
+              ));
 
               if (swapEnabled) {
-                // Swap A/B in the prompt to reduce position bias.
-                PairwiseJudgeService.JudgeOutcome swapOutcome = pairwiseJudgeService.judgeOnce(
-                    judge, dim, task.getEvaluationMode(), task.getEvaluationMethod(),
-                    sample.input(), sample.expectedOutput(),
-                    recordB.getToolTrace(), recordA.getToolTrace(),
-                    recordB.getActualOutput(), recordA.getActualOutput()
-                );
-                // Convert the swapped result back to the canonical (modelA, modelB) direction.
-                ComparisonResult canonicalResult = flipResult(swapOutcome.result());
-                saveComparison(run, oneBased, dim, modelA, modelB, recordA, recordB,
-                    true, canonicalResult, judge.getModelProfileId(),
-                    "[swap] " + swapOutcome.reason(),
-                    swapOutcome.latencyMs(),
-                    swapOutcome.promptTokens(), swapOutcome.completionTokens());
+                judgeFutures.add(CompletableFuture.supplyAsync(
+                    () -> runJudgeComparison(
+                        runId, oneBased, dim, task, sample, judge, modelA, modelB, recordA, recordB, true
+                    ),
+                    judgeExecutor
+                ));
               }
             }
+          }
+
+          for (CompletableFuture<BtComparisonPayload> future : judgeFutures) {
+            readyComparisons.add(future.join());
+          }
+          throwIfRunCancelled(runId);
+          for (BtComparisonPayload payload : readyComparisons) {
+            saveComparison(run, payload.sampleIndex(), payload.dimension(),
+                payload.modelA(), payload.modelB(),
+                payload.qaA(), payload.qaB(),
+                payload.positionSwap(), payload.result(), payload.judgeModelId(),
+                payload.reason(), payload.latencyMs(),
+                payload.promptTokens(), payload.completionTokens());
           }
 
           run.setSuccessCount(success);
@@ -1456,19 +1619,131 @@ public class EvalRunService {
           emitRunEvent(runId, "run_done", Map.of("runId", runId, "status", RunStatus.SUCCEEDED));
           completeRunEmitters(runId);
         });
+      } catch (RunCancelledException cancelEx) {
+        markRunFailed(taskId, runId, run, cancelEx.getMessage() == null ? "Run cancelled by user" : cancelEx.getMessage());
       } catch (Exception ex) {
-        run.setStatus(RunStatus.FAILED);
-        run.setEndTime(LocalDateTime.now());
-        evalRunRepository.save(run);
-        evalRunRepository.flush();
-        evalTaskStatusService.refreshTaskStatus(taskId);
+        markRunFailed(taskId, runId, run, ex.getMessage() == null ? "BT run failed" : ex.getMessage());
+      } finally {
+        shutdownExecutor(playerExecutor, "bt-player");
+        shutdownExecutor(judgeExecutor, "bt-judge");
+        clearCancelRequest(runId);
+      }
+    }
 
-        final String message = ex.getMessage();
-        afterCommit(() -> {
-          emitRunEvent(runId, "run_failed", Map.of("runId", runId, "message",
-              message == null ? "BT run failed" : message));
-          completeRunEmitters(runId);
-        });
+    private int resolveParallelism(Integer configured, int fallback) {
+      int safeFallback = fallback > 0 ? fallback : 1;
+      int value = configured == null ? safeFallback : configured;
+      if (value <= 0) {
+        value = safeFallback;
+      }
+      return Math.min(value, 16);
+    }
+
+    private void shutdownExecutor(ExecutorService executor, String name) {
+      if (executor == null) {
+        return;
+      }
+      executor.shutdown();
+      try {
+        if (!executor.awaitTermination(5, TimeUnit.SECONDS)) {
+          List<Runnable> dropped = executor.shutdownNow();
+          log.warn("{} executor forced shutdown, droppedTasks={}", name, dropped.size());
+        }
+      } catch (InterruptedException ex) {
+        Thread.currentThread().interrupt();
+        executor.shutdownNow();
+      }
+    }
+
+    private ComparisonResult resolveJudgeByPlayerFailure(QaRecord recordA, QaRecord recordB) {
+      boolean failedA = hasEvalError(recordA);
+      boolean failedB = hasEvalError(recordB);
+      if (!failedA && !failedB) {
+        return null;
+      }
+      if (failedA && failedB) {
+        return ComparisonResult.INVALID;
+      }
+      return failedA ? ComparisonResult.B_PREFERRED : ComparisonResult.A_PREFERRED;
+    }
+
+    private boolean hasEvalError(QaRecord record) {
+      return record != null && record.getErrorCode() != null && !record.getErrorCode().isBlank();
+    }
+
+    private String buildAutoJudgeReason(
+        ModelProfile modelA,
+        ModelProfile modelB,
+        QaRecord recordA,
+        QaRecord recordB,
+        ComparisonResult result
+    ) {
+      return switch (result) {
+        case A_PREFERRED -> "auto-judge skipped: modelB failed (" + modelB.getModelId()
+            + ", error=" + truncateReason(recordB.getErrorCode(), 80) + "), prefer modelA ("
+            + modelA.getModelId() + ")";
+        case B_PREFERRED -> "auto-judge skipped: modelA failed (" + modelA.getModelId()
+            + ", error=" + truncateReason(recordA.getErrorCode(), 80) + "), prefer modelB ("
+            + modelB.getModelId() + ")";
+        case INVALID -> "auto-judge skipped: both players failed ("
+            + modelA.getModelId() + ": " + truncateReason(recordA.getErrorCode(), 60) + ", "
+            + modelB.getModelId() + ": " + truncateReason(recordB.getErrorCode(), 60) + ")";
+        case TIE -> "auto-judge skipped: tie";
+      };
+    }
+
+    private BtComparisonPayload runJudgeComparison(
+        Long runId,
+        int sampleIndex,
+        EvaluationDimension dim,
+        EvalTask task,
+        EvalDatasetSample sample,
+        ModelProfile judge,
+        ModelProfile modelA,
+        ModelProfile modelB,
+        QaRecord recordA,
+        QaRecord recordB,
+        boolean positionSwap
+    ) {
+      throwIfRunCancelled(runId);
+      try {
+        PairwiseJudgeService.JudgeOutcome outcome = positionSwap
+            ? pairwiseJudgeService.judgeOnce(
+                judge, dim, task.getEvaluationMode(), task.getEvaluationMethod(),
+                sample.input(), sample.expectedOutput(),
+                recordB.getToolTrace(), recordA.getToolTrace(),
+                recordB.getActualOutput(), recordA.getActualOutput()
+            )
+            : pairwiseJudgeService.judgeOnce(
+                judge, dim, task.getEvaluationMode(), task.getEvaluationMethod(),
+                sample.input(), sample.expectedOutput(),
+                recordA.getToolTrace(), recordB.getToolTrace(),
+                recordA.getActualOutput(), recordB.getActualOutput()
+            );
+        throwIfRunCancelled(runId);
+
+        ComparisonResult canonicalResult = positionSwap
+            ? flipResult(outcome.result())
+            : outcome.result();
+        String reason = positionSwap ? "[swap] " + outcome.reason() : outcome.reason();
+        return new BtComparisonPayload(
+            sampleIndex, dim, modelA, modelB, recordA, recordB,
+            positionSwap, canonicalResult, judge.getModelProfileId(),
+            reason, outcome.latencyMs(),
+            outcome.promptTokens(), outcome.completionTokens()
+        );
+      } catch (RunCancelledException cancelled) {
+        throw cancelled;
+      } catch (Exception ex) {
+        String reason = "judge task failed: " + truncateReason(ex.getMessage(), 200);
+        if (positionSwap) {
+          reason = "[swap] " + reason;
+        }
+        return new BtComparisonPayload(
+            sampleIndex, dim, modelA, modelB, recordA, recordB,
+            positionSwap, ComparisonResult.INVALID, judge.getModelProfileId(),
+            reason, 0L, 0L, 0L
+        );
       }
     }
 
@@ -1566,6 +1841,23 @@ public class EvalRunService {
     private String truncateReason(String s, int max) {
       if (s == null) return null;
       return s.length() <= max ? s : s.substring(0, max) + "...";
+    }
+
+    private record BtComparisonPayload(
+        int sampleIndex,
+        EvaluationDimension dimension,
+        ModelProfile modelA,
+        ModelProfile modelB,
+        QaRecord qaA,
+        QaRecord qaB,
+        boolean positionSwap,
+        ComparisonResult result,
+        Long judgeModelId,
+        String reason,
+        long latencyMs,
+        long promptTokens,
+        long completionTokens
+    ) {
     }
 
     private record BtPlayerResult(

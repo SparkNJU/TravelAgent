@@ -234,6 +234,12 @@ public class EvalTaskController {
     return ResponseEntity.ok(EvalApiResponse.success(run));
   }
 
+  @PostMapping("/tasks/{taskId}/cancel")
+  public ResponseEntity<EvalApiResponse<EvalRunResponse>> cancelTask(@PathVariable Long taskId) {
+    EvalRunResponse run = evalTaskService.cancelTask(taskId);
+    return ResponseEntity.ok(EvalApiResponse.success(run));
+  }
+
   @DeleteMapping("/tasks/{taskId}")
   public ResponseEntity<EvalApiResponse<Boolean>> deleteTask(@PathVariable Long taskId) {
     evalTaskService.deleteTask(taskId);

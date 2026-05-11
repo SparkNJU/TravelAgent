@@ -8,7 +8,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.reactive.function.client.WebClient;
 
 @Configuration
-@EnableConfigurationProperties({LlmProperties.class, BtProperties.class})
+@EnableConfigurationProperties({LlmProperties.class, BtProperties.class, EvalBtRuntimeProperties.class})
 public class LlmWebClientConfig {
 
   @Bean
