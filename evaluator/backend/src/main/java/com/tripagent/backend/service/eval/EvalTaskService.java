@@ -14,7 +14,6 @@ import com.tripagent.backend.entity.enums.EvaluationMethod;
 import com.tripagent.backend.entity.enums.TaskStatus;
 import com.tripagent.backend.repository.EvalComparisonRepository;
 import com.tripagent.backend.repository.EvalRunRepository;
-import com.tripagent.backend.repository.EvalStrategyVersionRepository;
 import com.tripagent.backend.repository.EvalTaskRepository;
 import com.tripagent.backend.repository.MetricSnapshotRepository;
 import com.tripagent.backend.repository.ModelRatingRepository;
@@ -39,7 +38,6 @@ public class EvalTaskService {
   private final EvalComparisonRepository evalComparisonRepository;
   private final ModelRatingRepository modelRatingRepository;
   private final MetricSnapshotRepository metricSnapshotRepository;
-  private final EvalStrategyVersionRepository evalStrategyVersionRepository;
 
   public EvalTaskService(EvalTaskRepository evalTaskRepository, EvalRunService evalRunService,
                          EvalTaskStatusService evalTaskStatusService,
@@ -49,8 +47,7 @@ public class EvalTaskService {
                          QaRecordRepository qaRecordRepository,
                          EvalComparisonRepository evalComparisonRepository,
                          ModelRatingRepository modelRatingRepository,
-                         MetricSnapshotRepository metricSnapshotRepository,
-                         EvalStrategyVersionRepository evalStrategyVersionRepository) {
+                         MetricSnapshotRepository metricSnapshotRepository) {
     this.evalTaskRepository = evalTaskRepository;
     this.evalRunService = evalRunService;
     this.evalTaskStatusService = evalTaskStatusService;
@@ -61,7 +58,6 @@ public class EvalTaskService {
     this.evalComparisonRepository = evalComparisonRepository;
     this.modelRatingRepository = modelRatingRepository;
     this.metricSnapshotRepository = metricSnapshotRepository;
-    this.evalStrategyVersionRepository = evalStrategyVersionRepository;
   }
 
   @Transactional
@@ -74,11 +70,7 @@ public class EvalTaskService {
     task.setEvaluationMode(request.evaluationMode());
     task.setEvaluationMethod(request.evaluationMethod());
     task.setEvaluationDimensions(request.evaluationDimensions().trim());
-    // weightConfig single source of truth: if a strategy version is referenced, we copy its
-    // weightConfig / thresholdConfig into strategyConfig at create time so all subsequent reads
-    // (EvalRunService, RatingService) only need to look at task.strategyConfig.
-    task.setStrategyConfig(materializeStrategyConfig(request.strategyConfig(), request.strategyVersion()));
-    task.setStrategyVersion(request.strategyVersion());
+    task.setStrategyConfig(materializeStrategyConfig(request.strategyConfig()));
     task.setStatus(TaskStatus.READY);
 
     applyMultiModelFields(
@@ -96,28 +88,10 @@ public class EvalTaskService {
   }
 
   /**
-   * Compose the JSON blob stored on EvalTask.strategyConfig so the runtime never needs to fetch
-   * EvalStrategyVersion separately. The user-supplied strategyConfig wins; missing weightConfig /
-   * thresholdConfig keys are filled in from the referenced strategy version.
+   * Normalize the strategyConfig blob into a compact JSON map; no strategy-version merge.
    */
-  private String materializeStrategyConfig(String userStrategyConfig, Long strategyVersionId) {
+  private String materializeStrategyConfig(String userStrategyConfig) {
     Map<String, Object> root = parseRootJson(userStrategyConfig);
-    if (strategyVersionId != null) {
-      evalStrategyVersionRepository.findById(strategyVersionId).ifPresent(version -> {
-        if (!root.containsKey("weightConfig")) {
-          Map<String, Object> versionWeights = parseRootJson(version.getWeightConfig());
-          if (!versionWeights.isEmpty()) {
-            root.put("weightConfig", versionWeights);
-          }
-        }
-        if (!root.containsKey("thresholdConfig")) {
-          Map<String, Object> versionThresholds = parseRootJson(version.getThresholdConfig());
-          if (!versionThresholds.isEmpty()) {
-            root.put("thresholdConfig", versionThresholds);
-          }
-        }
-      });
-    }
     if (root.isEmpty()) {
       return userStrategyConfig;
     }
@@ -200,9 +174,6 @@ public class EvalTaskService {
     if (request.strategyConfig() != null) {
       task.setStrategyConfig(request.strategyConfig());
     }
-    if (request.strategyVersion() != null) {
-      task.setStrategyVersion(request.strategyVersion());
-    }
 
     boolean touchMulti = request.selectedModelIds() != null
         || request.judgeModelId() != null
@@ -235,6 +206,12 @@ public class EvalTaskService {
     EvalRunResponse run = evalRunService.createRunForTask(savedTask);
     evalRunService.executeRunAsync(run.runId());
     return run;
+  }
+
+  @Transactional
+  public EvalRunResponse cancelTask(Long taskId) {
+    getTaskOrThrow(taskId);
+    return evalRunService.requestCancelLatestRunForTask(taskId);
   }
 
   /**
@@ -386,7 +363,6 @@ public class EvalTaskService {
         task.getEvaluationMethod(),
         task.getEvaluationDimensions(),
         task.getStrategyConfig(),
-        task.getStrategyVersion(),
         parseSelectedModelIds(task.getSelectedModelIds()),
         task.getJudgeModelId(),
         task.getComparisonSamplingStrategy(),

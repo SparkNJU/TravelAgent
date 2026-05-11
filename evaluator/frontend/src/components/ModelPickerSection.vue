@@ -5,12 +5,12 @@
     </div>
     <div class="picker-block">
       <div class="picker-head">
-        <strong>Player（参赛模型，多选 ≥2）</strong>
+        <strong>参赛模型（多选，至少 2 个）</strong>
         <button class="ghost" type="button" @click="reload">刷新</button>
       </div>
 
       <div v-if="!playerModels.length" class="notice-text">
-        ⚠️ 暂无可用 PLAYER 模型 — 先去
+        ⚠️ 暂无可用参赛模型，请先到
         <RouterLink to="/models">「模型管理」</RouterLink> 注册
       </div>
 
@@ -18,7 +18,7 @@
         <div v-for="(playerId, idx) in selectedPlayerIds" :key="idx" class="slot-row">
           <span class="slot-index">#{{ idx + 1 }}</span>
           <select :value="playerId" @change="onPlayerSlotChange(idx, ($event.target as HTMLSelectElement).value)">
-            <option :value="0">— 请选择 player —</option>
+            <option :value="0">— 请选择参赛模型 —</option>
             <option
               v-for="m in availablePlayerOptions(idx)"
               :key="m.modelProfileId"
@@ -27,41 +27,84 @@
               {{ m.modelId }}（{{ m.displayName }}）
             </option>
           </select>
-          <button class="link-btn" type="button" @click="removeSlot(idx)" :disabled="selectedPlayerIds.length <= 1">删除</button>
+          <div class="slot-actions">
+            <button
+              class="ghost slot-ping"
+              type="button"
+              :disabled="playerId <= 0 || !!playerPingLoading[idx]"
+              @click="pingPlayer(idx, playerId)"
+            >
+              {{ playerPingLoading[idx] ? '检测中...' : '检测' }}
+            </button>
+            <button
+              class="ghost slot-delete"
+              type="button"
+              @click="removeSlot(idx)"
+              :disabled="selectedPlayerIds.length <= 1"
+            >
+              删除
+            </button>
+          </div>
+          <small
+            v-if="playerPingText[idx]"
+            class="slot-feedback"
+            :class="playerPingOk[idx] ? 'slot-feedback-ok' : 'slot-feedback-err'"
+          >
+            {{ playerPingText[idx] }}
+          </small>
         </div>
         <button class="ghost slot-add" type="button" @click="addSlot" :disabled="!canAddSlot">
-          + 添加 player（已选 {{ countSelectedPlayers }} / 最多 {{ playerModels.length }}）
+          + 添加参赛模型（已选 {{ countSelectedPlayers }} / 最多 {{ playerModels.length }}）
         </button>
       </div>
     </div>
 
     <div class="picker-block">
       <div class="picker-head">
-        <strong>Judge（评判模型，单选）</strong>
+        <strong>裁判模型（单选）</strong>
       </div>
 
       <div v-if="!judgeModels.length" class="notice-text">
-        ⚠️ 暂无可用 JUDGE 模型 — 先去
+        ⚠️ 暂无可用裁判模型，请先到
         <RouterLink to="/models">「模型管理」</RouterLink> 注册
       </div>
 
-      <select v-else :value="judgeId ?? 0" @change="onJudgeSelect(($event.target as HTMLSelectElement).value)">
-        <option :value="0">— 请选择 judge —</option>
-        <option
-          v-for="m in judgeModels"
-          :key="m.modelProfileId"
-          :value="m.modelProfileId"
-          :disabled="selectedPlayerIds.includes(m.modelProfileId)"
+      <template v-else>
+        <div class="judge-row">
+          <select :value="judgeId ?? 0" @change="onJudgeSelect(($event.target as HTMLSelectElement).value)">
+            <option :value="0">— 请选择裁判模型 —</option>
+            <option
+              v-for="m in judgeModels"
+              :key="m.modelProfileId"
+              :value="m.modelProfileId"
+              :disabled="selectedPlayerIds.includes(m.modelProfileId)"
+            >
+              {{ m.modelId }}（{{ m.displayName }}）{{ selectedPlayerIds.includes(m.modelProfileId) ? '· 已用作参赛模型' : '' }}
+            </option>
+          </select>
+          <button
+            class="ghost slot-ping judge-ping"
+            type="button"
+            :disabled="!judgeId || judgePingLoading"
+            @click="pingJudge"
+          >
+            {{ judgePingLoading ? '检测中...' : '检测' }}
+          </button>
+        </div>
+        <small
+          v-if="judgePingText"
+          class="slot-feedback"
+          :class="judgePingOk ? 'slot-feedback-ok' : 'slot-feedback-err'"
         >
-          {{ m.modelId }}（{{ m.displayName }}）{{ selectedPlayerIds.includes(m.modelProfileId) ? '· 已用作 player' : '' }}
-        </option>
-      </select>
+          {{ judgePingText }}
+        </small>
+      </template>
     </div>
 
     <p class="notice-text summary-text">
-      已选：<strong>{{ countSelectedPlayers }}</strong> 个 player，judge =
+      已选：<strong>{{ countSelectedPlayers }}</strong> 个参赛模型，裁判模型 =
       <strong>{{ judgeId ? judgeLabel : '未选' }}</strong>。
-      达到 ≥2 player + 1 judge 即触发 BT 多模型评测；否则按单模型流程跑。
+      达到“至少 2 个参赛模型 + 1 个裁判模型”即触发 BT 多模型评测；否则按单模型流程执行。
     </p>
   </div>
 </template>
@@ -70,7 +113,7 @@
 import { computed, onMounted, ref } from 'vue';
 import { RouterLink } from 'vue-router';
 
-import { listModels, type ModelProfile } from '../api/client';
+import { listModels, pingModel, type ModelProfile } from '../api/client';
 
 const props = defineProps<{
   selectedPlayerIds: number[];
@@ -84,6 +127,12 @@ const emit = defineEmits<{
 
 const allModels = ref<ModelProfile[]>([]);
 const modelLoadError = ref('');
+const playerPingLoading = ref<Record<number, boolean>>({});
+const playerPingText = ref<Record<number, string>>({});
+const playerPingOk = ref<Record<number, boolean>>({});
+const judgePingLoading = ref(false);
+const judgePingText = ref('');
+const judgePingOk = ref(false);
 
 const playerModels = computed(() =>
   allModels.value.filter((m) => m.enabled && (m.role === 'PLAYER' || m.role === 'BOTH')),
@@ -132,16 +181,24 @@ function availablePlayerOptions(currentSlotIdx: number): ModelProfile[] {
 function onPlayerSlotChange(slotIdx: number, raw: string): void {
   const next = [...props.selectedPlayerIds];
   next[slotIdx] = Number(raw);
+  playerPingText.value[slotIdx] = '';
+  playerPingOk.value[slotIdx] = false;
   emit('update:selectedPlayerIds', next);
 }
 
 function addSlot(): void {
   if (!canAddSlot.value) return;
+  playerPingLoading.value = {};
+  playerPingText.value = {};
+  playerPingOk.value = {};
   emit('update:selectedPlayerIds', [...props.selectedPlayerIds, 0]);
 }
 
 function removeSlot(idx: number): void {
   if (props.selectedPlayerIds.length <= 1) return;
+  playerPingLoading.value = {};
+  playerPingText.value = {};
+  playerPingOk.value = {};
   const next = props.selectedPlayerIds.filter((_, i) => i !== idx);
   emit('update:selectedPlayerIds', next);
 }
@@ -153,7 +210,43 @@ function onJudgeSelect(raw: string): void {
     return;
   }
   if (props.selectedPlayerIds.includes(id)) return;
+  judgePingText.value = '';
+  judgePingOk.value = false;
   emit('update:judgeId', id);
+}
+
+async function pingPlayer(slotIdx: number, modelProfileId: number): Promise<void> {
+  if (!modelProfileId || modelProfileId <= 0) return;
+  playerPingLoading.value[slotIdx] = true;
+  playerPingText.value[slotIdx] = '';
+  playerPingOk.value[slotIdx] = false;
+  try {
+    const res = await pingModel(modelProfileId, 'Ping from player slot');
+    playerPingOk.value[slotIdx] = true;
+    playerPingText.value[slotIdx] = `可用 · ${res.latencyMs} ms`;
+  } catch (err: any) {
+    playerPingOk.value[slotIdx] = false;
+    playerPingText.value[slotIdx] = `不可用 · ${err.message || String(err)}`;
+  } finally {
+    playerPingLoading.value[slotIdx] = false;
+  }
+}
+
+async function pingJudge(): Promise<void> {
+  if (!props.judgeId) return;
+  judgePingLoading.value = true;
+  judgePingText.value = '';
+  judgePingOk.value = false;
+  try {
+    const res = await pingModel(props.judgeId, 'Ping from judge slot');
+    judgePingOk.value = true;
+    judgePingText.value = `可用 · ${res.latencyMs} ms`;
+  } catch (err: any) {
+    judgePingOk.value = false;
+    judgePingText.value = `不可用 · ${err.message || String(err)}`;
+  } finally {
+    judgePingLoading.value = false;
+  }
 }
 </script>
 
@@ -174,24 +267,61 @@ function onJudgeSelect(raw: string): void {
   margin-bottom: 10px;
 }
 .slot-row {
-  display: flex;
-  gap: 10px;
-  align-items: center;
-  margin-bottom: 6px;
+  display: grid;
+  grid-template-columns: 28px minmax(0, 1fr) auto;
+  gap: 12px;
+  align-items: start;
+  margin-bottom: 10px;
 }
 .slot-row select {
-  flex: 1;
+  min-width: 0;
 }
 .slot-index {
   font-family: monospace;
   color: var(--text-secondary);
   width: 26px;
+  margin-top: 8px;
+}
+.slot-actions {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-top: 1px;
+}
+.slot-ping,
+.slot-delete {
+  min-width: 74px;
+  min-height: 36px;
+  font-size: 13px;
+}
+.judge-ping {
+  min-width: 82px;
+}
+.slot-feedback {
+  grid-column: 2 / -1;
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: -4px;
+  margin-bottom: 2px;
+}
+.slot-feedback-ok {
+  color: #15803d;
+}
+.slot-feedback-err {
+  color: #b91c1c;
+}
+.judge-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 10px;
+  align-items: center;
 }
 .slot-add {
-  margin-top: 4px;
+  margin-top: 8px;
   width: 100%;
+  min-height: 38px;
 }
 .summary-text {
-  margin-top: 4px;
+  margin-top: 6px;
 }
 </style>

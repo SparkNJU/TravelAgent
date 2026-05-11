@@ -23,6 +23,9 @@ public enum EvaluationDimension {
       if (normalized.isEmpty()) {
         continue;
       }
+      if ("EFFICIENCY".equals(normalized)) {
+        normalized = "EFFECTIVENESS";
+      }
       try {
         result.add(EvaluationDimension.valueOf(normalized));
       } catch (IllegalArgumentException ignored) {

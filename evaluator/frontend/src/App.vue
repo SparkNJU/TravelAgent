@@ -1,22 +1,12 @@
 <template>
   <div class="app-shell">
     <aside class="left-rail">
-      <div class="brand-block">
-        <div class="brand-mark">TA</div>
-        <div class="brand-text">
-          <span class="brand-name">TripAgent</span>
-          <span class="brand-tag">EVALUATE</span>
-        </div>
-      </div>
+      <header class="rail-brand">
+        <span class="brand-name">TripAgent_Evaluator</span>
+      </header>
 
-      <div class="rail-search" role="search">
-        <span class="rail-search-icon" aria-hidden="true">⌕</span>
-        <input type="text" placeholder="Search" readonly aria-label="搜索 (占位)" />
-        <span class="rail-search-kbd">⌘K</span>
-      </div>
-
-      <p class="rail-group-title">评测中心</p>
-      <nav class="rail-nav">
+      <p class="rail-section-title">评测中心</p>
+      <nav class="rail-nav" aria-label="评测导航">
         <RouterLink to="/overview" class="rail-item">
           <span class="rail-icon" aria-hidden="true">⌂</span>
           <span class="rail-label">首页</span>
@@ -26,7 +16,7 @@
           <span class="rail-label">评测任务</span>
         </RouterLink>
         <RouterLink to="/history" class="rail-item">
-          <span class="rail-icon" aria-hidden="true">⟲</span>
+          <span class="rail-icon" aria-hidden="true">↻</span>
           <span class="rail-label">评测历史</span>
         </RouterLink>
         <RouterLink to="/strategies" class="rail-item">
@@ -34,22 +24,24 @@
           <span class="rail-label">AI 评测配置</span>
         </RouterLink>
         <RouterLink to="/models" class="rail-item">
-          <span class="rail-icon" aria-hidden="true">◎</span>
+          <span class="rail-icon" aria-hidden="true">⊙</span>
           <span class="rail-label">模型管理</span>
         </RouterLink>
         <RouterLink to="/datasets" class="rail-item">
-          <span class="rail-icon" aria-hidden="true">⛁</span>
+          <span class="rail-icon" aria-hidden="true">▦</span>
           <span class="rail-label">数据集管理</span>
         </RouterLink>
       </nav>
 
-      <div class="rail-user-block" aria-label="当前用户">
-        <span class="rail-user-avatar">P</span>
-        <div class="rail-user-meta">
-          <span class="rail-user-name">Personal</span>
-          <span class="rail-user-sub">tripagent@local</span>
+      <footer class="rail-footer">
+        <div class="rail-user-block" aria-label="当前用户">
+          <span class="rail-user-avatar">P</span>
+          <div class="rail-user-meta">
+            <span class="rail-user-name">个人空间</span>
+            <span class="rail-user-sub">tripagent@local</span>
+          </div>
         </div>
-      </div>
+      </footer>
     </aside>
 
     <main class="workspace">
@@ -107,9 +99,9 @@ watch(
 <style>
 .rail-item.router-link-active {
   color: var(--brand);
-  border-color: var(--brand);
-  background: var(--brand-faint);
-  font-weight: 600;
+  border-color: #ff6b73;
+  background: #fff0f1;
+  font-weight: 700;
 }
 
 .rail-item.router-link-active .rail-icon {

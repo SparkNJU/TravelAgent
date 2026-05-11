@@ -8,7 +8,6 @@ public record EvalStrategyResponse(
     String metricDefinitions,
     String weightConfig,
     String thresholdConfig,
-    LocalDateTime createdAt,
-    Integer latestVersion
+    LocalDateTime createdAt
 ) {
 }

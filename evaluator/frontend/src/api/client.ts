@@ -34,7 +34,6 @@ export interface EvalTask {
   evaluationMethod: EvaluationMethod;
   evaluationDimensions: string;
   strategyConfig: string | null;
-  strategyVersion: number | null;
   selectedModelIds: number[] | null;
   judgeModelId: number | null;
   comparisonSamplingStrategy: 'ALL_PAIRS' | null;
@@ -155,17 +154,6 @@ export interface EvalStrategy {
   weightConfig: string | null;
   thresholdConfig: string | null;
   createdAt: string;
-  latestVersion: number | null;
-}
-
-export interface EvalStrategyVersion {
-  strategyVersionId: number;
-  strategyId: number;
-  version: number;
-  metricDefinitions: string | null;
-  weightConfig: string | null;
-  thresholdConfig: string | null;
-  createdAt: string;
 }
 
 export interface CustomMetric {
@@ -189,7 +177,6 @@ export interface CreateTaskPayload {
   evaluationMethod: EvaluationMethod;
   evaluationDimensions: string;
   strategyConfig?: string;
-  strategyVersion?: number;
   selectedModelIds?: number[];
   judgeModelId?: number;
   comparisonSamplingStrategy?: 'ALL_PAIRS';
@@ -203,8 +190,8 @@ export interface CreateStrategyPayload {
   thresholdConfig?: string;
 }
 
-export interface CreateStrategyVersionPayload {
-  version?: number;
+export interface UpdateStrategyPayload {
+  strategyName?: string;
   metricDefinitions?: string;
   weightConfig?: string;
   thresholdConfig?: string;
@@ -254,6 +241,10 @@ export function updateTask(taskId: number, payload: Partial<CreateTaskPayload>):
 
 export function startTask(taskId: number): Promise<EvalRun> {
   return unwrap(apiClient.post<ApiResponse<EvalRun>>(`/eval/tasks/${taskId}/start`));
+}
+
+export function cancelTaskRun(taskId: number): Promise<EvalRun> {
+  return unwrap(apiClient.post<ApiResponse<EvalRun>>(`/eval/tasks/${taskId}/cancel`));
 }
 
 export function deleteTask(taskId: number): Promise<boolean> {
@@ -343,11 +334,11 @@ export function createStrategy(payload: CreateStrategyPayload): Promise<EvalStra
   return unwrap(apiClient.post<ApiResponse<EvalStrategy>>('/eval/strategies', payload));
 }
 
-export function createStrategyVersion(
+export function updateStrategy(
   strategyId: number,
-  payload: CreateStrategyVersionPayload,
-): Promise<EvalStrategyVersion> {
-  return unwrap(apiClient.post<ApiResponse<EvalStrategyVersion>>(`/eval/strategies/${strategyId}/versions`, payload));
+  payload: UpdateStrategyPayload,
+): Promise<EvalStrategy> {
+  return unwrap(apiClient.put<ApiResponse<EvalStrategy>>(`/eval/strategies/${strategyId}`, payload));
 }
 
 export function listCustomMetrics(enabledOnly?: boolean): Promise<CustomMetric[]> {

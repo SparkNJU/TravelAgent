@@ -14,7 +14,6 @@ public record UpdateEvalTaskRequest(
     EvaluationMethod evaluationMethod,
     String evaluationDimensions,
     String strategyConfig,
-    Long strategyVersion,
     List<Long> selectedModelIds,
     Long judgeModelId,
     ComparisonSamplingStrategy comparisonSamplingStrategy,

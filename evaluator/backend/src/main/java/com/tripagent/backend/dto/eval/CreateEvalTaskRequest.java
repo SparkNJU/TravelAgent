@@ -16,7 +16,6 @@ public record CreateEvalTaskRequest(
     @NotNull EvaluationMethod evaluationMethod,
     @NotBlank String evaluationDimensions,
     String strategyConfig,
-    Long strategyVersion,
     List<Long> selectedModelIds,
     Long judgeModelId,
     ComparisonSamplingStrategy comparisonSamplingStrategy,

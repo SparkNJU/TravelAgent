@@ -15,9 +15,9 @@
         <table class="task-table">
           <thead>
             <tr>
-              <th>Run ID</th>
+              <th>运行 ID</th>
               <th>任务名称</th>
-              <th>Task ID</th>
+              <th>任务 ID</th>
               <th>状态</th>
               <th>成功 / 总数</th>
               <th>开始时间</th>
@@ -30,7 +30,7 @@
               <td class="mono">#{{ row.runId }}</td>
               <td>{{ row.taskName }}</td>
               <td class="mono">#{{ row.taskId }}</td>
-              <td><span class="status" :class="statusClass(row.status)">{{ row.status }}</span></td>
+              <td><span class="status" :class="statusClass(row.status)">{{ statusLabel(row.status) }}</span></td>
               <td>{{ row.successCount ?? '-' }} / {{ row.totalCount ?? '-' }}</td>
               <td>{{ formatTime(row.startTime) }}</td>
               <td>{{ formatTime(row.endTime) }}</td>
@@ -114,6 +114,14 @@ function statusClass(status: string): string {
   if (status === 'FAILED') return 'failed';
   if (status === 'RUNNING') return 'running';
   return '';
+}
+
+function statusLabel(status: string): string {
+  if (status === 'SUCCEEDED') return '成功';
+  if (status === 'FAILED') return '失败';
+  if (status === 'RUNNING') return '运行中';
+  if (status === 'READY') return '就绪';
+  return status;
 }
 
 function formatTime(value?: string | null): string {

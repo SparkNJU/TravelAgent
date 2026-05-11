@@ -93,6 +93,8 @@ public class OpenAiCompatibleClient {
               .flatMap(b -> Mono.error(new IllegalStateException(
                   "LLM HTTP " + resp.statusCode().value() + ": " + truncate(b, 256)))))
           .bodyToFlux(String.class)
+          // hard upper bound for total stream time; timeout() below only guards idle gaps.
+          .take(Duration.ofSeconds(props.getTimeoutSeconds()))
           .timeout(Duration.ofSeconds(props.getTimeoutSeconds()));
 
       Iterable<String> chunks = stream.toIterable();
