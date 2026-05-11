@@ -24,6 +24,7 @@ class AgentChatRequest(BaseModel):
     user_id: int = 1
     mode: str = "agent"  # "plan", "agent", or "reflection"
     generate_plan_first: bool = False
+    arena: bool = False
     model: str | None = None
     temperature: float | None = None
     file_name: str | None = None

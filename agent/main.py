@@ -42,6 +42,18 @@ _tool_registry.register(UserConfirmTool())
 _tool_registry.register(SuggestQuestionsTool(_llm))
 _tool_registry.register(FinishTool())
 
+
+def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_suggestions: bool = True) -> ToolRegistry:
+    registry = ToolRegistry()
+    registry.register(WebSearchTool(_serper))
+    registry.register(FileParserTool())
+    if allow_user_confirm:
+        registry.register(UserConfirmTool())
+    if allow_suggestions:
+        registry.register(SuggestQuestionsTool(llm))
+    registry.register(FinishTool())
+    return registry
+
 _planner = MetaPlanner(_llm)
 _agent = ReActAgent(
     llm=_llm,
@@ -74,6 +86,9 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
     planner = _planner
     agent = _agent
     reflection_agent = _reflection_agent
+    allow_user_confirm = not request.arena
+    allow_suggestions = not request.arena
+    tool_registry = _tool_registry
     if request.model or request.temperature is not None:
         llm = LLMService(
             base_url=config.llm.base_url,
@@ -83,9 +98,19 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             max_tokens=config.llm.max_tokens,
         )
         planner = MetaPlanner(llm)
+        tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions)
         agent = ReActAgent(
             llm=llm,
-            tool_registry=_tool_registry,
+            tool_registry=tool_registry,
+            max_iterations=config.agent.max_iterations,
+            max_retries=config.agent.self_correction_retries,
+        )
+        reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
+    elif request.arena:
+        tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions)
+        agent = ReActAgent(
+            llm=llm,
+            tool_registry=tool_registry,
             max_iterations=config.agent.max_iterations,
             max_retries=config.agent.self_correction_retries,
         )
@@ -139,7 +164,11 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                 history = [{"role": msg.role.value, "content": msg.content} for msg in request.chat_history]
 
                 for event_json in agent.run(
-                    request.query, file_summary, execution_plan, chat_history=history
+                    request.query,
+                    file_summary,
+                    execution_plan,
+                    chat_history=history,
+                    arena_mode=request.arena,
                 ):
                     chunk = json.loads(event_json)
                     if chunk.get("type") == "answer":
@@ -149,8 +178,8 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                     yield f"data: {event_json}\n\n"
 
             # Generate suggestions only if we have an answer and no ask_user
-            if answer_text.strip() and not is_ask_user:
-                suggest_tool = _tool_registry.get("suggest_questions")
+            if allow_suggestions and answer_text.strip() and not is_ask_user:
+                suggest_tool = tool_registry.get("suggest_questions")
                 if suggest_tool:
                     suggestions = suggest_tool.execute(
                         context=f"User: {request.query}\nAgent: {answer_text[:1500]}"

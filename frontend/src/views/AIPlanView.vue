@@ -162,6 +162,7 @@ import StreamingIndicator from '../components/ai-plan/StreamingIndicator.vue'
 import ConversationSidebar from '../components/ai-plan/ConversationSidebar.vue'
 import UserConfirmBlock from '../components/ai-plan/UserConfirmBlock.vue'
 import SuggestionChips from '../components/ai-plan/SuggestionChips.vue'
+import ModelArenaCompare from '../components/ai-plan/ModelArenaCompare.vue'
 
 const route = useRoute()
 const { isLoggedIn } = useAuth()
@@ -181,6 +182,7 @@ const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
 const selectedModel = ref('qwen3.6-plus')
+const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
 
@@ -345,7 +347,26 @@ function appendArenaReasoningLog(msg, source, eventType, content) {
 function handleArenaStreamEvent(msg, event) {
   if (!msg?.arena || !event) return
   const metadata = event.metadata || {}
-  const source = metadata.source || 'A'
+  function resolveArenaSource(msg, metadata) {
+    let s = metadata.source || metadata.model || ''
+    if (typeof s === 'number') s = String(s)
+    s = String(s || '').toUpperCase().trim()
+    if (!s && typeof metadata.index !== 'undefined') s = String(metadata.index)
+
+    if (!s) return 'A'
+    if (s === '0' || s === 'A' || s.includes('A')) return 'A'
+    if (s === '1' || s === 'B' || s.includes('B')) return 'B'
+
+    const modelName = String(metadata.model || metadata.modelName || '').trim()
+    if (modelName) {
+      if (msg.arena.modelA && msg.arena.modelA.toUpperCase().includes(modelName.toUpperCase())) return 'A'
+      if (msg.arena.modelB && msg.arena.modelB.toUpperCase().includes(modelName.toUpperCase())) return 'B'
+    }
+
+    return s.startsWith('A') ? 'A' : 'B'
+  }
+
+  const source = resolveArenaSource(msg, metadata)
 
   if (event.type === 'arena_init') {
     updateArenaStage(msg, 'pick', {
@@ -548,6 +569,12 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
 function handleSend({ query, file }) {
   if (!query) return
   if (!activeConversation.value) newConversation()
+
+  if (arenaMode.value) {
+    handleAutoSend({ query, file })
+    return
+  }
+
   startStream(query, selectedMode.value, null, file)
 }
 

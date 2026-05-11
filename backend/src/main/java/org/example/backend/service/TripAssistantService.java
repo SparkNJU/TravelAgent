@@ -108,6 +108,9 @@ public class TripAssistantService {
                 payload.put("user_id", req.getUserId());
                 payload.put("mode", req.getMode());
                 payload.put("generate_plan_first", req.isGeneratePlanFirst());
+                if (req.isArena()) {
+                    payload.put("arena", true);
+                }
 
                 if (req.getModel() != null && !req.getModel().isEmpty()) {
                     payload.put("model", req.getModel());
@@ -287,6 +290,9 @@ public class TripAssistantService {
         payload.put("user_id", req.getUserId());
         payload.put("mode", req.getMode());
         payload.put("generate_plan_first", req.isGeneratePlanFirst());
+        if (req.isArena()) {
+            payload.put("arena", true);
+        }
 
         if (req.getModel() != null && !req.getModel().isEmpty()) {
             payload.put("model", req.getModel());

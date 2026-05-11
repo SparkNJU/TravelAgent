@@ -283,6 +283,7 @@ public class ModelArenaService {
         req.setUserId(userId);
         req.setMode("agent");
         req.setGeneratePlanFirst(true);
+        req.setArena(true);
         req.setModel(model);
         req.setChatHistoryJson(chatHistoryJson);
         return req;

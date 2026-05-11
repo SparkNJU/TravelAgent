@@ -92,6 +92,7 @@ const props = defineProps({
   placeholder: { type: String, default: '描述你的旅行想法，例如：帮我做一个东京5天旅行计划...' },
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
+  arenaMode: { type: Boolean, default: false },
   selectedModel: { type: String, default: 'qwen3.6-plus' },
 })
 
