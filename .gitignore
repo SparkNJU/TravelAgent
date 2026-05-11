@@ -17,19 +17,25 @@ Thumbs.db
 *.local
 
 # Java / Spring Boot
-backend/target/
+target/
 **/target/
 *.class
 
 # Frontend / Vite
-frontend/node_modules/
-frontend/dist/
-frontend/.vite/
-frontend/.eslintcache
+node_modules/
+**/node_modules/
+dist/
+**/dist/
+*.vite/
+**/.vite/
+*.eslintcache
+**/.eslintcache
 
 # Python / Agent
 StudyAgent-main
 StudyAgent-main/__pycache__/
+__pycache__/
+**/__pycache__/
 StudyAgent-main/.pytest_cache/
 StudyAgent-main/.mypy_cache/
 StudyAgent-main/.ruff_cache/
