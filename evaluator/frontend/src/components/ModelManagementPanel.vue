@@ -13,7 +13,7 @@
     <div class="filter-bar">
       <select v-model="filterRole">
         <option value="">全部角色</option>
-        <option value="PLAYER">参赛模型（PLAYER）</option>
+        <option value="PLAYER">参评模型（PLAYER）</option>
         <option value="JUDGE">裁判模型（JUDGE）</option>
         <option value="BOTH">通用模型（BOTH）</option>
       </select>
@@ -51,22 +51,19 @@
             <td class="actions-cell">
               <div class="model-actions">
                 <button class="link-btn" @click="pingOne(m)">连通性检测</button>
-                <button class="link-btn" @click="toggleEnabled(m)">
-                  {{ m.enabled ? '禁用' : '启用' }}
-                </button>
+                <button class="link-btn" @click="toggleEnabled(m)">{{ m.enabled ? '禁用' : '启用' }}</button>
                 <button class="link-btn" @click="removeOne(m)">软删除</button>
                 <button class="link-btn danger" @click="hardRemoveOne(m)">彻底删除</button>
               </div>
             </td>
           </tr>
           <tr v-if="!filteredModels.length">
-            <td colspan="7">暂无模型，先注册一个</td>
+            <td colspan="7">暂无模型，先注册一个。</td>
           </tr>
         </tbody>
       </table>
     </div>
 
-    <!-- 创建模型模态框 -->
     <div v-if="showCreate" class="modal-mask" @click.self="showCreate = false">
       <article class="create-modal">
         <div class="section-head">
@@ -78,13 +75,12 @@
           <label>
             角色
             <select v-model="createForm.role" @change="onRoleChange">
-              <option value="PLAYER">参赛模型（PLAYER）</option>
+              <option value="PLAYER">参评模型（PLAYER）</option>
               <option value="JUDGE">裁判模型（JUDGE）</option>
               <option value="BOTH">通用模型（BOTH）</option>
             </select>
           </label>
 
-          <!-- modelId：下拉 + 自定义 -->
           <label v-if="catalog && availableCatalogItems.length">
             模型ID（从推荐清单选择，或选“自定义”手动输入）
             <select v-model="createForm.modelId" @change="onModelIdSelect">
@@ -97,30 +93,31 @@
 
           <label v-if="!catalog || createForm.modelId === '__custom__' || !availableCatalogItems.length">
             自定义模型ID
-            <input v-model.trim="customModelId" type="text"
-              placeholder="例如 Qwen/Qwen3-32B 或 Qwen/Qwen3-32B:DashScope" />
+            <input v-model.trim="customModelId" type="text" placeholder="例如 Qwen/Qwen3-32B 或 Qwen/Qwen3-32B:DashScope" />
           </label>
 
           <p v-if="catalog?.providersNote" class="notice-text providers-note">
-            ℹ️ {{ catalog.providersNote }}
+            ℹ {{ catalog.providersNote }}
           </p>
 
           <label>
             显示名
-            <input v-model.trim="createForm.displayName" type="text" placeholder="如 Qwen3-32B 参赛模型" />
+            <input v-model.trim="createForm.displayName" type="text" placeholder="如 Qwen3-32B 参评模型" />
           </label>
+
           <label>
             API 密钥引用（环境变量名，留空走全局 llm.api-key）
             <input v-model.trim="createForm.apiKeyRef" type="text" placeholder="MODELSCOPE_API_KEY" />
           </label>
+
           <label>
             API 基础地址（留空走全局 base-url）
             <input v-model.trim="createForm.apiBaseUrl" type="text" placeholder="留空即可" />
           </label>
+
           <label>
             默认参数 JSON
-            <textarea v-model="createForm.defaultParams" rows="3"
-              placeholder='{"temperature":0,"maxTokens":2048}' />
+            <textarea v-model="createForm.defaultParams" rows="3" placeholder='{"temperature":0,"maxTokens":2048}' />
           </label>
         </div>
 
@@ -155,7 +152,7 @@ const catalog = ref<ModelCatalog | null>(null);
 const customModelId = ref('');
 const notice = ref('');
 const filterRole = ref<'' | ModelRole>('');
-const onlyEnabled = ref(true);   // 默认只显示启用，禁用模型不再占位
+const onlyEnabled = ref(true);
 const showCreate = ref(false);
 
 const createForm = reactive({
@@ -167,20 +164,27 @@ const createForm = reactive({
   defaultParams: '{"temperature":0,"maxTokens":2048}',
 });
 
+function isBlockedCatalogModel(modelId: string): boolean {
+  return /glm/i.test(modelId);
+}
+
+function filterCatalogItems(items: ModelCatalogItem[]): ModelCatalogItem[] {
+  return items.filter((item) => !isBlockedCatalogModel(item.modelId));
+}
+
 const availableCatalogItems = computed<ModelCatalogItem[]>(() => {
   if (!catalog.value) return [];
-  if (createForm.role === 'JUDGE') return catalog.value.judges;
-  if (createForm.role === 'PLAYER') return catalog.value.players;
-  // BOTH：合并去重
+  if (createForm.role === 'JUDGE') return filterCatalogItems(catalog.value.judges);
+  if (createForm.role === 'PLAYER') return filterCatalogItems(catalog.value.players);
   const merged = new Map<string, ModelCatalogItem>();
-  catalog.value.players.forEach((p) => merged.set(p.modelId, p));
-  catalog.value.judges.forEach((j) => merged.set(j.modelId, j));
-  return Array.from(merged.values());
+  catalog.value.players.forEach((item) => merged.set(item.modelId, item));
+  catalog.value.judges.forEach((item) => merged.set(item.modelId, item));
+  return filterCatalogItems(Array.from(merged.values()));
 });
 
 const filteredModels = computed(() => {
   return models.value.filter((m) => {
-    if (filterRole.value && !roleMatches(m.role, filterRole.value as ModelRole)) return false;
+    if (filterRole.value && !roleMatches(m.role, filterRole.value)) return false;
     if (onlyEnabled.value && !m.enabled) return false;
     return true;
   });
@@ -191,17 +195,15 @@ function roleMatches(actual: ModelRole, expected: ModelRole): boolean {
 }
 
 watch(showCreate, (open) => {
-  if (open) {
-    // 打开时若 catalog 有列表，默认选中第一项；否则进入自定义模式
-    if (catalog.value && availableCatalogItems.value.length) {
-      createForm.modelId = availableCatalogItems.value[0].modelId;
-    } else {
-      createForm.modelId = '__custom__';
-    }
-    customModelId.value = '';
-    if (!createForm.displayName) {
-      createForm.displayName = createForm.modelId === '__custom__' ? '' : suggestDisplayName(createForm.modelId);
-    }
+  if (!open) return;
+  if (catalog.value && availableCatalogItems.value.length > 0) {
+    createForm.modelId = availableCatalogItems.value[0].modelId;
+  } else {
+    createForm.modelId = '__custom__';
+  }
+  customModelId.value = '';
+  if (!createForm.displayName) {
+    createForm.displayName = createForm.modelId === '__custom__' ? '' : suggestDisplayName(createForm.modelId);
   }
 });
 
@@ -224,33 +226,30 @@ async function loadModels(): Promise<void> {
 }
 
 function onRoleChange(): void {
-  // 角色切换时重置 modelId 选择
-  if (catalog.value && availableCatalogItems.value.length) {
+  if (catalog.value && availableCatalogItems.value.length > 0) {
     createForm.modelId = availableCatalogItems.value[0].modelId;
     if (!createForm.displayName || isAutoDisplayName(createForm.displayName)) {
       createForm.displayName = suggestDisplayName(createForm.modelId);
     }
-  } else {
-    createForm.modelId = '__custom__';
+    return;
   }
+  createForm.modelId = '__custom__';
 }
 
 function onModelIdSelect(): void {
-  if (createForm.modelId !== '__custom__' && (!createForm.displayName || isAutoDisplayName(createForm.displayName))) {
+  if (createForm.modelId === '__custom__') return;
+  if (!createForm.displayName || isAutoDisplayName(createForm.displayName)) {
     createForm.displayName = suggestDisplayName(createForm.modelId);
   }
 }
 
 function suggestDisplayName(modelId: string): string {
   if (!modelId || modelId === '__custom__') return '';
-  // 取 modelId 路径里的最后一段作为默认显示名
   const cleaned = modelId.split(':')[0];
-  const tail = cleaned.split('/').pop() || cleaned;
-  return tail;
+  return cleaned.split('/').pop() || cleaned;
 }
 
 function isAutoDisplayName(name: string): boolean {
-  // 简单判断：如果显示名是从某个 catalog modelId 派生的就视为自动名
   return availableCatalogItems.value.some((item) => suggestDisplayName(item.modelId) === name);
 }
 
@@ -269,23 +268,22 @@ async function submitCreate(): Promise<void> {
     return;
   }
 
-  // 同 modelId 在 DB 唯一，重复时提示用户改用 BOTH
   const existing = models.value.find((m) => m.modelId === finalModelId);
   if (existing) {
     if (existing.role === createForm.role || existing.role === 'BOTH') {
       notice.value = `已存在同模型ID的 ${existing.role} 角色（#${existing.modelProfileId}），无需重复注册`;
       return;
     }
-    // 已注册为另一角色 → 询问用户是否升级为 BOTH
-    const yes = window.confirm(
+    const ok = window.confirm(
       `「${finalModelId}」已注册为 ${existing.role} 角色（#${existing.modelProfileId}）。\n\n` +
-        `同一模型ID不能注册两次（数据库唯一约束）。\n` +
-        `是否把它的角色升级为 BOTH（同时支持参赛模型和裁判模型）？`,
+      `同一模型ID不能注册两次（数据库唯一约束）。\n` +
+      `是否将其角色升级为 BOTH（同时支持参评模型和裁判模型）？`,
     );
-    if (!yes) return;
+    if (!ok) return;
+
     try {
       await updateModel(existing.modelProfileId, { role: 'BOTH', enabled: true });
-      notice.value = `已把「${finalModelId}」升级为 BOTH 角色`;
+      notice.value = `已将「${finalModelId}」升级为 BOTH 角色`;
       showCreate.value = false;
       await loadModels();
     } catch (err: any) {
@@ -318,7 +316,7 @@ async function pingOne(m: ModelProfile): Promise<void> {
   notice.value = `正在检测 ${m.modelId} 连通性...`;
   try {
     const r = await pingModel(m.modelProfileId);
-    const preview = r.text.length > 60 ? r.text.slice(0, 60) + '...' : r.text;
+    const preview = r.text.length > 60 ? `${r.text.slice(0, 60)}...` : r.text;
     notice.value = `[${m.modelId}] ${r.text.length} 字符 · Token=${r.promptTokens}/${r.completionTokens} · ${r.latencyMs}ms · ${preview || '(空)'}`;
   } catch (err: any) {
     notice.value = `检测失败 [${m.modelId}]：${err.message || String(err)}`;
@@ -335,7 +333,12 @@ async function toggleEnabled(m: ModelProfile): Promise<void> {
 }
 
 async function removeOne(m: ModelProfile): Promise<void> {
-  if (!window.confirm(`确认软删除 ${m.modelId}？\n\n软删除后模型不可用但保留在数据库（被历史 run 引用时建议用此方式）。`)) return;
+  const ok = window.confirm(
+    `确认软删除 ${m.modelId}？\n\n` +
+    '软删除后模型不可用但保留在数据库（被历史 run 引用时建议用此方式）。',
+  );
+  if (!ok) return;
+
   try {
     await deleteModel(m.modelProfileId);
     notice.value = `已软删除：${m.modelId}（如需彻底移除，点击「彻底删除」）`;
@@ -346,18 +349,19 @@ async function removeOne(m: ModelProfile): Promise<void> {
 }
 
 async function hardRemoveOne(m: ModelProfile): Promise<void> {
-  if (!window.confirm(
-    `⚠️ 确认彻底删除 ${m.modelId}？\n\n` +
-    `此操作不可恢复！\n` +
-    `若该模型被任意历史 run / qa_record / model_rating / eval_comparison / eval_task 引用，后端会拒绝删除并提示用软删除。`
-  )) return;
+  const ok = window.confirm(
+    `⚠ 确认彻底删除 ${m.modelId}？\n\n` +
+    '此操作不可恢复。\n' +
+    '若该模型被历史数据引用，后端会拒绝删除并提示改用软删除。',
+  );
+  if (!ok) return;
+
   try {
     await hardDeleteModel(m.modelProfileId);
     notice.value = `已彻底删除：${m.modelId}`;
     await loadModels();
   } catch (err: any) {
-    const msg = err.message || String(err);
-    notice.value = `彻底删除失败：${msg}`;
+    notice.value = `彻底删除失败：${err.message || String(err)}`;
   }
 }
 </script>
@@ -373,19 +377,24 @@ async function hardRemoveOne(m: ModelProfile): Promise<void> {
 }
 
 .providers-note {
-  background: #1e293b;
+  background: #fff4f5;
+  color: #a31f2d;
   padding: 8px 10px;
   border-radius: 6px;
+  border: 1px solid #fecdd3;
   border-left: 3px solid var(--brand);
   font-size: 12px;
   margin: 4px 0;
 }
+
 .mono {
   font-family: monospace;
 }
+
 .actions-cell {
   min-width: 220px;
 }
+
 .model-actions {
   display: inline-flex;
   align-items: center;
@@ -393,19 +402,24 @@ async function hardRemoveOne(m: ModelProfile): Promise<void> {
   flex-wrap: wrap;
   row-gap: 8px;
 }
+
 .model-actions .link-btn {
   line-height: 1;
   padding: 2px 0;
 }
+
 .row-disabled {
   opacity: 0.45;
 }
+
 .row-disabled:hover {
   opacity: 0.7;
 }
+
 .link-btn.danger {
   color: #f87171;
 }
+
 .link-btn.danger:hover {
   color: #ef4444;
   text-decoration: underline;

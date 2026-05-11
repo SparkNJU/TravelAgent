@@ -1,7 +1,7 @@
 <template>
   <div class="eval-home">
     <nav class="eval-breadcrumb" aria-label="当前位置">
-      <span>个人空间</span>
+      <span>TripAgent</span>
       <span>/</span>
       <strong>评测器</strong>
     </nav>
@@ -24,7 +24,9 @@
                 class="eval-preset-card"
                 @click="openCreate(card.preset)"
               >
-                <span class="eval-card-icon" :class="card.tone">{{ card.icon }}</span>
+                <span class="eval-card-icon" :class="card.tone">
+                  <component :is="card.icon" class="eval-icon-svg" />
+                </span>
                 <span class="eval-card-copy">
                   <span class="eval-card-title">{{ card.title }}</span>
                   <span class="eval-card-desc">{{ card.desc }}</span>
@@ -43,7 +45,9 @@
                 class="eval-preset-card"
                 @click="openCreate(card.preset)"
               >
-                <span class="eval-card-icon eval-tone-soft">{{ card.icon }}</span>
+                <span class="eval-card-icon eval-tone-soft">
+                  <component :is="card.icon" class="eval-icon-svg" />
+                </span>
                 <span class="eval-card-copy">
                   <span class="eval-card-title">{{ card.title }}</span>
                   <span class="eval-card-desc">{{ card.desc }}</span>
@@ -74,7 +78,7 @@
           <div class="eval-side-divider"></div>
 
           <button type="button" class="eval-help-card" @click="openHelp">
-            <span aria-hidden="true">▣</span>
+            <HelpFilled class="eval-help-icon" aria-hidden="true" />
             <span>帮助文档</span>
           </button>
 
@@ -92,82 +96,103 @@
 </template>
 
 <script setup lang="ts">
-import { inject } from 'vue';
+import {
+  Aim,
+  Check,
+  CircleCheckFilled,
+  Connection,
+  DataLine,
+  Grid,
+  HelpFilled,
+  Lightning,
+  Operation,
+  SetUp,
+  WarningFilled,
+} from '@element-plus/icons-vue';
+import { inject, type Component } from 'vue';
 import { RouterLink } from 'vue-router';
 
 type OpenCreate = (preset?: string) => void;
 type OpenHelp = () => void;
 
+type OverviewCard = {
+  preset: string;
+  icon: Component;
+  title: string;
+  desc: string;
+  tone?: 'eval-tone-red' | 'eval-tone-soft';
+};
+
 const openCreateTask = inject<OpenCreate>('openCreateTask', () => {});
 const openHelpDoc = inject<OpenHelp>('openHelpDoc', () => {});
 
-const modeCards = [
+const modeCards: OverviewCard[] = [
   {
     preset: 'bt',
-    icon: '⚖',
+    icon: Connection,
     title: 'BT 多模型对比',
-    desc: '至少 2 个参赛模型 + 1 个裁判模型，全对比较并输出 Elo 排行。',
+    desc: '至少 2 个参评模型 + 1 个裁判模型，全对比较并输出 Elo 排行。',
     tone: 'eval-tone-red',
   },
   {
     preset: 'result-judge',
-    icon: '✓',
-    title: '结果 + LLM 裁判',
+    icon: CircleCheckFilled,
+    title: 'RESULT-MODE + LLM 裁判',
     desc: '结果模式（RESULT）：只看输入与最终输出。',
     tone: 'eval-tone-red',
   },
   {
     preset: 'process-judge',
-    icon: '◇',
-    title: '过程 + 裁判',
+    icon: DataLine,
+    title: 'PROCESS-MODE + LLM 裁判',
     desc: '过程模式（PROCESS）：参考工具轨迹等过程信息。',
     tone: 'eval-tone-soft',
   },
   {
     preset: 'deterministic',
-    icon: '#',
-    title: '显式 / 关键词',
+    icon: SetUp,
+    title: 'DETERMINISTIC-MODE',
     desc: '不调用裁判模型，适合规则型验收。',
     tone: 'eval-tone-soft',
   },
   {
     preset: 'hybrid',
-    icon: '◆',
+    icon: Operation,
     title: '混合评测',
     desc: '兼顾规则与语义判断。',
     tone: 'eval-tone-soft',
   },
   {
     preset: 'judge-single',
-    icon: '☑',
+    icon: Check,
     title: '单模型质量验收',
     desc: '适合版本回归检查。',
     tone: 'eval-tone-soft',
   },
 ];
 
-const metricCards = [
+const metricCards: OverviewCard[] = [
   {
     preset: 'safety',
-    icon: '♢',
+    icon: WarningFilled,
     title: '安全优先',
     desc: '聚焦安全维度，适合内容风险与合规能力评测。',
   },
   {
     preset: 'effectiveness',
-    icon: '◎',
+    icon: Aim,
     title: '效果优先',
     desc: '聚焦效果维度，验证任务完成质量。',
   },
   {
     preset: 'performance',
-    icon: '⚡',
+    icon: Lightning,
     title: '性能优先',
     desc: '聚焦性能维度，关注延迟与资源消耗。',
   },
   {
     preset: 'full-dims',
-    icon: '▦',
+    icon: Grid,
     title: '全维度',
     desc: '效果 + 安全 + 性能一次评估。',
   },
@@ -291,6 +316,11 @@ function openHelp(): void {
   font-weight: 800;
 }
 
+.eval-icon-svg {
+  width: 18px;
+  height: 18px;
+}
+
 .eval-tone-red,
 .eval-create-icon {
   background: #ef232d;
@@ -326,6 +356,7 @@ function openHelp(): void {
   display: grid;
   align-content: start;
   gap: 10px;
+  margin-top: -6px;
 }
 
 .eval-create-card {
@@ -353,6 +384,11 @@ function openHelp(): void {
   gap: 12px;
   font-size: 15px;
   font-weight: 800;
+}
+
+.eval-help-icon {
+  width: 16px;
+  height: 16px;
 }
 
 .eval-quick-panel {
@@ -387,6 +423,10 @@ function openHelp(): void {
 
   .eval-home-grid {
     grid-template-columns: 1fr;
+  }
+
+  .eval-create-area {
+    margin-top: 0;
   }
 }
 

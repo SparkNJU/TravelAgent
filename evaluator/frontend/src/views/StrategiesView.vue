@@ -60,17 +60,17 @@
               <label class="field-block">
                 <span class="field-label">评测模式</span>
                 <select v-model="strategyForm.evaluationMode">
-                  <option value="RESULT">结果模式</option>
-                  <option value="PROCESS">过程模式</option>
+                  <option value="RESULT">RESULT模式</option>
+                  <option value="PROCESS">PROCESS模式</option>
                 </select>
               </label>
 
               <label class="field-block">
                 <span class="field-label">评测方法</span>
                 <select v-model="strategyForm.evaluationMethod">
-                  <option value="DETERMINISTIC">确定性评测</option>
-                  <option value="JUDGE">裁判评测</option>
-                  <option value="HYBRID">混合评测</option>
+                  <option value="DETERMINISTIC">DETERMINISTIC:确定性评测</option>
+                  <option value="JUDGE">JUDGE:裁判评测</option>
+                  <option value="HYBRID">HYBRID:混合评测</option>
                 </select>
               </label>
             </div>
@@ -258,7 +258,7 @@
                 <strong>{{ item.strategyName }}</strong>
                 <p>#{{ item.strategyId }}</p>
               </div>
-              <span class="chip">应用</span>
+              <span class="chip">修改</span>
             </button>
           </div>
           <p v-else class="empty-state">暂无评测配置</p>
@@ -339,9 +339,9 @@ const defaultWeightConfig = { effectiveness: 0.5, safety: 0.2, performance: 0.3 
 const defaultThresholdConfig = { overallThreshold: 0.75, safetyMin: 0.7 };
 
 const dimensionOptions = [
-  { value: 'effectiveness', label: '效果', hint: '任务完成质量与正确性。' },
-  { value: 'safety', label: '安全', hint: '安全风险与违规内容控制。' },
-  { value: 'performance', label: '性能', hint: '延迟、稳定性与资源开销。' },
+  { value: 'effectiveness', label: 'Efficiency', hint: '任务完成质量与正确性。' },
+  { value: 'safety', label: 'Safety', hint: '安全风险与违规内容控制。' },
+  { value: 'performance', label: 'Performance', hint: '延迟、稳定性与资源开销。' },
 ];
 
 const strategies = ref<EvalStrategy[]>([]);
@@ -747,6 +747,7 @@ async function createCustomMetricAction(): Promise<void> {
 <style scoped>
 .strategy-studio {
   gap: 16px;
+  min-width: 0;
 }
 
 .studio-hero {
@@ -825,15 +826,21 @@ async function createCustomMetricAction(): Promise<void> {
   align-items: start;
 }
 
+.studio-grid > * {
+  min-width: 0;
+}
+
 .studio-main,
 .studio-side {
   display: grid;
   gap: 14px;
+  min-width: 0;
 }
 
 .studio-panel,
 .side-panel {
   padding: 22px;
+  min-width: 0;
 }
 
 .panel-topline {
@@ -952,6 +959,7 @@ async function createCustomMetricAction(): Promise<void> {
 .field-block {
   display: grid;
   gap: 10px;
+  min-width: 0;
 }
 
 .field-label {
@@ -1098,6 +1106,7 @@ async function createCustomMetricAction(): Promise<void> {
   border-radius: 14px;
   overflow: auto;
   background: #fffdfd;
+  max-width: 100%;
 }
 
 .registry-table {

@@ -5,12 +5,12 @@
     </div>
     <div class="picker-block">
       <div class="picker-head">
-        <strong>参赛模型（多选，至少 2 个）</strong>
+        <strong>参评模型（多选，至少 2 个）</strong>
         <button class="ghost" type="button" @click="reload">刷新</button>
       </div>
 
       <div v-if="!playerModels.length" class="notice-text">
-        ⚠️ 暂无可用参赛模型，请先到
+        ⚠️ 暂无可用参评模型，请先到
         <RouterLink to="/models">「模型管理」</RouterLink> 注册
       </div>
 
@@ -18,7 +18,7 @@
         <div v-for="(playerId, idx) in selectedPlayerIds" :key="idx" class="slot-row">
           <span class="slot-index">#{{ idx + 1 }}</span>
           <select :value="playerId" @change="onPlayerSlotChange(idx, ($event.target as HTMLSelectElement).value)">
-            <option :value="0">— 请选择参赛模型 —</option>
+            <option :value="0">— 请选择参评模型 —</option>
             <option
               v-for="m in availablePlayerOptions(idx)"
               :key="m.modelProfileId"
@@ -54,7 +54,7 @@
           </small>
         </div>
         <button class="ghost slot-add" type="button" @click="addSlot" :disabled="!canAddSlot">
-          + 添加参赛模型（已选 {{ countSelectedPlayers }} / 最多 {{ playerModels.length }}）
+          + 添加参评模型（已选 {{ countSelectedPlayers }} / 最多 {{ playerModels.length }}）
         </button>
       </div>
     </div>
@@ -79,7 +79,7 @@
               :value="m.modelProfileId"
               :disabled="selectedPlayerIds.includes(m.modelProfileId)"
             >
-              {{ m.modelId }}（{{ m.displayName }}）{{ selectedPlayerIds.includes(m.modelProfileId) ? '· 已用作参赛模型' : '' }}
+              {{ m.modelId }}（{{ m.displayName }}）{{ selectedPlayerIds.includes(m.modelProfileId) ? '· 已用作参评模型' : '' }}
             </option>
           </select>
           <button
@@ -102,9 +102,9 @@
     </div>
 
     <p class="notice-text summary-text">
-      已选：<strong>{{ countSelectedPlayers }}</strong> 个参赛模型，裁判模型 =
+      已选：<strong>{{ countSelectedPlayers }}</strong> 个参评模型，裁判模型 =
       <strong>{{ judgeId ? judgeLabel : '未选' }}</strong>。
-      达到“至少 2 个参赛模型 + 1 个裁判模型”即触发 BT 多模型评测；否则按单模型流程执行。
+      达到“至少 2 个参评模型 + 1 个裁判模型”即触发 BT 多模型评测；否则按单模型流程执行。
     </p>
   </div>
 </template>
@@ -273,8 +273,12 @@ async function pingJudge(): Promise<void> {
   align-items: start;
   margin-bottom: 10px;
 }
+.slot-row > * {
+  min-width: 0;
+}
 .slot-row select {
   min-width: 0;
+  width: 100%;
 }
 .slot-index {
   font-family: monospace;
@@ -287,6 +291,9 @@ async function pingJudge(): Promise<void> {
   gap: 8px;
   align-items: center;
   margin-top: 1px;
+  min-width: 0;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 .slot-ping,
 .slot-delete {
@@ -323,5 +330,23 @@ async function pingJudge(): Promise<void> {
 }
 .summary-text {
   margin-top: 6px;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 1320px) {
+  .slot-row {
+    grid-template-columns: 28px minmax(0, 1fr);
+  }
+
+  .slot-actions {
+    grid-column: 2;
+    justify-content: flex-start;
+    margin-top: -2px;
+  }
+
+  .judge-row {
+    grid-template-columns: 1fr;
+  }
 }
 </style>

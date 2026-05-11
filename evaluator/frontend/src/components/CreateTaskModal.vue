@@ -70,11 +70,6 @@
                   <input v-model="form.taskName" type="text" placeholder="例如：TripAgent 回归评测" />
                 </label>
 
-                <label>
-                  应用版本
-                  <input v-model="form.agentVersion" type="text" placeholder="应用版本，例如 1.0.0" />
-                </label>
-
                 <div v-if="isDeterministic" class="model-launch-row">
                   <button type="button" class="model-pill" @click="showInference = true">
                     <span class="pill-icon">⚙</span>
@@ -108,7 +103,7 @@
                     启用位置互换（降低顺序偏置）
                   </label>
                   <p class="notice-text" :class="willTriggerBt ? 'bt-ready' : ''">
-                    {{ willTriggerBt ? '将触发 BT 多模型流程。' : 'BT 至少需要 2 个参赛模型 + 1 个裁判模型。' }}
+                    {{ willTriggerBt ? '将触发 BT 多模型流程。' : 'BT 至少需要 2 个参评模型 + 1 个裁判模型。' }}
                   </p>
                 </div>
 
@@ -268,13 +263,14 @@ import {
 } from '../api/client';
 
 type ModeChoice = 'deterministic' | 'result-judge' | 'process-judge' | 'hybrid' | 'bt' | 'custom';
+const DEFAULT_AGENT_VERSION = '1.0.0';
 
 const modeOptions: Array<{ value: ModeChoice; icon: string; title: string; desc: string }> = [
   { value: 'deterministic', icon: 'D', title: 'DETERMINISITC:确定性评测', desc: '规则评测，单模型推理。' },
   { value: 'result-judge', icon: 'R', title: 'RESULT-JUDGE:结果 + 裁判', desc: '结果评测，LLM 裁判。' },
   { value: 'process-judge', icon: 'P', title: 'PROCESS-JUDGE:过程 + 裁判', desc: '过程评测，关注工具轨迹。' },
   { value: 'hybrid', icon: 'H', title: 'HYBRID:混合评测', desc: '规则与语义联合评测。' },
-  { value: 'bt', icon: 'B', title: 'BT:多模型对比', desc: '参赛模型/裁判模型对比评测。' },
+  { value: 'bt', icon: 'B', title: 'BT:多模型对比', desc: '参评模型/裁判模型对比评测。' },
   { value: 'custom', icon: 'C', title: 'CUSTOM:自定义', desc: '手动配置并支持一键应用本地评测配置。' },
 ];
 
@@ -320,7 +316,6 @@ const inference = ref<InferenceConfig>({
 
 const form = reactive({
   taskName: '',
-  agentVersion: '1.0.0',
   datasetId: '',
   metricSet: '',
   evaluationMode: 'RESULT' as EvaluationMode,
@@ -436,7 +431,6 @@ watch(selectedDimensions, (items) => {
 
 function resetFormDefaults(): void {
   form.taskName = '';
-  form.agentVersion = '1.0.0';
   form.datasetId = '';
   form.metricSet = '';
   form.evaluationMode = 'RESULT';
@@ -760,7 +754,7 @@ async function createOnly(): Promise<{ taskId: number; taskName: string } | null
 
     const created = await createTask({
       taskName: form.taskName,
-      agentVersion: form.agentVersion,
+      agentVersion: DEFAULT_AGENT_VERSION,
       datasetId: form.datasetId,
       metricSet: form.metricSet || undefined,
       evaluationMode: form.evaluationMode,

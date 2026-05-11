@@ -4,7 +4,7 @@
       <header class="inf-head">
         <div>
           <h3>提示词与模型</h3>
-          <p class="inf-sub">单模型或确定性推理时，使用已启用的参赛/通用模型。</p>
+          <p class="inf-sub">单模型或确定性推理时，使用已启用的参评/通用模型。</p>
         </div>
         <button type="button" class="ghost icon-close" aria-label="关闭" @click="$emit('update:open', false)">×</button>
       </header>
@@ -24,7 +24,7 @@
             </button>
           </div>
           <small v-if="modelLoadError" class="err-text">模型加载失败：{{ modelLoadError }}</small>
-          <small v-else-if="!modelOptions.length" class="err-text">暂无可用参赛/通用模型，请先在模型管理中启用。</small>
+          <small v-else-if="!modelOptions.length" class="err-text">暂无可用参评/通用模型，请先在模型管理中启用。</small>
           <small v-else-if="pingText" :class="pingOk ? 'ok-text' : 'err-text'">{{ pingText }}</small>
         </label>
 
@@ -288,7 +288,7 @@ function apply(): void {
 }
 
 function roleLabel(role: string): string {
-  if (role === 'PLAYER') return '参赛模型（PLAYER）';
+  if (role === 'PLAYER') return '参评模型（PLAYER）';
   if (role === 'JUDGE') return '裁判模型（JUDGE）';
   if (role === 'BOTH') return '通用模型（BOTH）';
   return role;

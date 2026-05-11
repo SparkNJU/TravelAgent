@@ -113,7 +113,7 @@
     <article v-if="task" class="surface eval-config-card">
       <h3>评测配置</h3>
       <p class="config-lead">
-        与创建任务时一致；BT 模式下每条样本会先由各参赛模型独立生成回答，再由裁判模型做成对比较与拟合排行。
+        与创建任务时一致；BT 模式下每条样本会先由各参评模型独立生成回答，再由裁判模型做成对比较与拟合排行。
       </p>
       <dl class="config-grid">
         <div><dt>任务名称</dt><dd>{{ task.taskName }}</dd></div>
@@ -128,7 +128,7 @@
         <h4 class="subhead">BT 多模型</h4>
         <dl class="config-grid">
           <div class="span-2">
-            <dt>参赛模型（按槽位顺序）</dt>
+            <dt>参评模型（按槽位顺序）</dt>
             <dd>
               <ol class="player-list">
                 <li v-for="p in playerProfiles" :key="p.modelProfileId">
