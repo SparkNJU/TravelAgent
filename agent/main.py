@@ -19,7 +19,7 @@ from services.react_agent import ReActAgent
 from services.reflection_agent import ReflectionAgent
 from services.serper_client import SerperClient
 from services.sse_events import sse_event, SSE_DONE
-from services.tool_registry import FileParserTool, ToolRegistry, WebSearchTool
+from services.tool_registry import FileParserTool, FinishTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
 
 app = FastAPI(title="Travel Assistant Agent", version="2.0.0")
 
@@ -38,6 +38,9 @@ _serper = SerperClient()
 _tool_registry = ToolRegistry()
 _tool_registry.register(WebSearchTool(_serper))
 _tool_registry.register(FileParserTool())
+_tool_registry.register(UserConfirmTool())
+_tool_registry.register(SuggestQuestionsTool(_llm))
+_tool_registry.register(FinishTool())
 
 _planner = MetaPlanner(_llm)
 _agent = ReActAgent(
@@ -95,6 +98,9 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                 file_text = parse_uploaded_file(request.file_name, request.file_base64)
                 file_summary = file_text[:600] if file_text else ""
 
+            answer_text = ""
+            is_ask_user = False
+
             if request.mode == "plan":
                 for event_json in planner.generate_plan(request.query, file_summary):
                     yield f"data: {event_json}\n\n"
@@ -112,6 +118,11 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                 for event_json in reflection_agent.run(
                     request.query, file_summary, execution_plan
                 ):
+                    chunk = json.loads(event_json)
+                    if chunk.get("type") == "answer":
+                        answer_text += chunk.get("content", "")
+                    if chunk.get("type") == "ask_user":
+                        is_ask_user = True
                     yield f"data: {event_json}\n\n"
             else:
                 execution_plan = ""
@@ -130,7 +141,22 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                 for event_json in agent.run(
                     request.query, file_summary, execution_plan, chat_history=history
                 ):
+                    chunk = json.loads(event_json)
+                    if chunk.get("type") == "answer":
+                        answer_text += chunk.get("content", "")
+                    if chunk.get("type") == "ask_user":
+                        is_ask_user = True
                     yield f"data: {event_json}\n\n"
+
+            # Generate suggestions only if we have an answer and no ask_user
+            if answer_text.strip() and not is_ask_user:
+                suggest_tool = _tool_registry.get("suggest_questions")
+                if suggest_tool:
+                    suggestions = suggest_tool.execute(
+                        context=f"User: {request.query}\nAgent: {answer_text[:1500]}"
+                    )
+                    if suggestions:
+                        yield sse_event("suggestions", "", {"questions": suggestions})
 
             yield SSE_DONE
         except Exception as e:

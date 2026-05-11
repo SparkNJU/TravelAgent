@@ -92,8 +92,7 @@ const props = defineProps({
   placeholder: { type: String, default: '描述你的旅行想法，例如：帮我做一个东京5天旅行计划...' },
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
-  selectedModel: { type: String, default: 'deepseek-v4-flash' },
-  arenaMode: { type: Boolean, default: false },
+  selectedModel: { type: String, default: 'qwen3.6-plus' },
 })
 
 const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena'])
@@ -111,10 +110,10 @@ const modes = [
 ]
 
 const models = [
-  { value: 'deepseek-v4-flash', label: 'DeepSeek V4' },
+  { value: 'qwen3.6-plus', label: 'Qwen 3.6 Plus' },
+  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { value: 'kimi-k2.6', label: 'Kimi K2.6' },
   { value: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
-  { value: 'qwen3.6-plus', label: 'Qwen 3.6+' },
   { value: 'glm-5.1', label: 'GLM 5.1' },
 ]
 
