@@ -180,13 +180,19 @@ public class TripAssistantService {
 
                 logger.info("SSE stream completed: userId={}", req.getUserId());
                 emitter.complete();
+            } catch (IOException e) {
+                // Client disconnected — just log and clean up
+                logger.warn("SSE client disconnected: userId={}, reason: {}", req.getUserId(), e.getMessage());
+                emitter.complete();
             } catch (Exception e) {
-                logger.error("Agent SSE proxy error", e);
+                logger.error("Agent SSE proxy error: userId={}", req.getUserId(), e);
                 try {
                     emitter.send(SseEmitter.event().name("error").data(
                             Map.of("type", "error", "content", e.getMessage())));
-                } catch (IOException ignored) {}
-                emitter.completeWithError(e);
+                } catch (Exception ignored) {}
+                try {
+                    emitter.completeWithError(e);
+                } catch (Exception ignored) {}
             }
         });
 
