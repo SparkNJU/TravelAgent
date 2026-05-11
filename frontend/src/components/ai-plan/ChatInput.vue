@@ -22,20 +22,31 @@
             <select
               :value="mode"
               class="mode-select"
+              :disabled="arenaMode"
               @change="onModeChange"
             >
               <option v-for="m in modes" :key="m.value" :value="m.value">{{ m.label }}</option>
             </select>
           </div>
           <select
-            v-if="mode !== 'auto'"
             :value="modelName"
             class="model-select"
+            :disabled="arenaMode"
             @change="$emit('update:selectedModel', $event.target.value)"
           >
             <option v-for="m in models" :key="m.value" :value="m.value">{{ m.label }}</option>
           </select>
-          <div v-else class="model-auto-pill">随机模型对比</div>
+          <button
+            type="button"
+            class="arena-toggle"
+            :class="{ active: arenaMode }"
+            :title="arenaMode ? '关闭竞技场模式' : '竞技场模式：随机选择两个模型回答'"
+            :aria-label="arenaMode ? '关闭竞技场模式' : '开启竞技场模式'"
+            @click="$emit('toggleArena')"
+          >
+            <SvgIcon :name="arenaMode ? 'close' : 'trophy'" :size="16" />
+          </button>
+          <span v-if="arenaMode" class="arena-pill">竞技场模式</span>
           <div v-if="!compact" class="quick-tags">
             <button
               v-for="tag in tags"
@@ -82,9 +93,10 @@ const props = defineProps({
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
   selectedModel: { type: String, default: 'deepseek-v4-flash' },
+  arenaMode: { type: Boolean, default: false },
 })
 
-const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop'])
+const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena'])
 
 const mode = ref(props.modelValue)
 const modelName = ref(props.selectedModel)
@@ -96,7 +108,6 @@ const modes = [
   { value: 'agent', label: 'Agent' },
   { value: 'plan', label: 'Plan' },
   { value: 'reflection', label: 'Reflection' },
-  { value: 'auto', label: 'Auto' },
 ]
 
 const models = [
@@ -289,6 +300,12 @@ function handleSubmit() {
   border-color: var(--color-secondary);
 }
 
+.mode-select:disabled,
+.model-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .model-select {
   width: 160px;
   padding: 3px 8px;
@@ -313,14 +330,38 @@ function handleSubmit() {
   border-color: var(--color-secondary);
 }
 
-.model-auto-pill {
-  padding: 3px 10px;
+.arena-toggle {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
 
-  border: 1px dashed var(--color-border);
+.arena-toggle:hover {
+  border-color: var(--color-red);
+  color: var(--color-title);
+}
+
+.arena-toggle.active {
+  border-color: var(--color-red);
+  background: rgba(230, 57, 70, 0.08);
+  color: var(--color-red-light);
+}
+
+.arena-pill {
+  padding: 3px 10px;
+  border: 1px solid rgba(230, 57, 70, 0.2);
   border-radius: var(--radius-pill);
   font-size: 11px;
-  color: var(--color-secondary);
-  background: var(--color-surface);
+  color: var(--color-red-light);
+  background: rgba(230, 57, 70, 0.08);
   white-space: nowrap;
 }
 

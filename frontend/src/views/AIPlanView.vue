@@ -20,7 +20,16 @@
           <h1>TravelMind AI</h1>
           <p>描述你的旅行想法，智能生成个性化行程方案</p>
         </div>
-        <ChatInput :loading="loading" v-model="selectedMode" :selectedModel="selectedModel" @update:selectedModel="selectedModel = $event" @submit="handleSend" @stop="stopActiveRequest" />
+        <ChatInput
+          :loading="loading"
+          v-model="selectedMode"
+          :selectedModel="selectedModel"
+          :arenaMode="arenaMode"
+          @update:selectedModel="selectedModel = $event"
+          @toggleArena="toggleArenaMode"
+          @submit="handleSend"
+          @stop="stopActiveRequest"
+        />
       </div>
 
       <!-- Active conversation: messages + compact input -->
@@ -78,7 +87,9 @@
             :hasMessages="true"
             v-model="selectedMode"
             :selectedModel="selectedModel"
+            :arenaMode="arenaMode"
             @update:selectedModel="selectedModel = $event"
+            @toggleArena="toggleArenaMode"
             @submit="handleSend"
             @stop="stopActiveRequest"
           />
@@ -152,6 +163,7 @@ const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
 const selectedModel = ref('deepseek-v4-flash')
+const arenaMode = ref(false)
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -427,11 +439,15 @@ function handleNewConversation() {
   sidebarCollapsed.value = false
 }
 
+function toggleArenaMode() {
+  arenaMode.value = !arenaMode.value
+}
+
 function handleSend({ query, file }) {
   if (!query) return
   if (!activeConversation.value) newConversation()
 
-  if (selectedMode.value === 'auto') {
+  if (arenaMode.value) {
     handleAutoSend({ query, file })
     return
   }
