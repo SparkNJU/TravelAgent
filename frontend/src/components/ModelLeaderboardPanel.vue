@@ -12,19 +12,47 @@
     <div v-if="loading" class="leaderboard-loading">加载中...</div>
     <div v-else-if="!entries.length" class="leaderboard-empty">暂无数据</div>
     <div v-else class="leaderboard-list">
-      <div v-for="(item, idx) in entries.slice(0, 5)" :key="item.model" class="leaderboard-item">
-        <div class="rank">{{ idx + 1 }}</div>
-        <div class="model">
-          <div class="model-name">{{ item.model }}</div>
-          <div class="model-meta">胜 {{ item.wins }} · 负 {{ item.losses }} · 平 {{ item.ties }}</div>
+      <div v-for="(item, idx) in entries" :key="item.model" class="leaderboard-item">
+        <div class="leaderboard-row">
+          <div class="rank">{{ idx + 1 }}</div>
+          <div class="model">
+            <div class="model-name">{{ item.model }}</div>
+            <div class="model-meta">胜 {{ item.wins }} · 负 {{ item.losses }} · 平 {{ item.ties }} · 场次 {{ item.matches }}</div>
+          </div>
+          <div class="score">{{ Math.round(item.score) }}</div>
+          <button class="detail-toggle" @click="toggleDetail(item.model)">
+            {{ expanded[item.model] ? '收起' : '详情' }}
+          </button>
         </div>
-        <div class="score">{{ Math.round(item.score) }}</div>
+        <div v-if="expanded[item.model]" class="leaderboard-detail">
+          <div class="detail-item">
+            <span class="detail-label">厂商</span>
+            <span class="detail-value">{{ item.meta?.vendor || item.vendor || '未知' }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">系列</span>
+            <span class="detail-value">{{ item.meta?.family || '-' }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">上下文</span>
+            <span class="detail-value">{{ item.meta?.contextWindow || '-' }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">标签</span>
+            <span class="detail-value">{{ (item.meta?.tags || []).join('、') || '-' }}</span>
+          </div>
+          <div class="detail-item">
+            <span class="detail-label">说明</span>
+            <span class="detail-value">{{ item.meta?.description || '-' }}</span>
+          </div>
+        </div>
       </div>
     </div>
   </section>
 </template>
 
 <script setup>
+import { ref } from 'vue'
 import SvgIcon from './SvgIcon.vue'
 
 defineProps({
@@ -33,6 +61,15 @@ defineProps({
 })
 
 defineEmits(['refresh'])
+
+const expanded = ref({})
+
+function toggleDetail(model) {
+  expanded.value = {
+    ...expanded.value,
+    [model]: !expanded.value[model],
+  }
+}
 </script>
 
 <style scoped>
@@ -103,12 +140,18 @@ defineEmits(['refresh'])
 }
 
 .leaderboard-item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
   padding: 10px;
   border-radius: 12px;
   background: var(--color-surface);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.leaderboard-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
 }
 
 .rank {
@@ -148,5 +191,41 @@ defineEmits(['refresh'])
   font-weight: 600;
   color: var(--color-title);
   flex-shrink: 0;
+}
+
+.detail-toggle {
+  border: 1px solid var(--color-border);
+  background: transparent;
+  color: var(--color-secondary);
+  border-radius: 8px;
+  padding: 4px 10px;
+  font-size: 12px;
+}
+
+.leaderboard-detail {
+  border-top: 1px solid var(--color-border);
+  padding-top: 8px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px 12px;
+  font-size: 12px;
+  color: var(--color-body);
+}
+
+.detail-item {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+}
+
+.detail-label {
+  color: var(--color-muted);
+  min-width: 48px;
+  flex-shrink: 0;
+}
+
+.detail-value {
+  color: var(--color-title);
+  word-break: break-word;
 }
 </style>
