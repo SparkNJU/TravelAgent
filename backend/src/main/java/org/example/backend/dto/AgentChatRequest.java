@@ -7,6 +7,7 @@ public class AgentChatRequest {
     private Long userId = 1L;
     private String mode = "agent";
     private boolean generatePlanFirst = true;
+    private boolean arena = false;
     private String model;
     private Double temperature;
     private String fileName;
@@ -28,6 +29,9 @@ public class AgentChatRequest {
 
     public boolean isGeneratePlanFirst() { return generatePlanFirst; }
     public void setGeneratePlanFirst(boolean generatePlanFirst) { this.generatePlanFirst = generatePlanFirst; }
+
+    public boolean isArena() { return arena; }
+    public void setArena(boolean arena) { this.arena = arena; }
 
     public String getModel() { return model; }
     public void setModel(String model) { this.model = model; }

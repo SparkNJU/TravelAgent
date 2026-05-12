@@ -20,7 +20,16 @@
           <h1>TravelMind AI</h1>
           <p>描述你的旅行想法，智能生成个性化行程方案</p>
         </div>
-        <ChatInput :loading="loading" v-model="selectedMode" :selectedModel="selectedModel" @update:selectedModel="selectedModel = $event" @submit="handleSend" />
+        <ChatInput
+          :loading="loading"
+          v-model="selectedMode"
+          :selectedModel="selectedModel"
+          :arenaMode="arenaMode"
+          @update:selectedModel="selectedModel = $event"
+          @toggleArena="toggleArenaMode"
+          @submit="handleSend"
+          @stop="stopActiveRequest"
+        />
       </div>
 
       <!-- Active conversation: messages + compact input -->
@@ -32,25 +41,38 @@
 
             <!-- Agent message: events + answer -->
             <template v-else>
-              <div class="agent-content-wrapper">
-              <AgentPlanBlock
-                v-if="msg.planContent"
-                :content="msg.planContent"
-                :streaming="loading && i === activeConversation.messages.length - 1"
-              />
-              <AgentEventBlock
-                v-for="(ev, j) in msg.events"
-                :key="j"
-                :type="ev.type"
-                :content="ev.content"
-                :toolName="ev.metadata?.tool_name || ''"
-                :metadata="ev.metadata"
-              />
-              <MessageBubble
-                v-if="msg.answer"
-                role="assistant"
-                :content="msg.answer"
-              />
+              <div class="agent-content-wrapper" :class="{ arena: msg.arena }">
+                <ModelArenaCompare
+                  v-if="msg.arena"
+                  :modelA="msg.arena.modelA"
+                  :modelB="msg.arena.modelB"
+                  :answerA="msg.arena.answerA"
+                  :answerB="msg.arena.answerB"
+                  :loading="msg.arena.loading"
+                  :voted="msg.arena.voted"
+                  :stages="msg.arena.stages || []"
+                  @vote="handleArenaVote(msg, $event)"
+                />
+                <template v-else>
+                  <AgentPlanBlock
+                    v-if="msg.planContent"
+                    :content="msg.planContent"
+                    :streaming="loading && i === activeConversation.messages.length - 1"
+                  />
+                  <AgentEventBlock
+                    v-for="(ev, j) in msg.events"
+                    :key="j"
+                    :type="ev.type"
+                    :content="ev.content"
+                    :toolName="ev.metadata?.tool_name || ''"
+                    :metadata="ev.metadata"
+                  />
+                  <MessageBubble
+                    v-if="msg.answer"
+                    role="assistant"
+                    :content="msg.answer"
+                  />
+                </template>
               </div>
             </template>
           </template>
@@ -82,8 +104,11 @@
             :hasMessages="true"
             v-model="selectedMode"
             :selectedModel="selectedModel"
+            :arenaMode="arenaMode"
             @update:selectedModel="selectedModel = $event"
+            @toggleArena="toggleArenaMode"
             @submit="handleSend"
+            @stop="stopActiveRequest"
           />
         </div>
       </div>
@@ -137,6 +162,7 @@ import StreamingIndicator from '../components/ai-plan/StreamingIndicator.vue'
 import ConversationSidebar from '../components/ai-plan/ConversationSidebar.vue'
 import UserConfirmBlock from '../components/ai-plan/UserConfirmBlock.vue'
 import SuggestionChips from '../components/ai-plan/SuggestionChips.vue'
+import ModelArenaCompare from '../components/ai-plan/ModelArenaCompare.vue'
 
 const route = useRoute()
 const { isLoggedIn } = useAuth()
@@ -156,6 +182,7 @@ const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
 const selectedModel = ref('qwen3.6-plus')
+const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
 
@@ -245,6 +272,201 @@ function scrollToBottom() {
   })
 }
 
+function timeTag() {
+  return new Date().toTimeString().slice(0, 8)
+}
+
+function createInitialArenaStages(query) {
+  return [
+    {
+      id: 'pick',
+      title: '匿名模型抽取',
+      status: 'running',
+      time: timeTag(),
+      expanded: true,
+      detail: `已接收问题：${query}\n从候选池随机抽取两个模型，并映射到匿名标签 A/B。`,
+    },
+    {
+      id: 'dispatch',
+      title: '并行请求派发',
+      status: 'pending',
+      time: '--:--:--',
+      expanded: false,
+      detail: '等待派发请求。',
+    },
+    {
+      id: 'reasoning',
+      title: '模型思考与草拟',
+      status: 'pending',
+      time: '--:--:--',
+      expanded: false,
+      detail: '等待模型生成过程。',
+    },
+    {
+      id: 'merge',
+      title: '结果整理与匿名展示',
+      status: 'pending',
+      time: '--:--:--',
+      expanded: true,
+      detail: '等待汇总回答。',
+    },
+  ]
+}
+
+function updateArenaStage(msg, stageId, patch = {}) {
+  if (!msg?.arena) return
+  if (!Array.isArray(msg.arena.stages)) msg.arena.stages = []
+  const index = msg.arena.stages.findIndex((item) => item.id === stageId)
+  if (index < 0) return
+  msg.arena.stages[index] = { ...msg.arena.stages[index], ...patch }
+  activeConversation.value.messages = [...activeConversation.value.messages]
+  scrollToBottom()
+}
+
+function appendArenaReasoningLog(msg, source, eventType, content) {
+  if (!msg?.arena) return
+  if (!msg.arena.reasoningLogs) {
+    msg.arena.reasoningLogs = { A: [], B: [] }
+  }
+  const safeContent = String(content || '').trim()
+  if (!safeContent) return
+  const logs = msg.arena.reasoningLogs[source] || []
+  logs.push(`[${timeTag()}][${eventType}] ${safeContent}`)
+  msg.arena.reasoningLogs[source] = logs.slice(-10)
+  updateArenaStage(msg, 'reasoning', {
+    detail: [
+      '模型 A 事件流：',
+      ...(msg.arena.reasoningLogs.A || []).map(item => `- ${item}`),
+      '',
+      '模型 B 事件流：',
+      ...(msg.arena.reasoningLogs.B || []).map(item => `- ${item}`),
+    ].join('\n'),
+  })
+}
+
+function handleArenaStreamEvent(msg, event) {
+  if (!msg?.arena || !event) return
+  const metadata = event.metadata || {}
+  function resolveArenaSource(msg, metadata) {
+    let s = metadata.source || metadata.model || ''
+    if (typeof s === 'number') s = String(s)
+    s = String(s || '').toUpperCase().trim()
+    if (!s && typeof metadata.index !== 'undefined') s = String(metadata.index)
+
+    if (!s) return 'A'
+    if (s === '0' || s === 'A' || s.includes('A')) return 'A'
+    if (s === '1' || s === 'B' || s.includes('B')) return 'B'
+
+    const modelName = String(metadata.model || metadata.modelName || '').trim()
+    if (modelName) {
+      if (msg.arena.modelA && msg.arena.modelA.toUpperCase().includes(modelName.toUpperCase())) return 'A'
+      if (msg.arena.modelB && msg.arena.modelB.toUpperCase().includes(modelName.toUpperCase())) return 'B'
+    }
+
+    return s.startsWith('A') ? 'A' : 'B'
+  }
+
+  const source = resolveArenaSource(msg, metadata)
+
+  if (event.type === 'arena_init') {
+    updateArenaStage(msg, 'pick', {
+      status: 'done',
+      detail: '已完成匿名映射：模型不会在投票前展示真实名称。',
+    })
+    updateArenaStage(msg, 'dispatch', {
+      status: 'running',
+      time: timeTag(),
+      expanded: true,
+      detail: '后端已开始并行建立双路模型流。',
+    })
+    return
+  }
+
+  if (event.type === 'arena_model_event') {
+    updateArenaStage(msg, 'dispatch', {
+      status: 'done',
+      detail: '并行流已建立，正在持续接收模型事件。',
+    })
+    updateArenaStage(msg, 'reasoning', {
+      status: 'running',
+      time: msg.arena.reasoningStartedAt || timeTag(),
+      expanded: true,
+    })
+    msg.arena.reasoningStartedAt = msg.arena.reasoningStartedAt || timeTag()
+    appendArenaReasoningLog(msg, source, metadata.eventType || 'event', event.content)
+    return
+  }
+
+  if (event.type === 'arena_answer_chunk') {
+    if (source === 'A') msg.arena.answerA = (msg.arena.answerA || '') + (event.content || '')
+    if (source === 'B') msg.arena.answerB = (msg.arena.answerB || '') + (event.content || '')
+    updateArenaStage(msg, 'reasoning', {
+      status: 'running',
+      expanded: true,
+    })
+    activeConversation.value.messages = [...activeConversation.value.messages]
+    scrollToBottom()
+    return
+  }
+
+  if (event.type === 'arena_model_done') {
+    if (!msg.arena.doneFlags) msg.arena.doneFlags = { A: false, B: false }
+    msg.arena.doneFlags[source] = true
+    appendArenaReasoningLog(msg, source, 'done', '该模型已完成流式输出。')
+    if (msg.arena.doneFlags.A && msg.arena.doneFlags.B) {
+      updateArenaStage(msg, 'reasoning', { status: 'done' })
+      updateArenaStage(msg, 'merge', {
+        status: 'running',
+        time: timeTag(),
+        expanded: true,
+        detail: '双路输出已完成，正在整理匿名对比结果。',
+      })
+    }
+    return
+  }
+
+  if (event.type === 'arena_model_error') {
+    appendArenaReasoningLog(msg, source, 'error', event.content || '模型流式调用失败')
+    updateArenaStage(msg, 'reasoning', { status: 'error' })
+    updateArenaStage(msg, 'merge', {
+      status: 'error',
+      time: timeTag(),
+      detail: '模型流中断，结果可能不完整。',
+    })
+    return
+  }
+
+  if (event.type === 'arena_complete') {
+    const finalMeta = metadata || {}
+    msg.arena.modelA = finalMeta.modelA || msg.arena.modelA
+    msg.arena.modelB = finalMeta.modelB || msg.arena.modelB
+    msg.arena.answerA = finalMeta.answerA || msg.arena.answerA
+    msg.arena.answerB = finalMeta.answerB || msg.arena.answerB
+    msg.arena.loading = false
+    msg.content = 'Auto对比已完成，等待投票后揭晓模型名。'
+    updateArenaStage(msg, 'merge', {
+      status: 'done',
+      detail: '双路回答已完成并匿名展示，当前进入投票阶段。',
+    })
+    activeConversation.value.messages = [...activeConversation.value.messages]
+    return
+  }
+
+  if (event.type === 'arena_error') {
+    msg.arena.loading = false
+    msg.content = event.content || 'Auto对比失败'
+    updateArenaStage(msg, 'reasoning', {
+      status: 'error',
+      detail: '对比流执行失败。',
+    })
+    updateArenaStage(msg, 'merge', {
+      status: 'error',
+      time: timeTag(),
+      detail: event.content || '结果整理失败。',
+    })
+  }
+}
+
 watch(() => activeConversation.value?.messages?.length, scrollToBottom)
 
 onMounted(() => {
@@ -255,6 +477,10 @@ onMounted(() => {
 function handleNewConversation() {
   newConversation()
   sidebarCollapsed.value = false
+}
+
+function toggleArenaMode() {
+  arenaMode.value = !arenaMode.value
 }
 
 function startStream(query, mode = selectedMode.value, generatePlanFirst = null, file = null) {
@@ -317,6 +543,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
     },
     () => {
       loading.value = false
+      activeController.value = null
       const msg = agentMsg()
       if (msg?.answer) {
         try {
@@ -332,6 +559,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
     },
     (err) => {
       loading.value = false
+      activeController.value = null
       console.error('SSE error:', err)
       addMessage({ role: 'assistant', content: `请求失败: ${err.message}`, events: [] })
     },
@@ -341,6 +569,12 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
 function handleSend({ query, file }) {
   if (!query) return
   if (!activeConversation.value) newConversation()
+
+  if (arenaMode.value) {
+    handleAutoSend({ query, file })
+    return
+  }
+
   startStream(query, selectedMode.value, null, file)
 }
 
@@ -353,6 +587,141 @@ function handleConfirmResponse({ answers }) {
 function handleSuggestionSelect(question) {
   activeSuggestions.value = []
   startStream(question, selectedMode.value)
+}
+
+async function handleAutoSend({ query, file }) {
+  addMessage({ role: 'user', content: query })
+  addMessage({
+    role: 'assistant',
+    content: '',
+    events: [],
+    arena: {
+      loading: true,
+      modelA: '',
+      modelB: '',
+      answerA: '',
+      answerB: '',
+      voted: '',
+      stages: [],
+      reasoningLogs: { A: [], B: [] },
+      doneFlags: { A: false, B: false },
+    },
+  })
+
+  loading.value = true
+  scrollToBottom()
+
+  const formData = new FormData()
+  formData.append('query', query)
+  formData.append('userId', localStorage.getItem('userId') || '1')
+
+  const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
+  const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
+  formData.append('chatHistoryJson', JSON.stringify(historyToSent))
+
+  if (file) formData.append('file', file)
+
+  const arenaMsg = () => activeConversation.value?.messages.at(-1)
+  const msg = arenaMsg()
+  if (msg?.arena) {
+    msg.arena.stages = createInitialArenaStages(query)
+    activeConversation.value.messages = [...activeConversation.value.messages]
+  }
+
+  activeController.value = streamPost(
+    '/api/arena/auto/stream',
+    formData,
+    (event) => {
+      const current = arenaMsg()
+      handleArenaStreamEvent(current, event)
+    },
+    () => {
+      const current = arenaMsg()
+      if (current?.arena?.loading) {
+        current.arena.loading = false
+        updateArenaStage(current, 'merge', {
+          status: 'done',
+          detail: '流式连接结束，已停止接收新事件。',
+        })
+        activeConversation.value.messages = [...activeConversation.value.messages]
+      }
+      loading.value = false
+      activeController.value = null
+      persist()
+    },
+    (err) => {
+      const current = arenaMsg()
+      if (current?.arena) {
+        current.arena.loading = false
+        current.content = `Auto对比失败: ${err.message}`
+        updateArenaStage(current, 'reasoning', {
+          status: 'error',
+          time: timeTag(),
+          detail: `流式事件处理失败：${err.message}`,
+        })
+        updateArenaStage(current, 'merge', {
+          status: 'error',
+          time: timeTag(),
+          detail: '对比流程中断。',
+        })
+        activeConversation.value.messages = [...activeConversation.value.messages]
+      }
+      loading.value = false
+      activeController.value = null
+      persist()
+    },
+  )
+}
+
+function stopActiveRequest() {
+  if (!loading.value || !activeController.value) return
+  activeController.value.abort()
+  activeController.value = null
+  loading.value = false
+
+  const conv = activeConversation.value
+  if (!conv) return
+  const last = [...conv.messages].reverse().find(m => m.role === 'assistant')
+  if (last?.arena) {
+    last.arena.loading = false
+    if (!last.arena.answerA) last.arena.answerA = '已停止'
+    updateArenaStage(last, 'reasoning', {
+      status: 'error',
+      time: timeTag(),
+      detail: '用户手动停止了请求。',
+    })
+    updateArenaStage(last, 'merge', {
+      status: 'error',
+      time: timeTag(),
+      detail: '未能完成最终整理。',
+    })
+  } else if (last) {
+    if (!last.events) last.events = []
+    last.events.push({ type: 'observation', content: '已停止', metadata: {} })
+  }
+  conv.messages = [...conv.messages]
+  persist()
+}
+
+async function handleArenaVote(msg, result) {
+  if (!msg?.arena || msg.arena.voted) return
+  msg.arena.voted = result
+  activeConversation.value.messages = [...activeConversation.value.messages]
+  try {
+    await fetch('/api/arena/vote', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        modelA: msg.arena.modelA,
+        modelB: msg.arena.modelB,
+        result,
+      }),
+    })
+  } catch {
+    msg.arena.voted = ''
+    activeConversation.value.messages = [...activeConversation.value.messages]
+  }
+  persist()
 }
 
 async function loadSavedPlan(planId) {
@@ -490,6 +859,10 @@ function handleUpdateItinerary(updated) {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.agent-content-wrapper.arena {
+  max-width: 100%;
 }
 
 .compact-input-area {

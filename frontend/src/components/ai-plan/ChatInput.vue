@@ -22,6 +22,7 @@
             <select
               :value="mode"
               class="mode-select"
+              :disabled="arenaMode"
               @change="onModeChange"
             >
               <option v-for="m in modes" :key="m.value" :value="m.value">{{ m.label }}</option>
@@ -30,10 +31,22 @@
           <select
             :value="modelName"
             class="model-select"
+            :disabled="arenaMode"
             @change="$emit('update:selectedModel', $event.target.value)"
           >
             <option v-for="m in models" :key="m.value" :value="m.value">{{ m.label }}</option>
           </select>
+          <button
+            type="button"
+            class="arena-toggle"
+            :class="{ active: arenaMode }"
+            :title="arenaMode ? '关闭竞技场模式' : '竞技场模式：随机选择两个模型回答'"
+            :aria-label="arenaMode ? '关闭竞技场模式' : '开启竞技场模式'"
+            @click="$emit('toggleArena')"
+          >
+            <SvgIcon :name="arenaMode ? 'close' : 'trophy'" :size="16" />
+          </button>
+          <span v-if="arenaMode" class="arena-pill">竞技场模式</span>
           <div v-if="!compact" class="quick-tags">
             <button
               v-for="tag in tags"
@@ -44,15 +57,27 @@
             >{{ tag }}</button>
           </div>
         </div>
+
         <button
+          v-if="loading"
+          class="stop-btn"
+          @click="emit('stop')"
+        >
+          <SvgIcon name="close" :size="14" />
+          <span>停止</span>
+        </button>
+
+        <button
+          v-else
           class="send-btn"
           :disabled="!canSend"
           @click="handleSubmit"
         >
-          <SvgIcon v-if="loading" name="loader" :size="16" spin />
-          <SvgIcon v-else name="send" :size="16" />
+          <SvgIcon name="send" :size="16" />
         </button>
+
       </div>
+
     </div>
   </div>
 </template>
@@ -67,10 +92,11 @@ const props = defineProps({
   placeholder: { type: String, default: '描述你的旅行想法，例如：帮我做一个东京5天旅行计划...' },
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
+  arenaMode: { type: Boolean, default: false },
   selectedModel: { type: String, default: 'qwen3.6-plus' },
 })
 
-const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel'])
+const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena'])
 
 const mode = ref(props.modelValue)
 const modelName = ref(props.selectedModel)
@@ -274,6 +300,12 @@ function handleSubmit() {
   border-color: var(--color-secondary);
 }
 
+.mode-select:disabled,
+.model-select:disabled {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+
 .model-select {
   width: 160px;
   padding: 3px 8px;
@@ -296,6 +328,61 @@ function handleSubmit() {
 
 .model-select:hover {
   border-color: var(--color-secondary);
+}
+
+.arena-toggle {
+  width: 34px;
+  height: 34px;
+  border-radius: 10px;
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.arena-toggle:hover {
+  border-color: var(--color-red);
+  color: var(--color-title);
+}
+
+.arena-toggle.active {
+  border-color: var(--color-red);
+  background: rgba(230, 57, 70, 0.08);
+  color: var(--color-red-light);
+}
+
+.arena-pill {
+  padding: 3px 10px;
+  border: 1px solid rgba(230, 57, 70, 0.2);
+  border-radius: var(--radius-pill);
+  font-size: 11px;
+  color: var(--color-red-light);
+  background: rgba(230, 57, 70, 0.08);
+  white-space: nowrap;
+}
+
+
+
+.stop-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 12px;
+  border-radius: var(--radius-pill);
+  background: rgba(230, 57, 70, 0.12);
+  color: var(--color-red-light);
+  font-size: 12px;
+  font-weight: 600;
+  border: 1px solid rgba(230, 57, 70, 0.2);
+  transition: all 0.15s;
+}
+
+.stop-btn:hover {
+  background: rgba(230, 57, 70, 0.2);
 }
 
 .send-btn {

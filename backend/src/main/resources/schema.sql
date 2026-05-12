@@ -9,6 +9,7 @@ DROP TABLE IF EXISTS plan_highlights;
 DROP TABLE IF EXISTS travel_plans;
 
 DROP TABLE IF EXISTS ai_planning_history;
+DROP TABLE IF EXISTS model_arena_votes;
 DROP TABLE IF EXISTS destinations;
 DROP TABLE IF EXISTS users;
 
@@ -92,6 +93,17 @@ CREATE TABLE IF NOT EXISTS ai_planning_history (
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
     INDEX idx_user_id (user_id),
     INDEX idx_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Model Arena Votes Table (pairwise comparisons)
+CREATE TABLE IF NOT EXISTS model_arena_votes (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    model_a VARCHAR(60) NOT NULL,
+    model_b VARCHAR(60) NOT NULL,
+    result VARCHAR(20) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    INDEX idx_model_a (model_a),
+    INDEX idx_model_b (model_b)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Insert Sample Data

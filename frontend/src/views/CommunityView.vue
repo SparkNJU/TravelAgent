@@ -28,6 +28,7 @@
       </div>
     </header>
 
+
     <main class="feed-area">
       <div class="masonry">
         <article
@@ -170,6 +171,7 @@ const categories = [
   { id: 'couple', name: '情侣' },
 ]
 
+
 const formatLikes = (n) => {
   if (!n) return '0'
   if (n >= 10000) return (n / 10000).toFixed(1) + 'w'
@@ -184,6 +186,7 @@ const loadPosts = async () => {
     if (data.code === 200) allPosts.value = data.data
   } catch { /* empty */ }
 }
+
 
 const handleCategoryChange = async () => {
   if (activeCategory.value === 'all') { loadPosts(); return }
@@ -289,7 +292,9 @@ const handlePublishSuccess = () => {
   loadPosts()
 }
 
-onMounted(loadPosts)
+onMounted(() => {
+  loadPosts()
+})
 </script>
 
 <style scoped>
@@ -311,6 +316,7 @@ onMounted(loadPosts)
   align-items: flex-start;
   gap: 16px;
 }
+
 
 .publish-btn {
   display: flex; align-items: center; gap: 8px;

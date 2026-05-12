@@ -54,6 +54,7 @@ class ReActAgent:
         file_summary: str = "",
         execution_plan: str = "",
         chat_history: list[dict] | None = None,
+        arena_mode: bool = False,
     ) -> Generator[str, None, None]:
         """Execute the ReAct loop. Yields SSE event JSON strings."""
         if chat_history is None:
@@ -64,6 +65,12 @@ class ReActAgent:
             for t in self._tools.list_tools()
         )
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(tools=tool_descriptions)
+        if arena_mode:
+            system_prompt += (
+                "\nArena mode: do not call ask_user or suggest_questions. "
+                "Provide the full travel plan and call finish exactly once. "
+                "Do NOT call finish with empty arguments or placeholder text like 'The answer is provided.'"
+            )
 
         user_parts = [f"User request: {query}"]
         if file_summary:
@@ -97,6 +104,7 @@ class ReActAgent:
             # ACT
             messages.append(msg.model_dump())
 
+            missing_finish_answer = False
             for tool_call in msg.tool_calls:
                 func = tool_call.function
                 tool_name = func.name
@@ -105,6 +113,19 @@ class ReActAgent:
                     arguments = json.loads(func.arguments)
                 except json.JSONDecodeError:
                     arguments = {}
+
+                if tool_name == "finish" and (not arguments or not str(arguments.get("answer", "")).strip()):
+                    missing_finish_answer = True
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "Finish was called without a valid answer. "
+                                "Provide the full travel plan in the answer field and call finish again."
+                            ),
+                        }
+                    )
+                    break
 
                 yield self._emit(
                     "action",
@@ -138,11 +159,24 @@ class ReActAgent:
                     try:
                         parsed_result = json.loads(result_str)
                         answer = parsed_result.get("answer", "")
-                        yield self._emit("answer", answer, {"step": step})
+                        if answer and answer.strip():
+                            yield self._emit("answer", answer, {"step": step})
+                            yield self._emit("done", "", {})
+                            return
                     except (json.JSONDecodeError, AttributeError):
                         pass
-                    yield self._emit("done", "", {})
-                    return
+                    missing_finish_answer = True
+                    messages.append(
+                        {
+                            "role": "system",
+                            "content": (
+                                "The finish tool was called without a valid answer. "
+                                "Please provide the full travel plan in the answer field "
+                                "and call finish again."
+                            ),
+                        }
+                    )
+                    break
 
                 # Detect ask_user and break the loop
                 if tool_name == "ask_user":
@@ -158,6 +192,9 @@ class ReActAgent:
                             return
                     except (json.JSONDecodeError, AttributeError):
                         pass
+
+            if missing_finish_answer:
+                continue
 
         yield self._emit(
             "error",
