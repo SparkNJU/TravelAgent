@@ -19,9 +19,13 @@ from services.react_agent import ReActAgent
 from services.reflection_agent import ReflectionAgent
 from services.serper_client import SerperClient
 from services.sse_events import sse_event, SSE_DONE
-from services.tool_registry import FileParserTool, FinishTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
+from services.tool_registry import FileParserTool, FinishTool, KnowledgeSearchTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
+from knowledge.client import HttpKnowledgeClient, InProcessKnowledgeClient
+from knowledge.provider import get_knowledge_service
+from knowledge.router import router as knowledge_router
 
 app = FastAPI(title="Travel Assistant Agent", version="2.0.0")
+app.include_router(knowledge_router)
 
 # --- Initialize services ---
 
@@ -35,8 +39,15 @@ _llm = LLMService(
 
 _serper = SerperClient()
 
+if config.knowledge.mode == "http":
+    _knowledge_client = HttpKnowledgeClient(config.knowledge.base_url)
+else:
+    _knowledge_client = InProcessKnowledgeClient(get_knowledge_service)
+
 _tool_registry = ToolRegistry()
 _tool_registry.register(WebSearchTool(_serper))
+if config.knowledge.enabled:
+    _tool_registry.register(KnowledgeSearchTool(_knowledge_client, default_top_k=config.knowledge.top_k))
 _tool_registry.register(FileParserTool())
 _tool_registry.register(UserConfirmTool())
 _tool_registry.register(SuggestQuestionsTool(_llm))

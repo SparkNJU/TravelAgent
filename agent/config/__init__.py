@@ -36,10 +36,30 @@ class ToolsConfig(BaseModel):
     file_parser_enabled: bool = True
 
 
+class KnowledgeConfig(BaseModel):
+    enabled: bool = True
+    mode: str = "inprocess"
+    base_url: str = "http://localhost:8000/api/knowledge"
+    milvus_uri: str = "http://localhost:19530"
+    collection: str = "travel_knowledge_chunks"
+    namespace: str = "default"
+    chunk_size: int = 800
+    chunk_overlap: int = 200
+    embedding_model: str = "text-embedding-v4"
+    embedding_dim: int = 2048
+    recall_limit: int = 30
+    top_k: int = 6
+    dense_weight: float = 0.75
+    sparse_weight: float = 0.25
+    rerank_enabled: bool = False
+    rerank_model: str = "qwen3-rerank"
+
+
 class AppConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     agent: AgentConfig = AgentConfig()
     tools: ToolsConfig = ToolsConfig()
+    knowledge: KnowledgeConfig = KnowledgeConfig()
 
 
 def load_config() -> AppConfig:
@@ -81,6 +101,22 @@ def load_config() -> AppConfig:
         env_key = f"TOOLS_{key.upper()}"
         if os.getenv(env_key):
             tools_data[key] = os.getenv(env_key).lower() in ("true", "1", "yes")
+
+    knowledge_data = data.get("knowledge", {})
+    if os.getenv("KNOWLEDGE_ENABLED"):
+        knowledge_data["enabled"] = os.getenv("KNOWLEDGE_ENABLED", "").lower() in ("true", "1", "yes")
+    if os.getenv("KNOWLEDGE_MODE"):
+        knowledge_data["mode"] = os.getenv("KNOWLEDGE_MODE")
+    if os.getenv("KNOWLEDGE_BASE_URL"):
+        knowledge_data["base_url"] = os.getenv("KNOWLEDGE_BASE_URL")
+    if os.getenv("MILVUS_URI"):
+        knowledge_data["milvus_uri"] = os.getenv("MILVUS_URI")
+    if os.getenv("KNOWLEDGE_COLLECTION"):
+        knowledge_data["collection"] = os.getenv("KNOWLEDGE_COLLECTION")
+    if os.getenv("KNOWLEDGE_NAMESPACE"):
+        knowledge_data["namespace"] = os.getenv("KNOWLEDGE_NAMESPACE")
+    if os.getenv("KNOWLEDGE_RERANK_ENABLED"):
+        knowledge_data["rerank_enabled"] = os.getenv("KNOWLEDGE_RERANK_ENABLED", "").lower() in ("true", "1", "yes")
 
     return AppConfig(**data)
 

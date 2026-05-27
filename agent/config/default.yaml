@@ -15,3 +15,21 @@ tools:
     api_key_env: "SERPER_API_KEY"
   file_parser:
     enabled: true
+
+knowledge:
+  enabled: true
+  mode: "inprocess"
+  base_url: "http://localhost:8000/api/knowledge"
+  milvus_uri: "http://localhost:19530"
+  collection: "travel_knowledge_chunks"
+  namespace: "default"
+  chunk_size: 800
+  chunk_overlap: 200
+  embedding_model: "text-embedding-v4"
+  embedding_dim: 2048
+  recall_limit: 30
+  top_k: 6
+  dense_weight: 0.75
+  sparse_weight: 0.25
+  rerank_enabled: false
+  rerank_model: "qwen3-rerank"

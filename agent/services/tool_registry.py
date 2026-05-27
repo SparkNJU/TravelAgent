@@ -88,6 +88,42 @@ class WebSearchTool(Tool):
         return self._serper.search(query, num=num)
 
 
+class KnowledgeSearchTool(Tool):
+    def __init__(self, knowledge_client, default_top_k: int = 6) -> None:
+        self._knowledge_client = knowledge_client
+        self._default_top_k = default_top_k
+
+    @property
+    def name(self) -> str:
+        return "knowledge_search"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search the local knowledge center for saved travel conversations, "
+            "prior web search digests, itinerary notes, and reusable travel knowledge. "
+            "Use this before or alongside web_search when relevant saved knowledge may help."
+        )
+
+    @property
+    def parameters_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query for the knowledge center"},
+                "top_k": {
+                    "type": "integer",
+                    "description": "Maximum number of knowledge chunks to return",
+                    "default": self._default_top_k,
+                },
+            },
+            "required": ["query"],
+        }
+
+    def execute(self, query: str, top_k: int | None = None) -> dict:
+        return self._knowledge_client.search(query=query, top_k=top_k or self._default_top_k)
+
+
 class FileParserTool(Tool):
     @property
     def name(self) -> str:

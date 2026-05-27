@@ -43,7 +43,7 @@
                 :key="j"
                 :type="ev.type"
                 :content="ev.content"
-                :toolName="ev.metadata?.tool_name || ''"
+                :toolName="ev.metadata?.tool || ev.metadata?.tool_name || ''"
                 :metadata="ev.metadata"
               />
               <MessageBubble
@@ -51,6 +51,15 @@
                 role="assistant"
                 :content="msg.answer"
               />
+              <div v-if="msg.answer && !loading" class="message-actions">
+                <button
+                  class="sync-knowledge-btn"
+                  :disabled="isSyncingKnowledgeTurn(i)"
+                  @click="syncTurnToKnowledge(i)"
+                >
+                  {{ isSyncingKnowledgeTurn(i) ? '同步中...' : '同步本轮到知识中心' }}
+                </button>
+              </div>
               </div>
             </template>
           </template>
@@ -137,6 +146,7 @@ import StreamingIndicator from '../components/ai-plan/StreamingIndicator.vue'
 import ConversationSidebar from '../components/ai-plan/ConversationSidebar.vue'
 import UserConfirmBlock from '../components/ai-plan/UserConfirmBlock.vue'
 import SuggestionChips from '../components/ai-plan/SuggestionChips.vue'
+import { buildKnowledgeSyncPayload } from '../utils/knowledgeSync'
 
 const route = useRoute()
 const { isLoggedIn } = useAuth()
@@ -158,6 +168,7 @@ const selectedMode = ref('agent')
 const selectedModel = ref('qwen3.6-plus')
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
+const syncingKnowledgeTurns = ref(new Set())
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -398,6 +409,56 @@ async function saveToMyPlans() {
   }
 }
 
+async function syncTurnToKnowledge(index) {
+  if (!activeConversation.value) return
+  const key = knowledgeTurnKey(index)
+  if (syncingKnowledgeTurns.value.has(key)) return
+  syncingKnowledgeTurns.value = new Set([...syncingKnowledgeTurns.value, key])
+  try {
+    const payload = buildKnowledgeSyncPayload(activeConversation.value, index, {
+      model: selectedModel.value,
+      mode: selectedMode.value,
+    })
+    if (!payload.userMessage && !payload.assistantAnswer) {
+      alert('没有可同步的对话内容')
+      return
+    }
+    const res = await fetch('/api/knowledge/sync-turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await safeReadJson(res)
+    if (!res.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`)
+    }
+    alert(data.code === 200 ? '已同步到知识中心' : `同步失败: ${data.message}`)
+  } catch (error) {
+    console.error('同步知识中心失败:', error)
+    alert(`同步失败: ${error.message || '请稍后重试'}`)
+  } finally {
+    const next = new Set(syncingKnowledgeTurns.value)
+    next.delete(key)
+    syncingKnowledgeTurns.value = next
+  }
+}
+
+function knowledgeTurnKey(index) {
+  return `${activeConversation.value?.id || 'unknown'}:${index}`
+}
+
+function isSyncingKnowledgeTurn(index) {
+  return syncingKnowledgeTurns.value.has(knowledgeTurnKey(index))
+}
+
+async function safeReadJson(response) {
+  try {
+    return await response.json()
+  } catch {
+    return { message: `HTTP ${response.status}` }
+  }
+}
+
 function handleUpdateItinerary(updated) {
   const result = activeConversation.value?.result
   if (result) {
@@ -424,6 +485,33 @@ function handleUpdateItinerary(updated) {
   flex-direction: column;
   min-width: 0;
   height: 100%;
+}
+
+.message-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin: 8px 0 14px;
+}
+
+.sync-knowledge-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-body);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.sync-knowledge-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.sync-knowledge-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .empty-state {
