@@ -11,9 +11,10 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
 from config import config
-from models import AgentChatRequest
+from models import AgentChatRequest, CompressRequest
 from services.file_parser import parse_uploaded_file
 from services.llm_service import LLMService
+from services.memory_service import MemoryService
 from services.planner import MetaPlanner
 from services.react_agent import ReActAgent
 from services.reflection_agent import ReflectionAgent
@@ -55,11 +56,15 @@ def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_
     return registry
 
 _planner = MetaPlanner(_llm)
+_memory_service = MemoryService(_llm, backend_base_url=config.backend.base_url)
 _agent = ReActAgent(
     llm=_llm,
     tool_registry=_tool_registry,
     max_iterations=config.agent.max_iterations,
     max_retries=config.agent.self_correction_retries,
+    max_context_tokens=10000,      
+    compress_threshold=0.80,       
+    compress_keep_last=6,         
 )
 
 _reflection_agent = ReflectionAgent(
@@ -104,6 +109,9 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             tool_registry=tool_registry,
             max_iterations=config.agent.max_iterations,
             max_retries=config.agent.self_correction_retries,
+            max_context_tokens=config.agent.max_context_tokens,
+            compress_threshold=config.agent.compress_threshold,
+            compress_keep_last=config.agent.compress_keep_last,
         )
         reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
     elif request.arena:
@@ -123,12 +131,31 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                 file_text = parse_uploaded_file(request.file_name, request.file_base64)
                 file_summary = file_text[:600] if file_text else ""
 
+            history = [{"role": msg.role.value, "content": msg.content} for msg in request.chat_history]
+            user_memory_markdown = ""
+            try:
+                latest_memory = _memory_service.fetch_latest(request.user_id)
+                memory_obj = latest_memory.get("memory") if isinstance(latest_memory, dict) else None
+                if isinstance(memory_obj, dict):
+                    user_memory_markdown = str(memory_obj.get("memoryMarkdown") or "")
+                elif memory_obj is not None:
+                    user_memory_markdown = str(getattr(memory_obj, "memoryMarkdown", "") or "")
+            except Exception:
+                user_memory_markdown = ""
+
             answer_text = ""
             is_ask_user = False
 
             if request.mode == "plan":
+                plan_text = ""
                 for event_json in planner.generate_plan(request.query, file_summary):
+                    try:
+                        chunk = json.loads(event_json)
+                        plan_text += chunk.get("content", "")
+                    except Exception:
+                        pass
                     yield f"data: {event_json}\n\n"
+                answer_text = plan_text
             elif request.mode == "reflection":
                 execution_plan = ""
                 if request.generate_plan_first:
@@ -141,7 +168,10 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                         yield f"data: {event_json}\n\n"
 
                 for event_json in reflection_agent.run(
-                    request.query, file_summary, execution_plan
+                    request.query,
+                    file_summary,
+                    execution_plan,
+                    user_memory_markdown=user_memory_markdown,
                 ):
                     chunk = json.loads(event_json)
                     if chunk.get("type") == "answer":
@@ -160,15 +190,14 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                         execution_plan += chunk.get("content", "")
                         yield f"data: {event_json}\n\n"
 
-                # Format chat_history
-                history = [{"role": msg.role.value, "content": msg.content} for msg in request.chat_history]
-
                 for event_json in agent.run(
                     request.query,
                     file_summary,
                     execution_plan,
                     chat_history=history,
+                    user_memory_markdown=user_memory_markdown,
                     arena_mode=request.arena,
+                    force_compress=request.force_compress,
                 ):
                     chunk = json.loads(event_json)
                     if chunk.get("type") == "answer":
@@ -187,9 +216,31 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                     if suggestions:
                         yield sse_event("suggestions", "", {"questions": suggestions})
 
+            if answer_text.strip() and not is_ask_user:
+                try:
+                    memory_result = _memory_service.sync(
+                        user_id=request.user_id,
+                        query=request.query,
+                        answer=answer_text,
+                        chat_history=history,
+                        model_version=llm.model,
+                    )
+                    yield sse_event("memory", "Memory synced", memory_result)
+                except Exception as memory_error:
+                    yield sse_event("memory", "Memory sync skipped", {"error": str(memory_error)})
+
             yield SSE_DONE
         except Exception as e:
             yield sse_event("error", str(e), {})
             yield SSE_DONE
 
     return StreamingResponse(event_stream(), media_type="text/event-stream; charset=utf-8")
+
+
+@app.post("/api/agent/compress")
+async def agent_compress(request: CompressRequest) -> dict:
+    history = [
+        {"role": msg.role.value, "content": msg.content}
+        for msg in request.chat_history
+    ]
+    return _agent.compress_history(history, request.keep_last)

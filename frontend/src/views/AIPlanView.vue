@@ -22,9 +22,12 @@
         </div>
         <ChatInput
           :loading="loading"
+          :compressing="compressing"
           v-model="selectedMode"
           :selectedModel="selectedModel"
           :arenaMode="arenaMode"
+          :tokenStatus="tokenStatus"
+          @compress="triggerForceCompress"
           @update:selectedModel="selectedModel = $event"
           @toggleArena="toggleArenaMode"
           @submit="handleSend"
@@ -97,20 +100,28 @@
           />
         </div>
 
+
         <div class="compact-input-area">
           <ChatInput
             compact
             :loading="loading"
+            :compressing="compressing"
             :hasMessages="true"
             v-model="selectedMode"
             :selectedModel="selectedModel"
             :arenaMode="arenaMode"
+            :tokenStatus="tokenStatus"
+            @compress="triggerForceCompress"
             @update:selectedModel="selectedModel = $event"
             @toggleArena="toggleArenaMode"
             @submit="handleSend"
             @stop="stopActiveRequest"
           />
+          <div v-if="compressNotice" class="compress-notice">
+            {{ compressNotice }}
+          </div>
         </div>
+
       </div>
     </div>
 
@@ -156,6 +167,7 @@ import MapComponent from '../components/MapComponent.vue'
 import ItineraryPanel from '../components/ItineraryPanel.vue'
 import ChatInput from '../components/ai-plan/ChatInput.vue'
 import MessageBubble from '../components/ai-plan/MessageBubble.vue'
+import ContextPanel from'../components/ai-plan/ContextPanel.vue'
 import AgentEventBlock from '../components/ai-plan/AgentEventBlock.vue'
 import AgentPlanBlock from '../components/ai-plan/AgentPlanBlock.vue'
 import StreamingIndicator from '../components/ai-plan/StreamingIndicator.vue'
@@ -185,6 +197,12 @@ const selectedModel = ref('qwen3.6-plus')
 const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
+const TOKEN_STATUS_KEY = 'travel_token_status'
+const tokenStatus = ref(null)
+const forceCompress = ref(false)
+const compressing = ref(false)
+const compressNotice = ref('')
+let compressNoticeTimer = null
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 
@@ -192,6 +210,29 @@ const renderedSummary = computed(() => {
   const result = activeConversation.value?.result
   if (!result?.markdown) return ''
   return DOMPurify.sanitize(md.render(result.markdown))
+})
+
+const contextHealth = computed(() => {
+  const ratio =
+    tokenStatus.value?.utilization || 0
+  if (ratio >= 0.85) {
+    return {
+      level: 'danger',
+      message:
+        'Context almost full. Compression recommended.',
+    }
+  }
+  if (ratio >= 0.65) {
+    return {
+      level: 'warning',
+      message:
+        'Context getting large.',
+    }
+  }
+  return {
+    level: 'safe',
+    message: '',
+  }
 })
 
 const parsedItinerary = computed(() => {
@@ -470,9 +511,27 @@ function handleArenaStreamEvent(msg, event) {
 watch(() => activeConversation.value?.messages?.length, scrollToBottom)
 
 onMounted(() => {
+  try {
+    const cached = localStorage.getItem(TOKEN_STATUS_KEY)
+    if (cached) tokenStatus.value = JSON.parse(cached)
+  } catch {
+    // Ignore invalid cache
+  }
   if (route.query.planId) loadSavedPlan(route.query.planId)
   loadFromBackend()
 })
+
+watch(tokenStatus, (val) => {
+  try {
+    if (!val) {
+      localStorage.removeItem(TOKEN_STATUS_KEY)
+      return
+    }
+    localStorage.setItem(TOKEN_STATUS_KEY, JSON.stringify(val))
+  } catch {
+    // Ignore cache write errors
+  }
+}, { deep: true })
 
 function handleNewConversation() {
   newConversation()
@@ -508,6 +567,11 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
   const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
   formData.append('chatHistoryJson', JSON.stringify(historyToSent))
 
+  if (forceCompress.value) {
+    formData.append('forceCompress', 'true')
+    forceCompress.value = false
+  }
+
   if (file) formData.append('file', file)
 
   const agentMsg = () => activeConversation.value?.messages.at(-1)
@@ -533,6 +597,10 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
         msg.events.push({ type: 'ask_user', content: event.content, metadata: event.metadata })
       } else if (event.type === 'suggestions') {
         activeSuggestions.value = event.metadata?.questions || []
+      } else if (event.type === 'token_status') {
+        tokenStatus.value = event.metadata || {}
+      } else if (event.type === 'context_compressed') {
+        msg.events.push({ type: 'observation', content: '✅ ' + event.content, metadata: event.metadata })
       } else if (['thought', 'action', 'observation', 'reflection'].includes(event.type)) {
         msg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
       } else if (event.type === 'error') {
@@ -619,6 +687,11 @@ async function handleAutoSend({ query, file }) {
   const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
   formData.append('chatHistoryJson', JSON.stringify(historyToSent))
 
+  if (forceCompress.value) {
+    formData.append('forceCompress', 'true')
+    forceCompress.value = false
+  }
+
   if (file) formData.append('file', file)
 
   const arenaMsg = () => activeConversation.value?.messages.at(-1)
@@ -633,7 +706,16 @@ async function handleAutoSend({ query, file }) {
     formData,
     (event) => {
       const current = arenaMsg()
-      handleArenaStreamEvent(current, event)
+      if (event.type === 'token_status') {
+        tokenStatus.value = event.metadata || {}
+      } else if (event.type === 'context_compressed') {
+        if (current) {
+          current.events = current.events || []
+          current.events.push({ type: 'observation', content: '✅ ' + event.content, metadata: event.metadata })
+        }
+      } else {
+        handleArenaStreamEvent(current, event)
+      }
     },
     () => {
       const current = arenaMsg()
@@ -773,9 +855,158 @@ function handleUpdateItinerary(updated) {
     setResult({ ...result, itinerary: updated })
   }
 }
+
+function setCompressNotice(message, level = 'info') {
+  compressNotice.value = message
+  const logger = console[level] || console.log
+  logger(`[compress] ${message}`)
+  if (compressNoticeTimer) {
+    clearTimeout(compressNoticeTimer)
+  }
+  compressNoticeTimer = setTimeout(() => {
+    compressNotice.value = ''
+    compressNoticeTimer = null
+  }, 3000)
+}
+
+function estimateTokenCount(messages) {
+  const totalChars = (messages || []).reduce((sum, message) => {
+    const content = String(message?.content || message?.answer || message?.planContent || '')
+    return sum + content.length
+  }, 0)
+  return Math.max(1, Math.ceil(totalChars / 4))
+}
+
+function buildTokenSnapshot(messages) {
+  const cached = tokenStatus.value || {}
+  const maxContextTokens = cached.max_context_tokens || 12000
+  const outputBudget = cached.output_budget || 2000
+  const inputTokens = estimateTokenCount(messages)
+  const historyTokens = Math.max(0, inputTokens - 200)
+  return {
+    ...cached,
+    input_tokens: inputTokens,
+    history_tokens: historyTokens,
+    output_budget: outputBudget,
+    max_context_tokens: maxContextTokens,
+    utilization: Number((inputTokens / maxContextTokens).toFixed(4)),
+  }
+}
+
+function triggerForceCompress() {
+  console.log('[compress] click', {
+    loading: loading.value,
+    compressing: compressing.value,
+    activeId: activeId.value,
+    messageCount: activeConversation.value?.messages?.length || 0,
+  })
+
+  if (compressing.value || loading.value) {
+    setCompressNotice('当前有请求在进行，等结束后再压缩。', 'warn')
+    return
+  }
+
+  const conv = activeConversation.value
+  if (!conv) {
+    setCompressNotice('没有可压缩的对话。', 'warn')
+    return
+  }
+
+  const historyRaw = conv.messages.filter(
+    m => m.role === 'user' || m.role === 'assistant'
+  )
+  if (historyRaw.length < 3) {
+    setCompressNotice(`历史消息太少，当前只有 ${historyRaw.length} 条，无法压缩。`, 'warn')
+    return
+  }
+
+  const historyToSend = historyRaw.map(m => ({
+    role: m.role,
+    content: m.content || m.answer || '',
+  }))
+
+  setCompressNotice(`开始压缩 ${historyToSend.length} 条历史消息...`, 'info')
+  console.log('[compress] request payload', {
+    keepLast: 6,
+    historyCount: historyToSend.length,
+    roles: historyToSend.map(item => item.role),
+  })
+
+  compressing.value = true
+  fetch('/api/assistant/compress', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      chatHistory: historyToSend,
+      keepLast: 6,
+    }),
+  })
+    .then(res => res.json())
+    .then(data => {
+      console.log('[compress] response', data)
+      if (data.code !== 200 || !data.data) {
+        setCompressNotice(`压缩接口异常：code=${data.code}。`, 'error')
+        forceCompress.value = true
+        return
+      }
+      const summary = (data.data.summary || '').trim()
+      if (!data.data.compressed || !summary) {
+        setCompressNotice('后端没有返回可用摘要，未更新会话。', 'warn')
+        return
+      }
+      const keepLast = data.data.keep_last || 6
+      const recentMessages = conv.messages.slice(-keepLast)
+      const summaryMessage = {
+        role: 'assistant',
+        answer: `【对话摘要】\n${summary}`,
+        events: [],
+      }
+      conv.messages = [summaryMessage, ...recentMessages]
+      conv.updatedAt = Date.now()
+      tokenStatus.value = buildTokenSnapshot(conv.messages)
+      setCompressNotice(`压缩完成：保留最近 ${keepLast} 条，摘要已插入。`, 'info')
+      persist()
+      nextTick(() => {
+        const el = messagesRef.value
+        if (el) {
+          el.scrollTop = 0
+        }
+      })
+    })
+    .catch((error) => {
+      console.error('[compress] request failed', error)
+      setCompressNotice(`压缩请求失败：${error.message}`, 'error')
+      forceCompress.value = true
+    })
+    .finally(() => {
+      compressing.value = false
+    })
+}
+
+function formatToken(value) {
+  if (!value) return '0'
+  if (value >= 1000) {
+    return (
+      (value / 1000).toFixed(1)
+      + 'K'
+    )
+  }
+  return String(value)
+}
+
 </script>
 
 <style scoped>
+.context-label {
+  font-size: 11px;
+  color: var(--color-muted);
+}
+
+.context-value {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-title);
+}
 .ai-plan-page {
   display: flex;
   width: 100%;
@@ -836,6 +1067,7 @@ function handleUpdateItinerary(updated) {
 
 /* Conversation view */
 .conversation-view {
+  position: relative;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -869,6 +1101,13 @@ function handleUpdateItinerary(updated) {
   padding: 12px 24px 16px;
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
+}
+
+.compress-notice {
+  margin-top: 8px;
+  font-size: 12px;
+  color: var(--color-muted);
+  line-height: 1.4;
 }
 
 /* Right panel */
