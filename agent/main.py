@@ -19,7 +19,7 @@ from services.react_agent import ReActAgent
 from services.reflection_agent import ReflectionAgent
 from services.serper_client import SerperClient
 from services.sse_events import sse_event, SSE_DONE
-from services.tool_registry import FileParserTool, FinishTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
+from services.tool_registry import ActivateSkillTool, FileParserTool, FinishTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
 
 app = FastAPI(title="Travel Assistant Agent", version="2.0.0")
 
@@ -41,9 +41,10 @@ _tool_registry.register(FileParserTool())
 _tool_registry.register(UserConfirmTool())
 _tool_registry.register(SuggestQuestionsTool(_llm))
 _tool_registry.register(FinishTool())
+_tool_registry.register(ActivateSkillTool(user_id=1))
 
 
-def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_suggestions: bool = True) -> ToolRegistry:
+def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_suggestions: bool = True, user_id: int = 1) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(WebSearchTool(_serper))
     registry.register(FileParserTool())
@@ -52,6 +53,7 @@ def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_
     if allow_suggestions:
         registry.register(SuggestQuestionsTool(llm))
     registry.register(FinishTool())
+    registry.register(ActivateSkillTool(user_id=user_id))
     return registry
 
 _planner = MetaPlanner(_llm)
@@ -81,14 +83,8 @@ def health() -> dict:
 
 @app.post("/api/agent/chat")
 async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
-    # Per-request model/temperature override
+    # Build per-request scoped services
     llm = _llm
-    planner = _planner
-    agent = _agent
-    reflection_agent = _reflection_agent
-    allow_user_confirm = not request.arena
-    allow_suggestions = not request.arena
-    tool_registry = _tool_registry
     if request.model or request.temperature is not None:
         llm = LLMService(
             base_url=config.llm.base_url,
@@ -97,24 +93,19 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             temperature=request.temperature if request.temperature is not None else config.llm.temperature,
             max_tokens=config.llm.max_tokens,
         )
-        planner = MetaPlanner(llm)
-        tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions)
-        agent = ReActAgent(
-            llm=llm,
-            tool_registry=tool_registry,
-            max_iterations=config.agent.max_iterations,
-            max_retries=config.agent.self_correction_retries,
-        )
-        reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
-    elif request.arena:
-        tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions)
-        agent = ReActAgent(
-            llm=llm,
-            tool_registry=tool_registry,
-            max_iterations=config.agent.max_iterations,
-            max_retries=config.agent.self_correction_retries,
-        )
-        reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
+    
+    planner = MetaPlanner(llm)
+    allow_user_confirm = not request.arena
+    allow_suggestions = not request.arena
+    
+    tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions, user_id=request.user_id)
+    agent = ReActAgent(
+        llm=llm,
+        tool_registry=tool_registry,
+        max_iterations=config.agent.max_iterations,
+        max_retries=config.agent.self_correction_retries,
+    )
+    reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
 
     def event_stream():
         try:
@@ -169,6 +160,7 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
                     execution_plan,
                     chat_history=history,
                     arena_mode=request.arena,
+                    user_id=request.user_id,
                 ):
                     chunk = json.loads(event_json)
                     if chunk.get("type") == "answer":
