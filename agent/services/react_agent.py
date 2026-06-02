@@ -124,6 +124,7 @@ class ReActAgent:
         user_memory_markdown: str = "",
         arena_mode: bool = False,
         force_compress: bool = False,
+        user_id: int = 1,
     ) -> Generator[str, None, None]:
         """Execute the ReAct loop. Yields SSE event JSON strings."""
         if chat_history is None:
@@ -140,6 +141,24 @@ class ReActAgent:
             tools=tool_descriptions,
             user_memory=cleaned_memory or "(empty)",
         )
+
+        # Level 1: Fetch active skills from backend and append to system prompt
+        try:
+            import os
+            import requests
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+            res = requests.get(f"{backend_url}/api/skills/active", params={"userId": user_id}, timeout=3)
+            if res.status_code == 200:
+                skills_data = res.json().get("data", [])
+                if skills_data:
+                    active_skills_desc = "\n\nYou have access to specialized Skills. If the user request matches the domain of a Skill, you MUST first call the `activate_skill(skill_name)` tool to retrieve its detailed instructions and follow them carefully.\nAvailable Skills:\n"
+                    for s in skills_data:
+                        active_skills_desc += f"- {s['name']}: {s['description']}\n"
+                    system_prompt += active_skills_desc
+        except Exception:
+            pass
+        
+        system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(tools=tool_descriptions)
         if arena_mode:
             system_prompt += (
                 "\nArena mode: do not call ask_user or suggest_questions. "
@@ -265,6 +284,21 @@ class ReActAgent:
                         "content": result_str[:4000],
                     }
                 )
+
+                if tool_name == "activate_skill":
+                    try:
+                        parsed_result = json.loads(result_str)
+                        if parsed_result.get("status") == "activated":
+                            instructions = parsed_result.get("instructions")
+                            if instructions:
+                                messages.append(
+                                    {
+                                        "role": "system",
+                                        "content": f"[Skill Activated: {parsed_result.get('name')}]\nInstructions to follow:\n{instructions}"
+                                    }
+                                )
+                    except Exception:
+                        pass
 
                 # Detect finish -> extract answer and end
                 if tool_name == "finish":
