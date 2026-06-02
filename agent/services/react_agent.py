@@ -158,7 +158,6 @@ class ReActAgent:
         except Exception:
             pass
         
-        system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(tools=tool_descriptions)
         if arena_mode:
             system_prompt += (
                 "\nArena mode: do not call ask_user or suggest_questions. "
