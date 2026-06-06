@@ -37,6 +37,10 @@ class LLMService:
     @property
     def temperature(self) -> float:
         return self._temperature
+    
+    @property
+    def max_tokens(self) -> int:
+        return self._max_tokens
 
     def chat(self, messages: list[dict], temperature: float | None = None) -> str:
         resp = self._client.chat.completions.create(
@@ -61,15 +65,37 @@ class LLMService:
         for chunk in completion:
             yield chunk.model_dump_json()
 
-    def chat_json(self, messages: list[dict], json_schema: dict) -> dict:
+    def chat_json(self, messages, json_schema):
         resp = self._client.chat.completions.create(
             model=self._model,
             messages=messages,
             temperature=0.1,
-            response_format={"type": "json_schema", "json_schema": json_schema},
+            response_format={
+                "type": "json_schema",
+                "json_schema": json_schema,
+            },
         )
+
         raw = resp.choices[0].message.content or "{}"
-        return json.loads(raw)
+
+        try:
+            return json.loads(raw)
+        except Exception:
+            import re
+
+            match = re.search(r"\{.*\}", raw, re.S)
+            if match:
+                try:
+                    return json.loads(match.group())
+                except Exception:
+                    pass
+
+            return {
+                "user_facts": [],
+                "conversation_summary": "",
+                "public_knowledge": [],
+                "memory_markdown": "",
+            }
 
     def chat_with_tools(
         self, messages: list[dict], tools: list[dict], temperature: float | None = None
@@ -82,4 +108,7 @@ class LLMService:
             temperature=temperature if temperature is not None else self._temperature,
             max_tokens=self._max_tokens,
         )
-        return resp.choices[0].message
+        return {
+            "message": resp.choices[0].message,
+            "usage": resp.usage.model_dump() if resp.usage else None,
+        }

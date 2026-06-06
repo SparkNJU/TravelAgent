@@ -1,6 +1,7 @@
 package org.example.backend.controller;
 
 import org.example.backend.dto.AgentChatRequest;
+import org.example.backend.dto.CompressConversationRequest;
 import org.example.backend.dto.ApiResponse;
 import org.example.backend.service.TripAssistantService;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,5 +58,16 @@ public class TripAssistantController {
         }
         request.setQuery(request.getQuery().trim());
         return tripAssistantService.streamAgentChat(request, file);
+    }
+
+    @PostMapping(value = "/compress", consumes = MediaType.APPLICATION_JSON_VALUE)
+    public ApiResponse<Map<String, Object>> compressConversation(
+            @RequestBody CompressConversationRequest request
+    ) {
+        Map<String, Object> result = tripAssistantService.compressConversation(
+                request.getChatHistory(),
+                request.getKeepLast()
+        );
+        return ApiResponse.success(result);
     }
 }

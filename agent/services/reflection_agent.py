@@ -68,8 +68,9 @@ class ReflectionAgent:
         query: str,
         file_summary: str = "",
         execution_plan: str = "",
+        user_memory_markdown: str = "",
     ) -> Generator[str, None, None]:
-        answer = yield from self._run_react(query, file_summary, execution_plan)
+        answer = yield from self._run_react(query, file_summary, execution_plan, user_memory_markdown)
 
         for revision in range(self._max_revisions):
             verdict, issues, suggestions = self._evaluate(query, answer)
@@ -94,7 +95,7 @@ class ReflectionAgent:
             else:
                 revised_plan = f"[反思改进] 前一轮问题：{'；'.join(issues)}\n改进建议：{suggestions}"
 
-            answer = yield from self._run_react(query, file_summary, revised_plan)
+            answer = yield from self._run_react(query, file_summary, revised_plan, user_memory_markdown)
 
         yield sse_event(
             "reflection",
@@ -103,10 +104,15 @@ class ReflectionAgent:
         )
 
     def _run_react(
-        self, query: str, file_summary: str, execution_plan: str
+        self, query: str, file_summary: str, execution_plan: str, user_memory_markdown: str
     ) -> Generator[str, None, str]:
         answer = ""
-        for event_json in self._react.run(query, file_summary, execution_plan):
+        for event_json in self._react.run(
+            query,
+            file_summary,
+            execution_plan,
+            user_memory_markdown=user_memory_markdown,
+        ):
             event = json.loads(event_json)
             if event.get("type") == "answer":
                 answer = event.get("content", "")
