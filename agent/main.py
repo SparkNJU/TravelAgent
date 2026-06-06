@@ -21,6 +21,18 @@ from services.serper_client import SerperClient
 from services.sse_events import sse_event, SSE_DONE
 from services.tool_registry import ActivateSkillTool, FileParserTool, FinishTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
 
+def map_model(model_name: str) -> str:
+    if "dashscope.aliyuncs.com" in config.llm.base_url.lower():
+        model_mapping = {
+            "qwen3.6-plus": "qwen-plus",
+            "deepseek-v4-flash": "deepseek-v3",
+            "glm-5.1": "qwen-plus",
+            "kimi-k2.6": "qwen-plus",
+            "MiniMax-M2.5": "qwen-plus",
+        }
+        return model_mapping.get(model_name, model_name)
+    return model_name
+
 app = FastAPI(title="Travel Assistant Agent", version="2.0.0")
 
 # --- Initialize services ---
@@ -28,7 +40,7 @@ app = FastAPI(title="Travel Assistant Agent", version="2.0.0")
 _llm = LLMService(
     base_url=config.llm.base_url,
     api_key_env=config.llm.api_key_env,
-    model=config.llm.chat_model,
+    model=map_model(config.llm.chat_model),
     temperature=config.llm.temperature,
     max_tokens=config.llm.max_tokens,
 )
@@ -89,7 +101,7 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
         llm = LLMService(
             base_url=config.llm.base_url,
             api_key_env=config.llm.api_key_env,
-            model=request.model or config.llm.chat_model,
+            model=map_model(request.model or config.llm.chat_model),
             temperature=request.temperature if request.temperature is not None else config.llm.temperature,
             max_tokens=config.llm.max_tokens,
         )
@@ -181,6 +193,8 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
 
             yield SSE_DONE
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             yield sse_event("error", str(e), {})
             yield SSE_DONE
 

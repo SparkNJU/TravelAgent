@@ -298,17 +298,19 @@ class ActivateSkillTool(Tool):
             res = requests.get(url, params={"userId": self._user_id}, timeout=5)
             if res.status_code == 200:
                 data = res.json()
-                skills = data.get("data", [])
-                for skill in skills:
-                    if skill.get("name") == skill_name:
-                        return json.dumps({
-                            "status": "activated",
-                            "name": skill_name,
-                            "title": skill.get("title"),
-                            "instructions": skill.get("instructions"),
-                            "scripts_code": skill.get("scriptsCode"),
-                            "references_data": skill.get("referencesData")
-                        }, ensure_ascii=False)
+                if data and isinstance(data, dict):
+                    skills = data.get("data", [])
+                    if skills and isinstance(skills, list):
+                        for skill in skills:
+                            if skill and isinstance(skill, dict) and skill.get("name") == skill_name:
+                                return json.dumps({
+                                    "status": "activated",
+                                    "name": skill_name,
+                                    "title": skill.get("title"),
+                                    "instructions": skill.get("instructions"),
+                                    "scripts_code": skill.get("scriptsCode"),
+                                    "references_data": skill.get("referencesData")
+                                }, ensure_ascii=False)
             return json.dumps({"status": "error", "message": f"Skill '{skill_name}' not found or is currently inactive."}, ensure_ascii=False)
         except Exception as e:
             return json.dumps({"status": "error", "message": f"Failed to activate skill: {str(e)}"}, ensure_ascii=False)

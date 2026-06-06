@@ -75,11 +75,34 @@ class ReActAgent:
             res = requests.get(f"{backend_url}/api/skills/active", params={"userId": user_id}, timeout=3)
             if res.status_code == 200:
                 skills_data = res.json().get("data", [])
-                if skills_data:
+                if skills_data and isinstance(skills_data, list):
                     active_skills_desc = "\n\nYou have access to specialized Skills. If the user request matches the domain of a Skill, you MUST first call the `activate_skill(skill_name)` tool to retrieve its detailed instructions and follow them carefully.\nAvailable Skills:\n"
                     for s in skills_data:
-                        active_skills_desc += f"- {s['name']}: {s['description']}\n"
+                        if s and isinstance(s, dict):
+                            name = s.get("name")
+                            desc = s.get("description")
+                            if name and desc:
+                                active_skills_desc += f"- {name}: {desc}\n"
                     system_prompt += active_skills_desc
+        except Exception:
+            pass
+
+        # Level 2: Fetch active memories from backend and append to system prompt
+        try:
+            import os
+            import requests
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+            res = requests.get(f"{backend_url}/api/memories/active", params={"userId": user_id}, timeout=3)
+            if res.status_code == 200:
+                memories_data = res.json().get("data", [])
+                if memories_data and isinstance(memories_data, list):
+                    active_memories_desc = "\n\nYou have access to the user's personal preferences and profile details (Personal Memories). You MUST strictly respect and satisfy all of these conditions during travel planning without asking the user about them:\nUser Personal Preferences/Memories:\n"
+                    for m in memories_data:
+                        if m and isinstance(m, dict):
+                            content = m.get("content")
+                            if content:
+                                active_memories_desc += f"- {content}\n"
+                    system_prompt += active_memories_desc
         except Exception:
             pass
         if arena_mode:
@@ -116,6 +139,10 @@ class ReActAgent:
 
             # No tool calls -> continue to next iteration
             if not msg.tool_calls:
+                if msg.content and msg.content.strip():
+                    yield self._emit("answer", msg.content, {"step": step})
+                    yield self._emit("done", "", {})
+                    return
                 continue
 
             # ACT
