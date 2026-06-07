@@ -118,31 +118,39 @@ class ReActAgent:
             if not msg.tool_calls:
                 continue
 
-            # ACT
-            messages.append(msg.model_dump())
-
+            # ACT — validate arguments and collect tool calls to process
+            msg_dict = msg.model_dump()
             missing_finish_answer = False
-            for tool_call in msg.tool_calls:
-                func = tool_call.function
-                tool_name = func.name
+            tool_call_items = []  # (tc_dict, tool_name, arguments)
+
+            for tc_dict in msg_dict.get("tool_calls", []):
+                func = tc_dict["function"]
+                tool_name = func["name"]
+                raw_args = func["arguments"]
 
                 try:
-                    arguments = json.loads(func.arguments)
-                except json.JSONDecodeError:
+                    arguments = json.loads(raw_args)
+                except (json.JSONDecodeError, TypeError):
                     arguments = {}
+                    func["arguments"] = "{}"
 
+                tool_call_items.append((tc_dict, tool_name, arguments))
+
+            # Build tool_results and assistant tool_calls together
+            # so DeepSeek never sees assistant(tool_calls) without tool responses
+            assistant_msg = msg_dict
+            tool_results = []
+
+            for tc_dict, tool_name, arguments in tool_call_items:
                 if tool_name == "finish" and (not arguments or not str(arguments.get("answer", "")).strip()):
                     missing_finish_answer = True
-                    messages.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "Finish was called without a valid answer. "
-                                "Provide the full travel plan in the answer field and call finish again."
-                            ),
-                        }
-                    )
-                    break
+                    # Add a dummy tool result to satisfy API pairing requirement
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": tc_dict["id"],
+                        "content": json.dumps({"status": "error", "message": "Missing answer field"}, ensure_ascii=False),
+                    })
+                    continue
 
                 yield self._emit(
                     "action",
@@ -151,7 +159,6 @@ class ReActAgent:
                 )
 
                 result = self._execute_with_retry(tool_name, arguments)
-
                 result_str = (
                     json.dumps(result, ensure_ascii=False, default=str)
                     if not isinstance(result, str)
@@ -163,67 +170,59 @@ class ReActAgent:
                     {"step": step, "tool": tool_name},
                 )
 
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": result_str[:4000],
-                    }
-                )
+                tool_results.append({
+                    "role": "tool",
+                    "tool_call_id": tc_dict["id"],
+                    "content": result_str[:4000],
+                })
 
+                # Post-execution: activate_skill side effect
                 if tool_name == "activate_skill":
                     try:
-                        parsed_result = json.loads(result_str)
-                        if parsed_result.get("status") == "activated":
-                            instructions = parsed_result.get("instructions")
-                            if instructions:
-                                messages.append(
-                                    {
-                                        "role": "system",
-                                        "content": f"[Skill Activated: {parsed_result.get('name')}]\nInstructions to follow:\n{instructions}"
-                                    }
-                                )
+                        pr = json.loads(result_str)
+                        if pr.get("status") == "activated" and pr.get("instructions"):
+                            messages.append({
+                                "role": "system",
+                                "content": f"[Skill Activated: {pr.get('name')}]\nInstructions to follow:\n{pr['instructions']}"
+                            })
                     except Exception:
                         pass
 
-                # Detect finish -> extract answer and end
+                # Detect finish -> extract answer and return
                 if tool_name == "finish":
                     try:
-                        parsed_result = json.loads(result_str)
-                        answer = parsed_result.get("answer", "")
+                        pr = json.loads(result_str)
+                        answer = pr.get("answer", "")
                         if answer and answer.strip():
+                            # Flush messages before returning
+                            messages.append(assistant_msg)
+                            messages.extend(tool_results)
                             yield self._emit("answer", answer, {"step": step})
                             yield self._emit("done", "", {})
                             return
                     except (json.JSONDecodeError, AttributeError):
                         pass
-                    missing_finish_answer = True
-                    messages.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "The finish tool was called without a valid answer. "
-                                "Please provide the full travel plan in the answer field "
-                                "and call finish again."
-                            ),
-                        }
-                    )
-                    break
 
-                # Detect ask_user and break the loop
+                # Detect ask_user -> emit and return
                 if tool_name == "ask_user":
                     try:
-                        parsed_result = json.loads(result_str)
-                        if parsed_result.get("status") == "waiting_for_user":
+                        pr = json.loads(result_str)
+                        if pr.get("status") == "waiting_for_user":
+                            messages.append(assistant_msg)
+                            messages.extend(tool_results)
                             yield self._emit(
                                 "ask_user",
-                                parsed_result.get("message", ""),
-                                {"questions": parsed_result.get("questions", [])},
+                                pr.get("message", ""),
+                                {"questions": pr.get("questions", [])},
                             )
                             yield self._emit("done", "", {})
                             return
                     except (json.JSONDecodeError, AttributeError):
                         pass
+
+            # Append assistant(tool_calls) + all tool results together
+            messages.append(assistant_msg)
+            messages.extend(tool_results)
 
             if missing_finish_answer:
                 continue

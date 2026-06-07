@@ -13,6 +13,7 @@ const router = createRouter({
     { path: '/skills', name: 'skills', component: SkillStudioView },
     { path: '/profile', name: 'profile', component: ProfileView },
     { path: '/leaderboard', name: 'leaderboard', component: ModelLeaderboardView },
+    { path: '/plan-workbench', name: 'planWorkbench', component: () => import('../views/PlanWorkbenchView.vue') },
     { path: '/login', redirect: '/' },
     { path: '/register', redirect: '/' },
   ]

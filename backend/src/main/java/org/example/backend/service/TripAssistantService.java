@@ -49,8 +49,38 @@ public class TripAssistantService {
     @Value("${app.agent.chat-url:http://localhost:8000/api/agent/chat}")
     private String agentChatUrl;
 
+    @Value("${app.agent.parse-url:http://localhost:8000/api/agent/parse-plan}")
+    private String agentParseUrl;
+
     public TripAssistantService(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
+    }
+
+    public Map<String, Object> parsePlanMarkdown(String markdown, String destination) {
+        try {
+            Map<String, Object> payload = Map.of(
+                "markdown", markdown,
+                "destination", destination != null ? destination : ""
+            );
+            String requestBody = objectMapper.writeValueAsString(payload);
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            
+            HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(agentParseUrl, entity, String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = objectMapper.readValue(response.getBody(), Map.class);
+                if (body != null && Integer.valueOf(200).equals(body.get("code"))) {
+                    return (Map<String, Object>) body.get("data");
+                }
+            }
+            logger.warn("Failed to parse plan markdown from agent, status: {}, body: {}", response.getStatusCode(), response.getBody());
+        } catch (Exception e) {
+            logger.error("Error calling agent parse-plan", e);
+        }
+        return null;
     }
 
     /**

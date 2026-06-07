@@ -48,6 +48,7 @@ CREATE TABLE IF NOT EXISTS destinations (
     INDEX idx_country (country)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
 -- Travel Plans Table
 CREATE TABLE IF NOT EXISTS travel_plans (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -56,7 +57,6 @@ CREATE TABLE IF NOT EXISTS travel_plans (
     destination_id BIGINT,
     destination_name VARCHAR(100),
     days INT NOT NULL,
-    itinerary LONGTEXT,
     estimated_budget DECIMAL(10, 2),
     ai_confidence_score DECIMAL(3, 2),
     interests VARCHAR(255),
@@ -71,6 +71,39 @@ CREATE TABLE IF NOT EXISTS travel_plans (
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Plan Activities Table
+CREATE TABLE IF NOT EXISTS plan_activities (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    plan_id BIGINT,
+    day_number INT NOT NULL,
+    activity_time VARCHAR(50),
+    location_name VARCHAR(255) NOT NULL,
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
+    description TEXT,
+    tips TEXT,
+    cost DECIMAL(10, 2) DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (plan_id) REFERENCES travel_plans(id) ON DELETE CASCADE,
+    INDEX idx_plan_id (plan_id),
+    INDEX idx_day_number (day_number)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Chat Conversations Table
+CREATE TABLE IF NOT EXISTS chat_conversations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(200),
+    messages_json LONGTEXT,
+    result_json LONGTEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_user_id (user_id),
+    INDEX idx_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Travel Plan Highlights Table
 CREATE TABLE IF NOT EXISTS plan_highlights (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -80,6 +113,7 @@ CREATE TABLE IF NOT EXISTS plan_highlights (
     FOREIGN KEY (plan_id) REFERENCES travel_plans(id) ON DELETE CASCADE,
     INDEX idx_plan_id (plan_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- AI Planning History Table (for tracking AI requests)
 CREATE TABLE IF NOT EXISTS ai_planning_history (

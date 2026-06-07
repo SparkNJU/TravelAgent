@@ -93,7 +93,7 @@ const props = defineProps({
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
   arenaMode: { type: Boolean, default: false },
-  selectedModel: { type: String, default: 'qwen3.6-plus' },
+  selectedModel: { type: String, default: 'deepseek-chat' },
 })
 
 const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena'])
@@ -111,8 +111,9 @@ const modes = [
 ]
 
 const models = [
+  { value: 'deepseek-chat', label: 'DeepSeek V4 Pro' },
+  { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
   { value: 'qwen3.6-plus', label: 'Qwen 3.6 Plus' },
-  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { value: 'kimi-k2.6', label: 'Kimi K2.6' },
   { value: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
   { value: 'glm-5.1', label: 'GLM 5.1' },

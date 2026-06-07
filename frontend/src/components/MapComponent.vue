@@ -15,13 +15,18 @@
 
       <div ref="mapElement" class="map"></div>
 
+      <!-- 标点模式提示条 -->
+      <div v-if="pickingActive" class="picking-bar">
+        <span>📍 请在地图上点击选择位置</span>
+      </div>
+
       <!-- 地点面板收缩按钮 -->
       <button 
         class="collapse-btn" 
         @click="togglePanel"
         :class="{ collapsed: panelCollapsed }"
       >
-        <span>{{ panelCollapsed ? '‹' : '›' }}</span>
+        <span class="collapse-icon">{{ panelCollapsed ? '☰' : '›' }}</span>
       </button>
       
       <!-- 地点列表面板 -->
@@ -39,7 +44,7 @@
             @click="selectLocation(index)"
           >
             <div class="location-marker">
-              <span class="marker-number">{{ index + 1 }}</span>
+              <span class="marker-number">{{ (item.dayIndex != null ? item.dayIndex : index) + 1 }}</span>
             </div>
             <div class="location-info">
               <div class="location-name">{{ item.location }}</div>
@@ -73,14 +78,20 @@ import { ref, onMounted, watch, computed } from 'vue'
 
 const props = defineProps({
   destinations: Array,
-  itinerary: Array
+  itinerary: Array,
+  selectedDay: { type: Number, default: null },
+  pickingMode: { type: Boolean, default: false }
 })
+
+const emit = defineEmits(['mapClick'])
 
 const mapElement = ref(null)
 const selectedIndex = ref(0)
 const selectedLocation = ref(null)
 const searchQuery = ref('')
-const panelCollapsed = ref(false)
+const panelCollapsed = ref(true)
+const pickingActive = ref(false)
+watch(() => props.pickingMode, (v) => { pickingActive.value = v })
 
 // 切换面板显示状态
 const togglePanel = () => {
@@ -125,11 +136,13 @@ const updateLocationList = () => {
   if (props.itinerary && Array.isArray(props.itinerary)) {
     props.itinerary.forEach(day => {
       if (day.activities && Array.isArray(day.activities)) {
+        let dayIndex = 0
         day.activities.forEach(activity => {
           if (activity.location) {
             locations.push({
               location: activity.location,
               day: day.day || 1,
+              dayIndex: dayIndex++,
               time: activity.time || '',
               description: activity.description || '',
               lat: activity.coordinates?.[0] || null,
@@ -171,9 +184,23 @@ const initMap = async () => {
   updateLocationList()
   await searchAllLocations()
 
+  // 将地图中心定位到第一个有坐标的地点
+  if (locationList.value.length > 0) {
+    const first = locationList.value[0]
+    if (first.lat && first.lng) {
+      map.setCenter(new window.AMap.LngLat(first.lng, first.lat))
+      map.setZoom(13)
+    }
+  }
+
   // 监听地图点击事件
   map.on('click', (e) => {
-    console.log('点击位置:', e.lnglat.getLng(), e.lnglat.getLat())
+    if (pickingActive.value) {
+      emit('mapClick', {
+        lng: e.lnglat.getLng(),
+        lat: e.lnglat.getLat()
+      })
+    }
   })
 }
 
@@ -182,11 +209,16 @@ const searchAllLocations = async () => {
   clearMarkers()
 
   console.log('搜索地点数量:', locationList.value.length)
-  
+
   for (let i = 0; i < locationList.value.length; i++) {
     const location = locationList.value[i]
     if (!location) {
       console.warn(`地点列表索引 ${i} 为空`)
+      continue
+    }
+    // Skip geocoding if coordinates already set (e.g. by picking mode)
+    if (location.lat != null && location.lng != null) {
+      addMarker(i, location.lng, location.lat, location.location)
       continue
     }
     await geocodeLocation(i, location.location)
@@ -341,23 +373,88 @@ const addSearchMarker = (lng, lat, title) => {
 
 // 添加标记
 const addMarker = (index, lng, lat, title) => {
+  const location = locationList.value[index]
+  const day = location?.day || 1
+  const dayIdx = location?.dayIndex || 0
+  const isActive = !props.selectedDay || props.selectedDay === day
+
   const marker = new window.AMap.Marker({
     position: new window.AMap.LngLat(lng, lat),
     title: title,
     map: map,
     label: {
-      content: `<div class="marker-label">${index + 1}</div>`,
+      content: markerLabelHtml(dayIdx + 1, day, isActive),
       direction: 'center',
       offset: new window.AMap.Pixel(0, 0)
     }
   })
 
+  marker._day = day
+  marker._dayIndex = dayIdx
+  marker._index = index
   marker.on('click', () => {
     selectLocation(index)
   })
 
   markers.push(marker)
 }
+
+// Day color palette
+const DAY_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4', '#8b5cf6', '#ec4899', '#84cc16']
+function dayColor(day) {
+  return DAY_COLORS[(day - 1) % DAY_COLORS.length]
+}
+
+// Generate marker label HTML
+function markerLabelHtml(num, day, active) {
+  let bg, color, scale, shadow
+  if (active) {
+    bg = dayColor(day)
+    color = '#fff'
+    scale = 'scale(1.1)'
+    shadow = `0 2px 8px ${dayColor(day)}80`
+  } else if (props.selectedDay == null) {
+    // No day selected: each day gets its own color
+    bg = dayColor(day)
+    color = '#fff'
+    scale = 'scale(1)'
+    shadow = 'none'
+  } else {
+    bg = 'rgba(156,163,175,0.4)'
+    color = '#9ca3af'
+    scale = 'scale(0.85)'
+    shadow = 'none'
+  }
+  return `<div style="
+    width:26px;height:26px;border-radius:50%;
+    background:${bg};color:${color};
+    display:flex;align-items:center;justify-content:center;
+    font-size:12px;font-weight:700;
+    transform:${scale};
+    box-shadow:${shadow};
+    border:2px solid ${active ? '#fff' : 'transparent'};
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  ">${num}</div>`
+}
+
+// Refresh all marker styles when selectedDay changes
+function refreshMarkerStyles() {
+  markers.forEach(m => {
+    const day = m._day || 1
+    const isActive = !props.selectedDay || props.selectedDay === day
+    const num = (m._dayIndex != null ? m._dayIndex : m._index) + 1
+    m.setLabel({
+      content: markerLabelHtml(num, day, isActive),
+      direction: 'center',
+      offset: new window.AMap.Pixel(0, 0)
+    })
+  })
+}
+
+// Watch selectedDay to update marker highlights
+watch(() => props.selectedDay, () => {
+  refreshMarkerStyles()
+})
 
 // 选择地点
 const selectLocation = (index) => {
@@ -512,6 +609,28 @@ onMounted(() => {
   background: var(--color-red);
 }
 
+/* 标点模式提示条 */
+.picking-bar {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  color: white;
+  padding: 8px 24px;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 600;
+  box-shadow: 0 4px 16px rgba(99,102,241,0.35);
+  z-index: 30;
+  animation: pickingPulse 1.5s ease-in-out infinite;
+  pointer-events: none;
+}
+@keyframes pickingPulse {
+  0%, 100% { box-shadow: 0 4px 16px rgba(99,102,241,0.35); }
+  50% { box-shadow: 0 4px 24px rgba(99,102,241,0.55); }
+}
+
 .map-wrapper {
   flex: 1;
   display: flex;
@@ -569,31 +688,37 @@ onMounted(() => {
   right: 240px;
   top: 50%;
   transform: translateY(-50%);
-  width: 14px;
-  height: 48px;
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
+  width: 24px;
+  height: 56px;
+  background: rgba(255,255,255,0.92);
+  backdrop-filter: blur(6px);
+  border: 1px solid #e5e7eb;
   border-right: none;
-  border-radius: 4px 0 0 4px;
+  border-radius: 6px 0 0 6px;
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 16;
   transition: all 0.2s;
-  color: var(--color-hint);
-  font-size: 18px;
+  color: #6366f1;
+  font-size: 20px;
+  font-weight: 700;
+  box-shadow: -2px 0 8px rgba(0,0,0,0.06);
 }
 
 .collapse-btn:hover {
-  background: var(--color-surface);
-  color: var(--color-title);
+  background: #fff;
+  color: #4f46e5;
+  box-shadow: -2px 0 12px rgba(0,0,0,0.1);
 }
 
 .collapse-btn.collapsed {
   right: 0;
-  border-radius: 4px 0 0 4px;
+  border-radius: 6px 0 0 6px;
 }
+
+.collapse-icon { line-height: 1; }
 
 /* 地点列表面板 */
 .location-panel {

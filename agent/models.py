@@ -31,3 +31,7 @@ class AgentChatRequest(BaseModel):
     file_base64: str | None = None
     file_mime_type: str | None = None
     chat_history: List[ChatMessage] = []
+
+class ParsePlanRequest(BaseModel):
+    markdown: str
+    destination: Optional[str] = None

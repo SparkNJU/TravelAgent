@@ -11,13 +11,15 @@ from fastapi import FastAPI
 from fastapi.responses import StreamingResponse
 
 from config import config
-from models import AgentChatRequest
+from models import AgentChatRequest, ParsePlanRequest
 from services.file_parser import parse_uploaded_file
 from services.llm_service import LLMService
 from services.planner import MetaPlanner
 from services.react_agent import ReActAgent
 from services.reflection_agent import ReflectionAgent
 from services.serper_client import SerperClient
+from services.amap_client import AMapClient
+from services.plan_parser import extract_plan_from_markdown
 from services.sse_events import sse_event, SSE_DONE
 from services.tool_registry import ActivateSkillTool, FileParserTool, FinishTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
 
@@ -34,6 +36,7 @@ _llm = LLMService(
 )
 
 _serper = SerperClient()
+_amap_client = AMapClient()
 
 _tool_registry = ToolRegistry()
 _tool_registry.register(WebSearchTool(_serper))
@@ -185,3 +188,13 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             yield SSE_DONE
 
     return StreamingResponse(event_stream(), media_type="text/event-stream; charset=utf-8")
+
+@app.post("/api/agent/parse-plan")
+def parse_plan(request: ParsePlanRequest) -> dict:
+    try:
+        result = extract_plan_from_markdown(_llm, request.markdown, _amap_client)
+        if request.destination and not result.get("destination"):
+            result["destination"] = request.destination
+        return {"code": 200, "data": result}
+    except Exception as e:
+        return {"code": 500, "message": str(e)}

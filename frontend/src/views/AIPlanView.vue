@@ -78,6 +78,14 @@
           </template>
 
           <StreamingIndicator v-if="loading" />
+
+          <!-- Enter Workbench Button -->
+          <div v-if="activeConversation && activeConversation.result && !loading" class="workbench-trigger-wrapper">
+            <button class="workbench-trigger-btn" :disabled="navigatingToWorkbench" @click="goToWorkbench">
+              <span v-if="navigatingToWorkbench" class="btn-loading-spinner"></span>
+              {{ navigatingToWorkbench ? '正在同步会话...' : '进入可视化工作台 ➜' }}
+            </button>
+          </div>
         </div>
 
         <!-- UserConfirmBlock: aligned with agent-content-wrapper -->
@@ -113,47 +121,14 @@
         </div>
       </div>
     </div>
-
-    <!-- Right panel: map + itinerary (shown after result) -->
-    <div v-if="activeConversation?.result" class="right-panel">
-      <div class="panel-header">
-        <h2>{{ activeConversation.result.title }}</h2>
-        <p class="panel-meta">{{ activeConversation.result.destination }} · {{ activeConversation.result.days }}天</p>
-        <div class="panel-actions">
-          <button class="panel-btn primary" @click="saveToMyPlans">保存规划</button>
-        </div>
-      </div>
-      <div class="panel-map">
-        <MapComponent
-          :destinations="[activeConversation.result.destination]"
-          :itinerary="parsedItinerary"
-        />
-      </div>
-      <div class="panel-itinerary">
-        <ItineraryPanel
-          :title="activeConversation.result.title"
-          :destination="activeConversation.result.destination"
-          :days="activeConversation.result.days"
-          :itinerary="parsedItinerary"
-          :summary="renderedSummary"
-          @update:itinerary="handleUpdateItinerary"
-        />
-      </div>
-    </div>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch, onMounted, inject } from 'vue'
-import { useRoute } from 'vue-router'
-import MarkdownIt from 'markdown-it'
-import DOMPurify from 'dompurify'
-import { useAuth } from '../composables/useAuth'
+import { ref, nextTick, watch, onMounted } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import { useSSE } from '../composables/useSSE'
 import { useConversation } from '../composables/useConversation'
-import SvgIcon from '../components/SvgIcon.vue'
-import MapComponent from '../components/MapComponent.vue'
-import ItineraryPanel from '../components/ItineraryPanel.vue'
 import ChatInput from '../components/ai-plan/ChatInput.vue'
 import MessageBubble from '../components/ai-plan/MessageBubble.vue'
 import AgentEventBlock from '../components/ai-plan/AgentEventBlock.vue'
@@ -165,13 +140,12 @@ import SuggestionChips from '../components/ai-plan/SuggestionChips.vue'
 import ModelArenaCompare from '../components/ai-plan/ModelArenaCompare.vue'
 
 const route = useRoute()
-const { isLoggedIn } = useAuth()
-const showLogin = inject('showLoginModal')
+const router = useRouter()
 
 const {
   conversations, activeId, activeConversation,
   newConversation, selectConversation, deleteConversation,
-  addMessage, setResult, persist, loadFromBackend,
+  addMessage, setResult, persist, loadFromBackend, syncActiveToBackend,
 } = useConversation()
 
 const { streamPost } = useSSE()
@@ -181,89 +155,11 @@ const loading = ref(false)
 const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
-const selectedModel = ref('qwen3.6-plus')
+const selectedModel = ref('deepseek-chat')
 const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
-
-const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
-
-const renderedSummary = computed(() => {
-  const result = activeConversation.value?.result
-  if (!result?.markdown) return ''
-  return DOMPurify.sanitize(md.render(result.markdown))
-})
-
-const parsedItinerary = computed(() => {
-  const result = activeConversation.value?.result
-  if (!result) return []
-  if (result.itinerary && Array.isArray(result.itinerary)) return result.itinerary
-
-  const itinerary = []
-  const lines = (result.markdown || '').split('\n')
-  let currentDay = null
-
-  lines.forEach((line) => {
-    if (line.includes('第') && line.includes('天') && line.startsWith('#')) {
-      currentDay = {
-        day: parseInt(line.match(/\d+/)?.[0] || itinerary.length + 1),
-        activities: [],
-        date: '',
-        summary: '',
-      }
-      itinerary.push(currentDay)
-    }
-    if (currentDay && line.trim().startsWith('-')) {
-      const trimmed = line.trim().substring(1).trim()
-      const parts = trimmed.split(/[-–]/).map(s => s.trim())
-      if (parts.length >= 1) {
-        const firstPart = parts[0]
-        const colonIdx = firstPart.search(/[：:]/)
-        let time = '', location = ''
-        if (colonIdx > -1) {
-          time = firstPart.substring(0, colonIdx).trim()
-          location = firstPart.substring(colonIdx + 1).trim()
-        } else {
-          location = firstPart
-        }
-        currentDay.activities.push({
-          time: time || '全天',
-          location,
-          description: parts.slice(1).join(' - '),
-          coordinates: mockCoords(result.destination, location),
-        })
-      }
-    }
-  })
-
-  if (!itinerary.length) {
-    for (let i = 1; i <= (result.days || 1); i++) {
-      itinerary.push({
-        day: i,
-        activities: [{
-          location: result.destination,
-          description: `第${i}天行程`,
-          time: '全天',
-          coordinates: mockCoords(result.destination),
-        }],
-      })
-    }
-  }
-  return itinerary
-})
-
-function mockCoords(dest) {
-  const cities = {
-    '北京': [39.9042, 116.4074], '上海': [31.2304, 121.4737],
-    '东京': [35.6762, 139.6503], '大阪': [34.6937, 135.5023],
-    '京都': [35.0116, 135.7681], '首尔': [37.5665, 126.9780],
-    '曼谷': [13.7563, 100.5018], '新加坡': [1.3521, 103.8198],
-    '南京': [32.0603, 118.7969], '杭州': [30.2741, 120.1551],
-  }
-  const base = cities[dest] || [30, 110]
-  const off = Math.random() * 0.5 - 0.25
-  return [base[0] + off, base[1] + off]
-}
+const navigatingToWorkbench = ref(false)
 
 function scrollToBottom() {
   nextTick(() => {
@@ -541,22 +437,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
       scrollToBottom()
       activeConversation.value.messages = [...activeConversation.value.messages]
     },
-    () => {
-      loading.value = false
-      activeController.value = null
-      const msg = agentMsg()
-      if (msg?.answer) {
-        try {
-          const parsed = JSON.parse(msg.answer)
-          if (parsed.destination || parsed.markdown) {
-            setResult(parsed)
-          }
-        } catch {
-          // Not JSON — keep as text answer
-        }
-      }
-      persist()
-    },
+    finishStream,
     (err) => {
       loading.value = false
       activeController.value = null
@@ -564,6 +445,25 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
       addMessage({ role: 'assistant', content: `请求失败: ${err.message}`, events: [] })
     },
   )
+}
+
+async function finishStream() {
+  activeController.value = null
+  const msg = activeConversation.value?.messages.at(-1)
+  if (msg?.answer) {
+    try {
+      const parsed = JSON.parse(msg.answer)
+      if (parsed.destination || parsed.markdown) {
+        setResult(parsed)
+      }
+    } catch {
+      setResult({ markdown: msg.answer, source: 'markdown' })
+    }
+  }
+  // Sync first, then show button — so backendId is ready on click
+  await syncActiveToBackend()
+  persist()
+  loading.value = false
 }
 
 function handleSend({ query, file }) {
@@ -744,35 +644,19 @@ async function loadSavedPlan(planId) {
   }
 }
 
-async function saveToMyPlans() {
-  if (!isLoggedIn.value) { showLogin(); return }
-  const result = activeConversation.value?.result
-  if (!result?.markdown) { alert('没有可保存的行程'); return }
-  try {
-    const res = await fetch('/api/travel/plan/save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        userId: Number(localStorage.getItem('userId')) || 1,
-        title: result.title,
-        destination: result.destination,
-        days: result.days,
-        itinerary: JSON.stringify(parsedItinerary.value),
-      }),
-    })
-    const data = await res.json()
-    alert(data.code === 200 ? '保存成功！' : '保存失败: ' + data.message)
-  } catch {
-    alert('保存失败，请重试')
+async function goToWorkbench() {
+  const conv = activeConversation.value
+  if (!conv) return
+  navigatingToWorkbench.value = true
+
+  if (!conv.backendId) {
+    navigatingToWorkbench.value = false
+    alert('会话尚未同步，请稍候重试...')
+    return
   }
+  router.push('/plan-workbench?c=' + conv.backendId)
 }
 
-function handleUpdateItinerary(updated) {
-  const result = activeConversation.value?.result
-  if (result) {
-    setResult({ ...result, itinerary: updated })
-  }
-}
 </script>
 
 <style scoped>
@@ -871,90 +755,63 @@ function handleUpdateItinerary(updated) {
   background: var(--color-bg);
 }
 
-/* Right panel */
-.right-panel {
-  width: 480px;
-  flex-shrink: 0;
+.workbench-trigger-wrapper {
   display: flex;
-  flex-direction: column;
-  border-left: 1px solid var(--color-border);
-  background: var(--color-card);
-  height: 100%;
-  overflow: hidden;
+  justify-content: center;
+  margin: 16px 0;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
 }
 
-.panel-header {
-  padding: 16px 20px;
-  border-bottom: 1px solid var(--color-border);
-  flex-shrink: 0;
-}
-
-.panel-header h2 {
-  font-size: 16px;
-  font-weight: 700;
-  color: var(--color-title);
-  margin: 0 0 4px;
-}
-
-.panel-meta {
-  font-size: 12px;
-  color: var(--color-muted);
-  margin: 0 0 12px;
-}
-
-.panel-actions {
-  display: flex;
+.workbench-trigger-btn {
+  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  color: white;
+  border: none;
+  padding: 12px 28px;
+  font-size: 14px;
+  font-weight: 600;
+  border-radius: 50px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
   gap: 8px;
 }
 
-.panel-btn {
-  padding: 6px 14px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  font-weight: 500;
-  font-family: var(--font-family);
-  background: transparent;
-  color: var(--color-secondary);
-  cursor: pointer;
-  transition: all 0.15s;
+.workbench-trigger-btn:hover {
+  transform: translateY(-2px) scale(1.02);
+  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
 }
 
-.panel-btn:hover {
-  background: var(--color-surface);
+.workbench-trigger-btn:active:not(:disabled) {
+  transform: translateY(1px);
 }
 
-.panel-btn.primary {
-  background: var(--gradient-brand);
-  color: white;
-  border: none;
+.workbench-trigger-btn:disabled {
+  opacity: 0.7;
+  cursor: wait;
+  transform: none;
 }
 
-.panel-btn.primary:hover {
-  filter: brightness(1.1);
+.btn-loading-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255,255,255,0.3);
+  border-top-color: white;
+  border-radius: 50%;
+  animation: btn-spin 0.6s infinite linear;
 }
 
-.panel-map {
-  height: 240px;
-  flex-shrink: 0;
-  border-bottom: 1px solid var(--color-border);
-}
+@keyframes btn-spin { to { transform: rotate(360deg); } }
 
-.panel-itinerary {
-  flex: 1;
-  overflow-y: auto;
-}
-
-/* Responsive */
-@media (max-width: 1200px) {
-  .right-panel {
-    width: 380px;
+@keyframes slideUp {
+  from {
+    opacity: 0;
+    transform: translateY(20px);
   }
-}
-
-@media (max-width: 900px) {
-  .right-panel {
-    display: none;
+  to {
+    opacity: 1;
+    transform: translateY(0);
   }
 }
 </style>

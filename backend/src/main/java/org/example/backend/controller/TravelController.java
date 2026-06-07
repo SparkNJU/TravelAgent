@@ -55,6 +55,25 @@ public class TravelController {
         return ApiResponse.success(plan);
     }
 
+    private List<org.example.backend.entity.PlanActivity> createMockActivities(Long planId, String dest, int days) {
+        List<org.example.backend.entity.PlanActivity> list = new java.util.ArrayList<>();
+        for (int i = 1; i <= days; i++) {
+            org.example.backend.entity.PlanActivity act = new org.example.backend.entity.PlanActivity();
+            act.setId((long) (planId * 100 + i));
+            act.setPlanId(planId);
+            act.setDayNumber(i);
+            act.setActivityTime("09:00");
+            act.setLocationName(dest + "游览点 " + i);
+            act.setLatitude(java.math.BigDecimal.valueOf(30.0 + i * 0.1));
+            act.setLongitude(java.math.BigDecimal.valueOf(110.0 + i * 0.1));
+            act.setDescription(dest + "第" + i + "天的精选行程描述。");
+            act.setTips("推荐游览时间：3小时。");
+            act.setCost(java.math.BigDecimal.valueOf(50.0));
+            list.add(act);
+        }
+        return list;
+    }
+
     /**
      * Get sample travel plans for recommendations
      */
@@ -66,7 +85,7 @@ public class TravelController {
                         "梦幻欧洲10日游",
                         "法国",
                         10,
-                        "Day 1-3: 巴黎\nDay 4-7: 瑞士\nDay 8-10: 意大利",
+                        createMockActivities(1L, "法国", 10),
                         24999,
                         0.95,
                         List.of("埃菲尔铁塔", "卢浮宫", "阿尔卑斯山", "威尼斯")),
@@ -75,10 +94,10 @@ public class TravelController {
                         "亚洲美食之旅",
                         "泰国",
                         7,
-                        "Day 1-4: 曼谷\nDay 5-7: 清迈",
+                        createMockActivities(2L, "泰国", 7),
                         8999,
                         0.89,
-                        List.of("大皇宫", "浮市场", "清迈古城")));
+                        List.of("大皇宫", "水上市场", "清迈古城")));
         return ApiResponse.success(samples);
     }
 
@@ -123,11 +142,10 @@ public class TravelController {
         }
     }
 
-    // TravelController.java 中需要添加更新接口
     @PutMapping("/plan/{planId}")
     public ApiResponse<TravelPlanResponse> updateTravelPlan(
             @PathVariable Long planId,
-            @RequestBody Map<String, Object> request) {
+            @RequestBody SavePlanRequest request) {
         return ApiResponse.success(travelPlanService.updatePlan(planId, request));
     }
 
@@ -141,6 +159,23 @@ public class TravelController {
             return ApiResponse.success(true);
         } else {
             return ApiResponse.error("删除失败，计划不存在或无权限");
+        }
+    }
+
+    /**
+     * Parse conversation history into a structured plan and save
+     */
+    @PostMapping("/plan/parse-and-save")
+    public ApiResponse<TravelPlanResponse> parseAndSave(@RequestBody Map<String, Object> request) {
+        if (!request.containsKey("conversationId")) {
+            return ApiResponse.error("Missing conversationId");
+        }
+        try {
+            Long conversationId = Long.valueOf(request.get("conversationId").toString());
+            TravelPlanResponse savedPlan = travelPlanService.parseAndSaveConversation(conversationId);
+            return ApiResponse.success(savedPlan);
+        } catch (RuntimeException e) {
+            return ApiResponse.error(e.getMessage());
         }
     }
 }

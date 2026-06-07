@@ -1,13 +1,14 @@
 package org.example.backend.dto;
 
 import java.util.List;
+import org.example.backend.entity.PlanActivity;
 
 public class SavePlanRequest {
     private Long userId;
     private String title;
     private String destination;
     private Integer days;
-    private String itinerary;
+    private List<PlanActivity> activities;
     private Integer budget;
     private String interests;
     private String travelStyle;
@@ -45,12 +46,12 @@ public class SavePlanRequest {
         this.days = days;
     }
 
-    public String getItinerary() {
-        return itinerary;
+    public List<PlanActivity> getActivities() {
+        return activities;
     }
 
-    public void setItinerary(String itinerary) {
-        this.itinerary = itinerary;
+    public void setActivities(List<PlanActivity> activities) {
+        this.activities = activities;
     }
 
     public Integer getBudget() {
