@@ -15,3 +15,6 @@ tools:
     api_key_env: "SERPER_API_KEY"
   file_parser:
     enabled: true
+  
+backend:
+  base_url: "http://localhost:8080"

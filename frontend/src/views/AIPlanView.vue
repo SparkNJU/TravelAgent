@@ -22,9 +22,12 @@
         </div>
         <ChatInput
           :loading="loading"
+          :compressing="compressing"
           v-model="selectedMode"
           :selectedModel="selectedModel"
           :arenaMode="arenaMode"
+          :tokenStatus="tokenStatus"
+          @compress="triggerForceCompress"
           @update:selectedModel="selectedModel = $event"
           @toggleArena="toggleArenaMode"
           @submit="handleSend"
@@ -109,15 +112,19 @@
           <ChatInput
             compact
             :loading="loading"
+            :compressing="compressing"
             :hasMessages="true"
             v-model="selectedMode"
             :selectedModel="selectedModel"
             :arenaMode="arenaMode"
+            :tokenStatus="tokenStatus"
+            @compress="triggerForceCompress"
             @update:selectedModel="selectedModel = $event"
             @toggleArena="toggleArenaMode"
             @submit="handleSend"
             @stop="stopActiveRequest"
           />
+          <div v-if="compressNotice" class="compress-notice">{{ compressNotice }}</div>
         </div>
       </div>
     </div>
@@ -125,7 +132,7 @@
 </template>
 
 <script setup>
-import { ref, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSSE } from '../composables/useSSE'
 import { useConversation } from '../composables/useConversation'
@@ -160,6 +167,21 @@ const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
 const navigatingToWorkbench = ref(false)
+
+// Token / compress state
+const TOKEN_STATUS_KEY = 'travel_token_status'
+const tokenStatus = ref(null)
+const forceCompress = ref(false)
+const compressing = ref(false)
+const compressNotice = ref('')
+let compressNoticeTimer = null
+
+const contextHealth = computed(() => {
+  const ratio = tokenStatus.value?.utilization || 0
+  if (ratio >= 0.85) return { level: 'danger', message: 'Context almost full. Compression recommended.' }
+  if (ratio >= 0.65) return { level: 'warning', message: 'Context getting large.' }
+  return { level: 'safe', message: '' }
+})
 
 function scrollToBottom() {
   nextTick(() => {
@@ -368,7 +390,13 @@ watch(() => activeConversation.value?.messages?.length, scrollToBottom)
 onMounted(() => {
   if (route.query.planId) loadSavedPlan(route.query.planId)
   loadFromBackend()
+  const cached = localStorage.getItem(TOKEN_STATUS_KEY)
+  if (cached) tokenStatus.value = JSON.parse(cached)
 })
+
+watch(tokenStatus, (val) => {
+  if (val) localStorage.setItem(TOKEN_STATUS_KEY, JSON.stringify(val))
+}, { deep: true })
 
 function handleNewConversation() {
   newConversation()
@@ -404,6 +432,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
   const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
   formData.append('chatHistoryJson', JSON.stringify(historyToSent))
 
+  if (forceCompress.value) { formData.append('forceCompress', 'true'); forceCompress.value = false }
   if (file) formData.append('file', file)
 
   const agentMsg = () => activeConversation.value?.messages.at(-1)
@@ -519,6 +548,7 @@ async function handleAutoSend({ query, file }) {
   const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
   formData.append('chatHistoryJson', JSON.stringify(historyToSent))
 
+  if (forceCompress.value) { formData.append('forceCompress', 'true'); forceCompress.value = false }
   if (file) formData.append('file', file)
 
   const arenaMsg = () => activeConversation.value?.messages.at(-1)
@@ -657,6 +687,47 @@ async function goToWorkbench() {
   router.push('/plan-workbench?c=' + conv.backendId)
 }
 
+function handleUpdateItinerary(updated) {
+  const result = activeConversation.value?.result
+  if (result) { setResult({ ...result, itinerary: updated }) }
+}
+
+function setCompressNotice(msg, level = 'info') {
+  compressNotice.value = msg; const logger = console[level] || console.log; logger('[compress]', msg)
+  if (compressNoticeTimer) clearTimeout(compressNoticeTimer)
+  compressNoticeTimer = setTimeout(() => { compressNotice.value = ''; compressNoticeTimer = null }, 3000)
+}
+
+function estimateTokenCount(messages) {
+  return Math.max(1, Math.ceil((messages || []).reduce((s, m) => s + String(m?.content || m?.answer || m?.planContent || '').length, 0) / 4))
+}
+
+function buildTokenSnapshot(messages) {
+  const c = tokenStatus.value || {}; const maxCtx = c.max_context_tokens || 12000; const outB = c.output_budget || 2000
+  const inT = estimateTokenCount(messages); return { ...c, input_tokens: inT, history_tokens: Math.max(0, inT - 200), output_budget: outB, max_context_tokens: maxCtx, utilization: Number((inT / maxCtx).toFixed(4)) }
+}
+
+function triggerForceCompress() {
+  if (compressing.value || loading.value) { setCompressNotice('当前有请求在进行，等结束后再压缩。', 'warn'); return }
+  const conv = activeConversation.value
+  if (!conv) { setCompressNotice('没有可压缩的对话。', 'warn'); return }
+  const raw = conv.messages.filter(m => m.role === 'user' || m.role === 'assistant')
+  if (raw.length < 3) { setCompressNotice('历史消息太少，无法压缩。', 'warn'); return }
+  setCompressNotice('开始压缩历史消息...', 'info')
+  compressing.value = true
+  fetch('/api/assistant/compress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatHistory: raw.map(m => ({ role: m.role, content: m.content || m.answer || '' })), keepLast: 6 }) })
+    .then(r => r.json()).then(d => {
+      if (d.code !== 200 || !d.data) { setCompressNotice('压缩异常', 'error'); forceCompress.value = true; return }
+      const s = (d.data.summary || '').trim(); if (!d.data.compressed || !s) { setCompressNotice('无可用的摘要', 'warn'); return }
+      const kl = d.data.keep_last || 6; conv.messages = [{ role: 'assistant', answer: '【对话摘要】\n' + s, events: [] }, ...conv.messages.slice(-kl)]
+      conv.updatedAt = Date.now(); tokenStatus.value = buildTokenSnapshot(conv.messages)
+      setCompressNotice('压缩完成', 'info'); persist(); nextTick(() => { const el = messagesRef.value; if (el) el.scrollTop = 0 })
+    }).catch(e => { setCompressNotice('压缩失败: ' + e.message, 'error'); forceCompress.value = true })
+    .finally(() => { compressing.value = false })
+}
+
+function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFixed(1) + 'K' : String(v) }
+
 </script>
 
 <style scoped>
@@ -754,6 +825,8 @@ async function goToWorkbench() {
   border-top: 1px solid var(--color-border);
   background: var(--color-bg);
 }
+
+.compress-notice { margin-top: 8px; font-size: 12px; color: var(--color-muted); line-height: 1.4; }
 
 .workbench-trigger-wrapper {
   display: flex;

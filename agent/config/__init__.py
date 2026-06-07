@@ -25,6 +25,9 @@ class LLMConfig(BaseModel):
 class AgentConfig(BaseModel):
     max_iterations: int = 8
     self_correction_retries: int = 2
+    max_context_tokens: int = 10000
+    compress_threshold: float = 0.80
+    compress_keep_last: int = 6
 
 
 class ToolsConfig(BaseModel):
@@ -35,12 +38,17 @@ class ToolsConfig(BaseModel):
     weather_base_url: str = "https://api.weatherapi.com/v1"
     file_parser_enabled: bool = True
 
+class BackendConfig(BaseModel):
+    base_url: str = "http://localhost:8080"
+
+
 
 class AppConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     agent: AgentConfig = AgentConfig()
     tools: ToolsConfig = ToolsConfig()
-
+    backend: BackendConfig = BackendConfig()
+    
 
 def load_config() -> AppConfig:
     config_dir = Path(__file__).resolve().parent
@@ -75,12 +83,22 @@ def load_config() -> AppConfig:
         agent_data["max_iterations"] = int(os.getenv("AGENT_MAX_ITERATIONS"))
     if os.getenv("AGENT_SELF_CORRECTION_RETRIES"):
         agent_data["self_correction_retries"] = int(os.getenv("AGENT_SELF_CORRECTION_RETRIES"))
+    if os.getenv("AGENT_MAX_CONTEXT_TOKENS"):
+        agent_data["max_context_tokens"] = int(os.getenv("AGENT_MAX_CONTEXT_TOKENS"))
+    if os.getenv("AGENT_COMPRESS_THRESHOLD"):
+        agent_data["compress_threshold"] = float(os.getenv("AGENT_COMPRESS_THRESHOLD"))
+    if os.getenv("AGENT_COMPRESS_KEEP_LAST"):
+        agent_data["compress_keep_last"] = int(os.getenv("AGENT_COMPRESS_KEEP_LAST"))
 
     tools_data = data.get("tools", {})
     for key in ("serper_enabled", "weather_enabled", "file_parser_enabled"):
         env_key = f"TOOLS_{key.upper()}"
         if os.getenv(env_key):
             tools_data[key] = os.getenv(env_key).lower() in ("true", "1", "yes")
+
+    backend_data = data.get("backend", {})
+    if os.getenv("BACKEND_BASE_URL"):
+        backend_data["base_url"] = os.getenv("BACKEND_BASE_URL")
 
     return AppConfig(**data)
 

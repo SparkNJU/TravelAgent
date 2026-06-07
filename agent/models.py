@@ -31,7 +31,14 @@ class AgentChatRequest(BaseModel):
     file_base64: str | None = None
     file_mime_type: str | None = None
     chat_history: List[ChatMessage] = []
+    force_compress: bool = False
+
 
 class ParsePlanRequest(BaseModel):
     markdown: str
     destination: Optional[str] = None
+
+
+class CompressRequest(BaseModel):
+    chat_history: List[ChatMessage] = []
+    keep_last: int | None = None

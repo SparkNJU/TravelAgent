@@ -8,6 +8,7 @@ public class AgentChatRequest {
     private String mode = "agent";
     private boolean generatePlanFirst = true;
     private boolean arena = false;
+    private boolean forceCompress = false;
     private String model;
     private Double temperature;
     private String fileName;
@@ -32,6 +33,9 @@ public class AgentChatRequest {
 
     public boolean isArena() { return arena; }
     public void setArena(boolean arena) { this.arena = arena; }
+
+    public boolean isForceCompress() { return forceCompress; }
+    public void setForceCompress(boolean forceCompress) { this.forceCompress = forceCompress; }
 
     public String getModel() { return model; }
     public void setModel(String model) { this.model = model; }

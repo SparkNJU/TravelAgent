@@ -47,6 +47,13 @@
             <SvgIcon :name="arenaMode ? 'close' : 'trophy'" :size="16" />
           </button>
           <span v-if="arenaMode" class="arena-pill">竞技场模式</span>
+
+          <ContextPanel
+            :tokenStatus="tokenStatus"
+            :loading="loading"
+            :compressing="compressing"
+            @compress="emit('compress')"
+          />
           <div v-if="!compact" class="quick-tags">
             <button
               v-for="tag in tags"
@@ -85,18 +92,24 @@
 <script setup>
 import { ref, watch, nextTick } from 'vue'
 import SvgIcon from '../SvgIcon.vue'
+import ContextPanel from './ContextPanel.vue'
 
 const props = defineProps({
   compact: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
+  compressing: { type: Boolean, default: false },
   placeholder: { type: String, default: '描述你的旅行想法，例如：帮我做一个东京5天旅行计划...' },
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
   arenaMode: { type: Boolean, default: false },
   selectedModel: { type: String, default: 'deepseek-chat' },
+  tokenStatus: {
+    type: Object,
+    default: () => null,
+  },
 })
 
-const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena'])
+const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena','compress'])
 
 const mode = ref(props.modelValue)
 const modelName = ref(props.selectedModel)
@@ -174,10 +187,11 @@ function handleSubmit() {
 }
 
 .chat-input-box {
+  position: relative;
   border: 1.5px solid var(--color-border);
   border-radius: var(--radius-card);
   background: var(--color-card);
-  overflow: hidden;
+  overflow: visible;
   transition: border-color 0.2s;
 }
 

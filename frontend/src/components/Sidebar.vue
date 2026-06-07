@@ -13,10 +13,6 @@
         <SvgIcon name="sparkles" :size="20" />
         <span>AI规划</span>
       </router-link>
-      <router-link to="/skills" class="nav-item" :class="{ active: $route.path === '/skills' }">
-        <SvgIcon name="wrench" :size="20" />
-        <span>技能</span>
-      </router-link>
       <router-link to="/profile" class="nav-item" :class="{ active: $route.path === '/profile' }">
         <SvgIcon name="user" :size="20" />
         <span>我的</span>
@@ -24,6 +20,10 @@
       <router-link to="/leaderboard" class="nav-item" :class="{ active: $route.path === '/leaderboard' }">
         <SvgIcon name="trophy" :size="20" />
         <span>排行榜</span>
+      </router-link>
+      <router-link to="/settings" class="nav-item" :class="{ active: $route.path === '/settings' }">
+        <SvgIcon name="settings" :size="20" />
+        <span>设置</span>
       </router-link>
     </nav>
 

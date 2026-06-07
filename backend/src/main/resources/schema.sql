@@ -7,6 +7,10 @@ DROP TABLE IF EXISTS comments;
 DROP TABLE IF EXISTS community_posts;
 DROP TABLE IF EXISTS plan_highlights;
 DROP TABLE IF EXISTS travel_plans;
+DROP TABLE IF EXISTS agent_memory_change_logs;
+DROP TABLE IF EXISTS agent_public_knowledge;
+DROP TABLE IF EXISTS user_agent_memory;
+DROP TABLE IF EXISTS chat_conversations;
 
 DROP TABLE IF EXISTS ai_planning_history;
 DROP TABLE IF EXISTS model_arena_votes;
@@ -28,6 +32,80 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_username (username),
     INDEX idx_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Chat Conversations Table (conversation archive)
+CREATE TABLE IF NOT EXISTS chat_conversations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(200),
+    messages_json LONGTEXT,
+    result_json LONGTEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_chat_conversations_user_id (user_id),
+    INDEX idx_chat_conversations_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- User Agent Memory Table (long-term per-user memory, like AGENT.md)
+CREATE TABLE IF NOT EXISTS user_agent_memory (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    memory_markdown LONGTEXT NOT NULL,
+    memory_json JSON,
+    memory_version VARCHAR(50) DEFAULT 'v1',
+    source_conversation_id BIGINT,
+    summary_source VARCHAR(50) DEFAULT 'conversation',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL,
+    UNIQUE KEY uk_user_agent_memory_user_id (user_id),
+    INDEX idx_user_agent_memory_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Public Knowledge Table (shareable knowledge extracted from conversations)
+CREATE TABLE IF NOT EXISTS agent_public_knowledge (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    knowledge_key VARCHAR(128) NOT NULL,
+    knowledge_title VARCHAR(255) NOT NULL,
+    knowledge_content LONGTEXT NOT NULL,
+    knowledge_json JSON,
+    knowledge_scope VARCHAR(50) DEFAULT 'global',
+    contributor_user_id BIGINT,
+    source_conversation_id BIGINT,
+    confidence_score DECIMAL(3, 2) DEFAULT 0.80,
+    usage_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (contributor_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (source_conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL,
+    UNIQUE KEY uk_agent_public_knowledge_key (knowledge_key),
+    INDEX idx_agent_public_knowledge_scope (knowledge_scope),
+    INDEX idx_agent_public_knowledge_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Memory Change Log Table (audit trail for memory updates)
+CREATE TABLE IF NOT EXISTS agent_memory_change_logs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    memory_scope VARCHAR(30) NOT NULL,
+    change_type VARCHAR(30) NOT NULL,
+    target_key VARCHAR(128),
+    source_conversation_id BIGINT,
+    trigger_query TEXT,
+    before_snapshot LONGTEXT,
+    after_snapshot LONGTEXT,
+    token_input INT,
+    token_output INT,
+    model_version VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL,
+    INDEX idx_agent_memory_change_logs_user_id (user_id),
+    INDEX idx_agent_memory_change_logs_scope (memory_scope),
+    INDEX idx_agent_memory_change_logs_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Destinations Table
