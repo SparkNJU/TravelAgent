@@ -1,24 +1,6 @@
 -- Travel Planning System Database Schema
 -- Created for AgentLLM Travel Platform
 
-SET FOREIGN_KEY_CHECKS = 0;
-
-DROP TABLE IF EXISTS comments;
-DROP TABLE IF EXISTS community_posts;
-DROP TABLE IF EXISTS plan_highlights;
-DROP TABLE IF EXISTS travel_plans;
-DROP TABLE IF EXISTS agent_memory_change_logs;
-DROP TABLE IF EXISTS agent_public_knowledge;
-DROP TABLE IF EXISTS user_agent_memory;
-DROP TABLE IF EXISTS chat_conversations;
-
-DROP TABLE IF EXISTS ai_planning_history;
-DROP TABLE IF EXISTS model_arena_votes;
-DROP TABLE IF EXISTS destinations;
-DROP TABLE IF EXISTS users;
-
-SET FOREIGN_KEY_CHECKS = 1;
-
 -- Users Table
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
