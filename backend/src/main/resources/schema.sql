@@ -150,20 +150,6 @@ CREATE TABLE IF NOT EXISTS plan_activities (
     INDEX idx_day_number (day_number)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Chat Conversations Table
-CREATE TABLE IF NOT EXISTS chat_conversations (
-    id BIGINT PRIMARY KEY AUTO_INCREMENT,
-    user_id BIGINT NOT NULL,
-    title VARCHAR(200),
-    messages_json LONGTEXT,
-    result_json LONGTEXT,
-    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
-    INDEX idx_user_id (user_id),
-    INDEX idx_updated_at (updated_at)
-) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
-
 -- Travel Plan Highlights Table
 CREATE TABLE IF NOT EXISTS plan_highlights (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
