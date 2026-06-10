@@ -443,6 +443,14 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
     (event) => {
       const msg = agentMsg()
       if (!msg) return
+      if (event.type === 'token_status') {
+        tokenStatus.value = {
+          ...(tokenStatus.value || {}),
+          ...(event.metadata || {}),
+        }
+        activeConversation.value.messages = [...activeConversation.value.messages]
+        return
+      }
       if (event.type === 'answer') {
         msg.answer = (msg.answer || '') + event.content
       } else if (event.type === 'plan') {
