@@ -94,12 +94,17 @@
 
         <button
           class="compress-btn"
-          :disabled="loading || compressing"
+          :disabled="loading || compressing || !canCompress"
+          :title="compressButtonTitle"
           @click="compress"
         >
           <span v-if="compressing" class="compress-spinner" aria-hidden="true" />
           <span>{{ compressing ? '正在压缩中...' : '立即压缩对话' }}</span>
         </button>
+
+        <p v-if="!canCompress && compressHint" class="compress-hint">
+          {{ compressHint }}
+        </p>
       </div>
     </Transition>
   </div>
@@ -116,6 +121,8 @@ const props = defineProps({
   tokenStatus: Object,
   loading: Boolean,
   compressing: Boolean,
+  canCompress: { type: Boolean, default: true },
+  compressHint: { type: String, default: '' },
 })
 
 const emit = defineEmits([
@@ -129,8 +136,21 @@ function toggleOpen() {
 }
 
 function compress() {
+  if (!props.canCompress || props.loading || props.compressing) return
   emit('compress')
 }
+
+const compressButtonTitle = computed(() => {
+  if (props.loading || props.compressing) {
+    return '当前有请求在进行，稍后再压缩'
+  }
+
+  if (!props.canCompress) {
+    return props.compressHint || '历史消息不足，无法压缩'
+  }
+
+  return '压缩当前对话'
+})
 
 const percent = computed(() =>
   Math.round(
@@ -591,6 +611,17 @@ function formatToken(v) {
   cursor: not-allowed;
   opacity: 0.6;
   box-shadow: none;
+}
+
+.compress-hint {
+  margin: 8px 2px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(107, 114, 128, 0.08);
+  border: 1px solid rgba(107, 114, 128, 0.14);
+  color: var(--color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 @keyframes compress-spin {

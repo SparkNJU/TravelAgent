@@ -52,6 +52,8 @@
             :tokenStatus="tokenStatus"
             :loading="loading"
             :compressing="compressing"
+            :canCompress="canCompress"
+            :compressHint="compressHint"
             @compress="emit('compress')"
           />
           <div v-if="!compact" class="quick-tags">
@@ -103,13 +105,15 @@ const props = defineProps({
   modelValue: { type: String, default: 'agent' },
   arenaMode: { type: Boolean, default: false },
   selectedModel: { type: String, default: 'deepseek-chat' },
+  canCompress: { type: Boolean, default: true },
+  compressHint: { type: String, default: '' },
   tokenStatus: {
     type: Object,
     default: () => null,
   },
 })
 
-const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena','compress'])
+const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena', 'compress'])
 
 const mode = ref(props.modelValue)
 const modelName = ref(props.selectedModel)
