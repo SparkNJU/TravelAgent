@@ -105,6 +105,8 @@ def health() -> dict:
 async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
     # Build per-request scoped services
     llm = _llm
+    allow_user_confirm = not request.arena
+    allow_suggestions = not request.arena
     if request.model or request.temperature is not None:
         llm = LLMService(
             base_url=config.llm.base_url,
@@ -113,20 +115,18 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             temperature=request.temperature if request.temperature is not None else config.llm.temperature,
             max_tokens=config.llm.max_tokens,
         )
-        planner = MetaPlanner(llm)
-        allow_user_confirm = not request.arena
-        allow_suggestions = not request.arena
-        tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions,user_id=request.user_id)
-        agent = ReActAgent(
-            llm=llm,
-            tool_registry=tool_registry,
-            max_iterations=config.agent.max_iterations,
-            max_retries=config.agent.self_correction_retries,
-            max_context_tokens=config.agent.max_context_tokens,
-            compress_threshold=config.agent.compress_threshold,
-            compress_keep_last=config.agent.compress_keep_last,
-        )
-        reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
+    planner = MetaPlanner(llm)
+    tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions, user_id=request.user_id)
+    agent = ReActAgent(
+        llm=llm,
+        tool_registry=tool_registry,
+        max_iterations=config.agent.max_iterations,
+        max_retries=config.agent.self_correction_retries,
+        max_context_tokens=config.agent.max_context_tokens,
+        compress_threshold=config.agent.compress_threshold,
+        compress_keep_last=config.agent.compress_keep_last,
+    )
+    reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
 
     def event_stream():
         try:

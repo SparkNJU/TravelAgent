@@ -43,6 +43,8 @@ StudyAgent-main/*.py[cod]
 StudyAgent-main/embedding_cache.json
 StudyAgent-main/tmp/
 
+TravelPlanner
+
 # Archives / temp files
 *.zip
 *.tmp

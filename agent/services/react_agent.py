@@ -6,6 +6,7 @@ import json
 from typing import Any, Generator
 
 from .llm_service import LLMService
+from .plan_checker import PlanChecker
 from .tool_registry import ToolRegistry
 
 _SYSTEM_PROMPT_TEMPLATE = """\
@@ -75,6 +76,7 @@ class ReActAgent:
         max_context_tokens: int = 12000,
         compress_threshold: float = 0.85,
         compress_keep_last: int = 6,
+        max_check_retries: int = 2,
     ) -> None:
         self._llm = llm
         self._tools = tool_registry
@@ -83,6 +85,8 @@ class ReActAgent:
         self._max_context_tokens = max_context_tokens
         self._compress_threshold = compress_threshold
         self._compress_keep_last = compress_keep_last
+        self._plan_checker = PlanChecker(llm)
+        self._max_check_retries = max_check_retries
 
     def _sanitize_memory(self, memory_markdown: str) -> str:
         """Remove misleading memory and keep durable user facts."""
@@ -193,6 +197,7 @@ class ReActAgent:
             user_parts.append(f"\nExecution plan to follow:\n{execution_plan}")
 
         messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        _check_retries = 0  # PlanChecker retry counter
 
         if cleaned_memory:
             messages.append(
@@ -328,7 +333,33 @@ class ReActAgent:
                         pr = json.loads(result_str)
                         answer = pr.get("answer", "")
                         if answer and answer.strip():
-                            # Flush messages before returning
+                            # --- PlanChecker: validate before emitting ---
+                            if _check_retries < self._max_check_retries:
+                                compliant, violations = self._plan_checker.check(query, answer)
+                                if not compliant:
+                                    _check_retries += 1
+                                    violation_msg = "\n".join(f"- {v}" for v in violations)
+                                    feedback = (
+                                        "The plan has structural issues that must be fixed before submission:\n"
+                                        f"{violation_msg}\n\n"
+                                        "Please revise the plan to address these issues, then call finish again."
+                                    )
+                                    yield self._emit(
+                                        "observation",
+                                        f"[PlanChecker] Validation failed ({_check_retries}/{self._max_check_retries}): {violation_msg[:500]}",
+                                        {"step": step, "tool": "plan_checker", "violations": violations},
+                                    )
+                                    tool_results.append({
+                                        "role": "tool",
+                                        "tool_call_id": tc_dict["id"],
+                                        "content": json.dumps(
+                                            {"status": "validation_failed", "violations": violations, "message": feedback},
+                                            ensure_ascii=False,
+                                        ),
+                                    })
+                                    # Don't emit answer — continue the ReAct loop
+                                    break  # break out of tool_call_items loop, continue outer loop
+                            # --- Validation passed or max retries reached ---
                             messages.append(assistant_msg)
                             messages.extend(tool_results)
                             yield self._emit("answer", answer, {"step": step})
