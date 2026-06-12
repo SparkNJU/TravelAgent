@@ -24,12 +24,15 @@
           :loading="loading"
           :compressing="compressing"
           v-model="selectedMode"
+          :initialQuery="initialQuery"
           :selectedModel="selectedModel"
           :arenaMode="arenaMode"
           :tokenStatus="tokenStatus"
+          :canCompress="canCompress"
+          :compressHint="compressHint"
           @compress="triggerForceCompress"
-          @update:selectedModel="selectedModel = $event"
           @toggleArena="toggleArenaMode"
+          @update:selectedModel="selectedModel = $event"
           @submit="handleSend"
           @stop="stopActiveRequest"
         />
@@ -37,47 +40,92 @@
 
       <!-- Active conversation: messages + compact input -->
       <div v-else class="conversation-view">
-        <div class="messages-area" ref="messagesRef">
-          <template v-for="(msg, i) in activeConversation.messages" :key="i">
-            <!-- User message -->
-            <MessageBubble v-if="msg.role === 'user'" role="user" :content="msg.content" />
-
-            <!-- Agent message: events + answer -->
-            <template v-else>
-              <div class="agent-content-wrapper" :class="{ arena: msg.arena }">
-                <ModelArenaCompare
-                  v-if="msg.arena"
-                  :modelA="msg.arena.modelA"
-                  :modelB="msg.arena.modelB"
-                  :answerA="msg.arena.answerA"
-                  :answerB="msg.arena.answerB"
-                  :loading="msg.arena.loading"
-                  :voted="msg.arena.voted"
-                  :stages="msg.arena.stages || []"
-                  @vote="handleArenaVote(msg, $event)"
-                />
-                <template v-else>
-                  <AgentPlanBlock
-                    v-if="msg.planContent"
-                    :content="msg.planContent"
-                    :streaming="loading && i === activeConversation.messages.length - 1"
-                  />
-                  <AgentEventBlock
-                    v-for="(ev, j) in msg.events"
-                    :key="j"
-                    :type="ev.type"
-                    :content="ev.content"
-                    :toolName="ev.metadata?.tool_name || ''"
-                    :metadata="ev.metadata"
-                  />
-                  <MessageBubble
-                    v-if="msg.answer"
-                    role="assistant"
-                    :content="msg.answer"
-                  />
-                </template>
+        <div class="messages-area" ref="messagesRef" @scroll="handleMessagesScroll">
+          <template v-for="turn in conversationTurns" :key="turn.key">
+            <div class="conversation-turn">
+              <div
+                v-if="turn.user"
+                class="message-turn turn-user"
+                :class="{ active: activeTurnIndex === turn.userIndex }"
+                :data-message-index="turn.userIndex"
+              >
+              <!-- User message -->
+                <MessageBubble role="user" :content="turn.user.content" />
               </div>
-            </template>
+
+              <!-- Agent message: events + answer -->
+              <div
+                v-if="turn.assistant"
+                class="message-turn turn-assistant"
+                :class="{ active: activeTurnIndex === turn.assistantIndex }"
+                :data-message-index="turn.assistantIndex"
+              >
+                <div class="agent-content-wrapper" :class="{ arena: turn.assistant.arena }">
+                  <ModelArenaCompare
+                    v-if="turn.assistant.arena"
+                    :modelA="turn.assistant.arena.modelA"
+                    :modelB="turn.assistant.arena.modelB"
+                    :answerA="turn.assistant.arena.answerA"
+                    :answerB="turn.assistant.arena.answerB"
+                    :loading="turn.assistant.arena.loading"
+                    :voted="turn.assistant.arena.voted"
+                    :stages="turn.assistant.arena.stages || []"
+                    @vote="handleArenaVote(turn.assistant, $event)"
+                  />
+                  <template v-else>
+                    <AgentPlanBlock
+                      v-if="turn.assistant.planContent"
+                      :content="turn.assistant.planContent"
+                      :streaming="isMessageStreaming(turn.assistantIndex)"
+                    />
+                    <div
+                      v-if="turn.assistant.events?.length"
+                      class="trace-panel"
+                      :class="{ open: isTraceOpen(turn.assistantIndex), streaming: isMessageStreaming(turn.assistantIndex) }"
+                    >
+                      <button
+                        type="button"
+                        class="trace-header"
+                        :aria-expanded="isTraceOpen(turn.assistantIndex)"
+                        @click="toggleTrace(turn.assistantIndex)"
+                      >
+                        <span class="trace-spark"><SvgIcon name="sparkles" :size="15" /></span>
+                        <span class="trace-title">Thoughts</span>
+                        <span class="trace-meta">{{ traceSummary(turn.assistant.events) }}</span>
+                        <span class="trace-chevron">
+                          <SvgIcon name="chevron-down" :size="15" />
+                        </span>
+                      </button>
+                      <div v-if="isTraceOpen(turn.assistantIndex)" class="trace-body">
+                        <AgentEventBlock
+                          v-for="(ev, j) in turn.assistant.events"
+                          :key="j"
+                          :type="ev.type"
+                          :content="ev.content"
+                          :toolName="ev.metadata?.tool_name || ''"
+                          :metadata="ev.metadata"
+                        />
+                      </div>
+                    </div>
+                    <MessageBubble
+                      v-if="turn.assistant.answer"
+                      role="assistant"
+                      :content="turn.assistant.answer"
+                    />
+                    <div v-if="turn.assistant.answer && !loading" class="message-actions">
+                      <button
+                        class="sync-knowledge-btn"
+                        :disabled="isSyncingKnowledgeTurn(turn.assistantIndex)"
+                        @click="syncTurnToKnowledge(turn.assistantIndex)"
+                      >
+                        <SvgIcon name="sparkles" :size="13" />
+                        {{ isSyncingKnowledgeTurn(turn.assistantIndex) ? '同步中...' : '同步到知识中心' }}
+                      </button>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </div>
           </template>
 
           <StreamingIndicator v-if="loading" />
@@ -90,6 +138,19 @@
             </button>
           </div>
         </div>
+
+        <nav v-if="turnMarkers.length" class="scroll-jump-layer" aria-label="Conversation jump points">
+          <button
+            v-for="marker in turnMarkers"
+            :key="marker.index"
+            type="button"
+            class="scroll-jump-dot"
+            :class="[marker.role, { active: activeTurnIndex === marker.index }]"
+            :style="{ top: marker.top }"
+            :aria-label="marker.label"
+            @click="scrollToTurn(marker.index)"
+          />
+        </nav>
 
         <!-- UserConfirmBlock: aligned with agent-content-wrapper -->
         <div v-if="pendingAskUser && !loading" class="agent-content-wrapper">
@@ -115,12 +176,15 @@
             :compressing="compressing"
             :hasMessages="true"
             v-model="selectedMode"
+            :initialQuery="initialQuery"
             :selectedModel="selectedModel"
             :arenaMode="arenaMode"
             :tokenStatus="tokenStatus"
+            :canCompress="canCompress"
+            :compressHint="compressHint"
             @compress="triggerForceCompress"
-            @update:selectedModel="selectedModel = $event"
             @toggleArena="toggleArenaMode"
+            @update:selectedModel="selectedModel = $event"
             @submit="handleSend"
             @stop="stopActiveRequest"
           />
@@ -128,6 +192,122 @@
         </div>
       </div>
     </div>
+
+    <aside class="plan-inspector" :class="{ open: inspectorOpen }" aria-label="Agent Run Panel">
+      <section class="run-card hero-card">
+        <div class="run-card-head">
+          <div>
+            <div class="run-kicker">Travel Agent</div>
+            <h2>Run Panel</h2>
+          </div>
+          <div class="run-card-actions">
+            <span :class="['run-status', runStatusClass]">{{ runStatusLabel }}</span>
+            <button
+              type="button"
+              class="inspector-toggle"
+              :aria-expanded="inspectorOpen"
+              @click="toggleInspector"
+            >
+              <SvgIcon :name="inspectorOpen ? 'chevron-down' : 'chevron-up'" :size="14" />
+              <span>{{ inspectorOpen ? '收起' : '展开' }}</span>
+            </button>
+          </div>
+        </div>
+        <p>运行设置、上下文占用和 Agent 资产集中在这里，输入区只保留必要操作。</p>
+      </section>
+
+      <section class="run-card">
+        <div class="panel-title">
+          <SvgIcon name="settings" :size="15" />
+          <span>Run Settings</span>
+        </div>
+        <div class="run-row">
+          <span>模式</span>
+          <strong>{{ selectedModeLabel }}</strong>
+        </div>
+        <div class="run-row">
+          <span>模型</span>
+          <strong>{{ selectedModelLabel }}</strong>
+        </div>
+        <div class="setting-switch-grid">
+          <button
+            type="button"
+            class="setting-toggle"
+            :class="{ active: webSearchEnabled }"
+            :aria-pressed="webSearchEnabled"
+            @click="toggleWebSearch"
+          >
+            <span>
+              <SvgIcon name="globe" :size="15" />
+              联网搜索
+            </span>
+            <i />
+          </button>
+          <button
+            type="button"
+            class="setting-toggle"
+            :class="{ active: arenaMode }"
+            :aria-pressed="arenaMode"
+            @click="toggleArenaMode"
+          >
+            <span>
+              <SvgIcon name="trophy" :size="15" />
+              竞技场
+            </span>
+            <i />
+          </button>
+        </div>
+        <p class="panel-hint">
+          联网搜索和竞技场模式只在这里控制，输入框保持轻量。
+        </p>
+      </section>
+
+      <section class="run-card">
+        <div class="panel-title">
+          <SvgIcon name="sparkles" :size="15" />
+          <span>Agent Assets</span>
+        </div>
+        <div class="asset-summary">
+          <button type="button" class="asset-item" @click="openToolDrawer('skills')">
+            <span>Skills</span>
+            <strong>{{ skillsSummary.enabled }}/{{ skillsSummary.total }}</strong>
+          </button>
+          <button type="button" class="asset-item" @click="openToolDrawer('memory')">
+            <span>Memory</span>
+            <strong>{{ memoriesSummary.enabled }}/{{ memoriesSummary.total }}</strong>
+          </button>
+        </div>
+        <div class="run-row">
+          <span>当前对话</span>
+          <strong>{{ activeConversation?.messages?.length || 0 }} 条</strong>
+        </div>
+      </section>
+
+      <section class="run-card context-card">
+        <div class="panel-title">
+          <SvgIcon name="brain" :size="15" />
+          <span>Context</span>
+          <strong :class="['context-badge', contextHealth.level]">{{ contextHealth.label }}</strong>
+        </div>
+        <div class="context-number">
+          <span>{{ contextPercent }}%</span>
+          <small>{{ contextHealth.message }}</small>
+        </div>
+        <div class="context-meter">
+          <span :style="{ width: `${contextPercent}%` }" />
+        </div>
+        <div class="token-grid">
+          <div v-for="item in contextStats" :key="item.label" class="token-cell">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.value }}</strong>
+          </div>
+        </div>
+        <button class="inspector-action" :disabled="loading || compressing" @click="triggerForceCompress">
+          <SvgIcon :name="compressing ? 'loader' : 'refresh'" :size="14" :spin="compressing" />
+          {{ compressing ? '压缩中...' : '压缩历史' }}
+        </button>
+      </section>
+    </aside>
   </div>
 </template>
 
@@ -136,6 +316,8 @@ import { ref, computed, nextTick, watch, onMounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSSE } from '../composables/useSSE'
 import { useConversation } from '../composables/useConversation'
+import { useAgentTools } from '../composables/useAgentTools'
+import SvgIcon from '../components/SvgIcon.vue'
 import ChatInput from '../components/ai-plan/ChatInput.vue'
 import MessageBubble from '../components/ai-plan/MessageBubble.vue'
 import AgentEventBlock from '../components/ai-plan/AgentEventBlock.vue'
@@ -145,9 +327,11 @@ import ConversationSidebar from '../components/ai-plan/ConversationSidebar.vue'
 import UserConfirmBlock from '../components/ai-plan/UserConfirmBlock.vue'
 import SuggestionChips from '../components/ai-plan/SuggestionChips.vue'
 import ModelArenaCompare from '../components/ai-plan/ModelArenaCompare.vue'
+import { buildKnowledgeSyncPayload } from '../utils/knowledgeSync'
 
 const route = useRoute()
 const router = useRouter()
+const initialQuery = computed(() => String(route.query.q || '').trim())
 
 const {
   conversations, activeId, activeConversation,
@@ -156,6 +340,13 @@ const {
 } = useConversation()
 
 const { streamPost } = useSSE()
+const {
+  webSearchEnabled,
+  toggleWebSearch,
+  openToolDrawer,
+  skillsSummary,
+  memoriesSummary,
+} = useAgentTools()
 
 const sidebarCollapsed = ref(false)
 const loading = ref(false)
@@ -167,6 +358,13 @@ const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
 const navigatingToWorkbench = ref(false)
+const syncingKnowledgeTurns = ref(new Set())
+
+const COMPRESS_KEEP_LAST = 6
+const inspectorOpen = ref(false)
+const activeTurnIndex = ref(0)
+const manualTraceOpen = ref({})
+const turnMarkerPositions = ref({})
 
 // Token / compress state
 const TOKEN_STATUS_KEY = 'travel_token_status'
@@ -178,15 +376,214 @@ let compressNoticeTimer = null
 
 const contextHealth = computed(() => {
   const ratio = tokenStatus.value?.utilization || 0
-  if (ratio >= 0.85) return { level: 'danger', message: 'Context almost full. Compression recommended.' }
-  if (ratio >= 0.65) return { level: 'warning', message: 'Context getting large.' }
-  return { level: 'safe', message: '' }
+  if (ratio >= 0.85) return { level: 'danger', label: '接近上限', message: '建议先压缩历史再继续规划。' }
+  if (ratio >= 0.65) return { level: 'warning', label: '偏高', message: '上下文逐渐变长，可按需压缩。' }
+  return { level: 'safe', label: '健康', message: '当前上下文状态良好。' }
 })
+
+const compressibleMessages = computed(() => {
+  const msgs = activeConversation.value?.messages || []
+  return msgs.filter(m => m.role === 'user' || m.role === 'assistant')
+})
+
+const canCompress = computed(() => {
+  return compressibleMessages.value.length > COMPRESS_KEEP_LAST && !loading.value && !compressing.value
+})
+
+const compressHint = computed(() => {
+  const count = compressibleMessages.value.length
+  if (count <= COMPRESS_KEEP_LAST) {
+    return `历史消息不足，至少需要 ${COMPRESS_KEEP_LAST + 1} 条对话才能压缩`
+  }
+  if (!canCompress.value) {
+    if (loading.value) return '当前有请求在进行，等结束后再压缩'
+  }
+  const ratio = tokenStatus.value?.utilization || 0
+  if (ratio >= 0.85) return '上下文接近上限，建议压缩'
+  if (ratio >= 0.65) return '上下文较高，可压缩释放空间'
+  return ''
+})
+
+const modeLabelMap = {
+  agent: 'Agent',
+  plan: 'Plan',
+  reflection: 'Reflection',
+}
+
+const modelLabelMap = {
+  'deepseek-chat': 'DeepSeek V4 Pro',
+  'deepseek-reasoner': 'DeepSeek Reasoner',
+  'qwen3.6-plus': 'Qwen 3.6 Plus',
+  'deepseek-v4-flash': 'DeepSeek V4 Flash',
+  'kimi-k2.6': 'Kimi K2.6',
+  'MiniMax-M2.5': 'MiniMax M2.5',
+  'glm-5.1': 'GLM 5.1',
+}
+
+const selectedModeLabel = computed(() => modeLabelMap[selectedMode.value] || selectedMode.value)
+const selectedModelLabel = computed(() => modelLabelMap[selectedModel.value] || selectedModel.value)
+const contextPercent = computed(() => Math.round((tokenStatus.value?.utilization || 0) * 100))
+const contextStats = computed(() => [
+  { label: '历史对话', value: formatToken(tokenStatus.value?.history_tokens) },
+  { label: '输入估算', value: formatToken(tokenStatus.value?.input_tokens) },
+  { label: '输出预算', value: formatToken(tokenStatus.value?.output_budget) },
+  { label: '最大窗口', value: formatToken(tokenStatus.value?.max_context_tokens) },
+])
+const runStatusLabel = computed(() => {
+  if (loading.value) return '运行中'
+  if (pendingAskUser.value) return '等待确认'
+  if (navigatingToWorkbench.value) return '同步中'
+  if (activeConversation.value?.result) return '已生成'
+  return '空闲'
+})
+const runStatusClass = computed(() => {
+  if (loading.value) return 'running'
+  if (pendingAskUser.value) return 'waiting'
+  if (activeConversation.value?.result) return 'done'
+  return 'idle'
+})
+const conversationTurns = computed(() => {
+  const messages = activeConversation.value?.messages || []
+  const turns = []
+  let current = null
+
+  messages.forEach((message, index) => {
+    if (message.role === 'user') {
+      current = {
+        key: `u-${index}`,
+        user: message,
+        userIndex: index,
+        assistant: null,
+        assistantIndex: -1,
+      }
+      turns.push(current)
+      return
+    }
+
+    if (!current || current.assistant) {
+      current = {
+        key: `a-${index}`,
+        user: null,
+        userIndex: -1,
+        assistant: message,
+        assistantIndex: index,
+      }
+      turns.push(current)
+      return
+    }
+
+    current.assistant = message
+    current.assistantIndex = index
+  })
+
+  return turns
+})
+const turnMarkers = computed(() => {
+  const messages = activeConversation.value?.messages || []
+  const total = Math.max(1, messages.length - 1)
+  return messages.map((message, index) => ({
+    index,
+    role: message.role,
+    label: message.role === 'user' ? `Jump to question ${index + 1}` : `Jump to answer ${index + 1}`,
+    top: turnMarkerPositions.value[index] || `${Math.max(3, Math.min(97, (index / total) * 100))}%`,
+  }))
+})
+
+function isMessageStreaming(index) {
+  return loading.value && index === (activeConversation.value?.messages?.length || 0) - 1
+}
+
+function isTraceManuallyOpen(index) {
+  return Boolean(manualTraceOpen.value[index])
+}
+
+function isTraceOpen(index) {
+  return isMessageStreaming(index) || isTraceManuallyOpen(index)
+}
+
+function toggleTrace(index) {
+  manualTraceOpen.value = {
+    ...manualTraceOpen.value,
+    [index]: !manualTraceOpen.value[index],
+  }
+}
+
+function traceSummary(events = []) {
+  const counts = events.reduce((acc, ev) => {
+    acc[ev.type] = (acc[ev.type] || 0) + 1
+    return acc
+  }, {})
+  const parts = []
+  if (counts.thought) parts.push(`${counts.thought} thoughts`)
+  if (counts.action) parts.push(`${counts.action} tools`)
+  if (counts.observation) parts.push(`${counts.observation} observations`)
+  if (counts.reflection) parts.push(`${counts.reflection} reflections`)
+  return parts.length ? parts.join(' · ') : `${events.length} events`
+}
 
 function scrollToBottom() {
   nextTick(() => {
     const el = messagesRef.value
-    if (el) el.scrollTop = el.scrollHeight
+    if (el) {
+      el.scrollTop = el.scrollHeight
+      updateTurnMarkerPositions()
+      handleMessagesScroll()
+    }
+  })
+}
+
+function updateTurnMarkerPositions() {
+  const el = messagesRef.value
+  if (!el) return
+  const turns = Array.from(el.querySelectorAll('[data-message-index]'))
+  const maxScroll = el.scrollHeight - el.clientHeight
+  const total = Math.max(1, turns.length - 1)
+  const next = {}
+  turns.forEach((turn, order) => {
+    const index = Number(turn.dataset.messageIndex || 0)
+    const percent = maxScroll > 1 ? (turn.offsetTop / maxScroll) * 100 : (order / total) * 100
+    next[index] = `${Math.max(3, Math.min(97, percent))}%`
+  })
+  turnMarkerPositions.value = next
+}
+
+function handleMessagesScroll() {
+  const el = messagesRef.value
+  if (!el) return
+
+  const turns = Array.from(el.querySelectorAll('[data-message-index]'))
+  if (!turns.length) {
+    activeTurnIndex.value = 0
+    return
+  }
+
+  const anchor = el.scrollTop + el.clientHeight * 0.34
+  let nextIndex = Number(turns[0].dataset.messageIndex || 0)
+  for (const turn of turns) {
+    const top = turn.offsetTop
+    if (top <= anchor) nextIndex = Number(turn.dataset.messageIndex || nextIndex)
+    else break
+  }
+  activeTurnIndex.value = nextIndex
+}
+
+function scrollToTurn(index) {
+  nextTick(() => {
+    const el = messagesRef.value
+    const target = el?.querySelector(`[data-message-index="${index}"]`)
+    if (!el || !target) return
+    el.scrollTo({
+      top: Math.max(0, target.offsetTop - 24),
+      behavior: 'smooth',
+    })
+    activeTurnIndex.value = index
+  })
+}
+
+function syncJumpMarkers() {
+  nextTick(() => {
+    updateTurnMarkerPositions()
+    handleMessagesScroll()
   })
 }
 
@@ -385,11 +782,29 @@ function handleArenaStreamEvent(msg, event) {
   }
 }
 
-watch(() => activeConversation.value?.messages?.length, scrollToBottom)
+watch(() => activeConversation.value?.messages?.length, () => {
+  scrollToBottom()
+  syncJumpMarkers()
+})
+
+watch(activeId, () => {
+  manualTraceOpen.value = {}
+  turnMarkerPositions.value = {}
+  syncJumpMarkers()
+})
 
 onMounted(() => {
   if (route.query.planId) loadSavedPlan(route.query.planId)
-  loadFromBackend()
+  loadFromBackend().then(() => {
+    if (route.query.auto === '1' && initialQuery.value) {
+      if (!activeConversation.value || activeConversation.value.messages.length) {
+        newConversation()
+      }
+      nextTick(() => {
+        handleSend({ query: initialQuery.value, file: null })
+      })
+    }
+  })
   const cached = localStorage.getItem(TOKEN_STATUS_KEY)
   if (cached) tokenStatus.value = JSON.parse(cached)
 })
@@ -405,6 +820,10 @@ function handleNewConversation() {
 
 function toggleArenaMode() {
   arenaMode.value = !arenaMode.value
+}
+
+function toggleInspector() {
+  inspectorOpen.value = !inspectorOpen.value
 }
 
 function startStream(query, mode = selectedMode.value, generatePlanFirst = null, file = null) {
@@ -426,6 +845,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
   formData.append('mode', mode)
   formData.append('generatePlanFirst', String(generatePlanFirst))
   formData.append('model', selectedModel.value)
+  formData.append('webSearchEnabled', String(webSearchEnabled.value))
 
   // Append history (excluding the two we just added for this current turn)
   // If a plan was already generated, start fresh (don't carry old context)
@@ -445,6 +865,14 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
     (event) => {
       const msg = agentMsg()
       if (!msg) return
+      if (event.type === 'token_status') {
+        tokenStatus.value = {
+          ...(tokenStatus.value || {}),
+          ...(event.metadata || {}),
+        }
+        activeConversation.value.messages = [...activeConversation.value.messages]
+        return
+      }
       if (event.type === 'answer') {
         msg.answer = (msg.answer || '') + event.content
       } else if (event.type === 'plan') {
@@ -551,6 +979,7 @@ async function handleAutoSend({ query, file }) {
   const formData = new FormData()
   formData.append('query', query)
   formData.append('userId', localStorage.getItem('userId') || '1')
+  formData.append('webSearchEnabled', String(webSearchEnabled.value))
 
   // If a plan was already generated, start fresh (don't carry old context)
   const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
@@ -694,7 +1123,7 @@ async function goToWorkbench() {
     alert('会话尚未同步，请稍候重试...')
     return
   }
-  router.push('/plan-workbench?c=' + conv.backendId)
+  router.push({ name: 'planWorkbench', query: { c: conv.backendId } })
 }
 
 function handleUpdateItinerary(updated) {
@@ -706,6 +1135,56 @@ function setCompressNotice(msg, level = 'info') {
   compressNotice.value = msg; const logger = console[level] || console.log; logger('[compress]', msg)
   if (compressNoticeTimer) clearTimeout(compressNoticeTimer)
   compressNoticeTimer = setTimeout(() => { compressNotice.value = ''; compressNoticeTimer = null }, 3000)
+}
+
+async function syncTurnToKnowledge(index) {
+  if (!activeConversation.value) return
+  const key = knowledgeTurnKey(index)
+  if (syncingKnowledgeTurns.value.has(key)) return
+  syncingKnowledgeTurns.value = new Set([...syncingKnowledgeTurns.value, key])
+  try {
+    const payload = buildKnowledgeSyncPayload(activeConversation.value, index, {
+      model: selectedModel.value,
+      mode: selectedMode.value,
+    })
+    if (!payload.userMessage && !payload.assistantAnswer) {
+      alert('没有可同步的对话内容')
+      return
+    }
+    const res = await fetch('/api/knowledge/sync-turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await safeReadJson(res)
+    if (!res.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`)
+    }
+    alert(data.code === 200 ? '已同步到知识中心' : `同步失败: ${data.message}`)
+  } catch (error) {
+    console.error('同步知识中心失败:', error)
+    alert(`同步失败: ${error.message || '请稍后重试'}`)
+  } finally {
+    const next = new Set(syncingKnowledgeTurns.value)
+    next.delete(key)
+    syncingKnowledgeTurns.value = next
+  }
+}
+
+function knowledgeTurnKey(index) {
+  return `${activeConversation.value?.id || 'unknown'}:${index}`
+}
+
+function isSyncingKnowledgeTurn(index) {
+  return syncingKnowledgeTurns.value.has(knowledgeTurnKey(index))
+}
+
+async function safeReadJson(response) {
+  try {
+    return await response.json()
+  } catch {
+    return { message: `HTTP ${response.status}` }
+  }
 }
 
 function estimateTokenCount(messages) {
@@ -722,14 +1201,14 @@ function triggerForceCompress() {
   const conv = activeConversation.value
   if (!conv) { setCompressNotice('没有可压缩的对话。', 'warn'); return }
   const raw = conv.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-  if (raw.length < 3) { setCompressNotice('历史消息太少，无法压缩。', 'warn'); return }
+  if (raw.length <= COMPRESS_KEEP_LAST) { setCompressNotice(compressHint.value || `历史消息不足，至少需要 ${COMPRESS_KEEP_LAST + 1} 条对话才能压缩`, 'warn'); return }
   setCompressNotice('开始压缩历史消息...', 'info')
   compressing.value = true
-  fetch('/api/assistant/compress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatHistory: raw.map(m => ({ role: m.role, content: m.content || m.answer || '' })), keepLast: 6 }) })
+  fetch('/api/assistant/compress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatHistory: raw.map(m => ({ role: m.role, content: m.content || m.answer || '' })), keepLast: COMPRESS_KEEP_LAST }) })
     .then(r => r.json()).then(d => {
       if (d.code !== 200 || !d.data) { setCompressNotice('压缩异常', 'error'); forceCompress.value = true; return }
       const s = (d.data.summary || '').trim(); if (!d.data.compressed || !s) { setCompressNotice('无可用的摘要', 'warn'); return }
-      const kl = d.data.keep_last || 6; conv.messages = [{ role: 'assistant', answer: '【对话摘要】\n' + s, events: [] }, ...conv.messages.slice(-kl)]
+      const kl = d.data.keep_last || COMPRESS_KEEP_LAST; conv.messages = [{ role: 'assistant', answer: '【对话摘要】\n' + s, events: [] }, ...conv.messages.slice(-kl)]
       conv.updatedAt = Date.now(); tokenStatus.value = buildTokenSnapshot(conv.messages)
       setCompressNotice('压缩完成', 'info'); persist(); nextTick(() => { const el = messagesRef.value; if (el) el.scrollTop = 0 })
     }).catch(e => { setCompressNotice('压缩失败: ' + e.message, 'error'); forceCompress.value = true })
@@ -745,7 +1224,7 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   display: flex;
   width: 100%;
   height: 100vh;
-  background: var(--color-bg);
+  background: var(--color-page, #fafafa);
   font-family: var(--font-family);
   color: var(--color-body);
   overflow: hidden;
@@ -758,6 +1237,9 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   flex-direction: column;
   min-width: 0;
   height: 100%;
+  background:
+    linear-gradient(180deg, rgba(255, 241, 243, 0.5), transparent 180px),
+    var(--color-page, #fafafa);
 }
 
 .empty-state {
@@ -767,7 +1249,7 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   align-items: center;
   justify-content: center;
   gap: 24px;
-  padding: 40px 20px;
+  padding: 46px 20px;
 }
 
 .brand-greeting {
@@ -787,21 +1269,23 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 }
 
 .brand-greeting h1 {
-  font-size: 24px;
-  font-weight: 700;
+  font-size: 28px;
+  font-weight: 950;
   color: var(--color-title);
   margin: 0 0 6px;
+  letter-spacing: 0;
 }
 
 .brand-greeting p {
   font-size: 14px;
-  color: var(--color-muted);
+  color: var(--color-secondary);
   margin: 0;
 }
 
 /* Conversation view */
 .conversation-view {
   flex: 1;
+  position: relative;
   display: flex;
   flex-direction: column;
   min-height: 0;
@@ -810,33 +1294,252 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 .messages-area {
   flex: 1;
   overflow-y: auto;
-  padding: 20px 24px;
+  padding: 26px 34px 28px 28px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 18px;
+  scroll-behavior: smooth;
+}
+
+.message-turn {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  min-height: 1px;
+  gap: 10px;
+  scroll-margin-top: 24px;
+}
+
+.conversation-turn {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  gap: 18px;
+}
+
+.turn-user {
+  align-items: flex-end;
+}
+
+.turn-assistant {
+  align-items: stretch;
+}
+
+.turn-user :deep(.message-row.user),
+.turn-assistant :deep(.message-row.assistant) {
+  margin-bottom: 0;
+}
+
+.scroll-jump-layer {
+  position: absolute;
+  top: 18px;
+  right: 5px;
+  bottom: 126px;
+  z-index: 8;
+  width: 16px;
+  pointer-events: none;
+}
+
+.scroll-jump-layer::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 7px;
+  width: 2px;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.07);
+}
+
+.scroll-jump-dot {
+  position: relative;
+  position: absolute;
+  left: 4px;
+  width: 8px;
+  height: 8px;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(17, 24, 39, 0.18);
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.86);
+  pointer-events: auto;
+  transform: translateY(-50%);
+  transition: width 0.16s ease, left 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.scroll-jump-dot.user {
+  background: rgba(255, 36, 66, 0.34);
+}
+
+.scroll-jump-dot:hover,
+.scroll-jump-dot.active {
+  left: 1px;
+  width: 14px;
+  background: var(--color-red);
+  box-shadow: 0 0 0 4px rgba(255, 36, 66, 0.12);
+}
+
+.scroll-jump-dot::before {
+  content: attr(aria-label);
+  position: absolute;
+  right: calc(100% + 12px);
+  top: 50%;
+  width: max-content;
+  max-width: 220px;
+  padding: 6px 9px;
+  border-radius: 8px;
+  background: rgba(17, 24, 39, 0.92);
+  color: #ffffff;
+  font-size: 11px;
+  font-weight: 800;
+  line-height: 1.3;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-50%) translateX(4px);
+  transition: opacity 0.14s ease, transform 0.14s ease;
+}
+
+.scroll-jump-dot:hover::before {
+  opacity: 1;
+  transform: translateY(-50%) translateX(0);
+}
+
+.trace-panel {
+  position: relative;
+  z-index: 0;
+  width: 100%;
+  flex-shrink: 0;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: 0 8px 22px rgba(17, 24, 39, 0.045);
+}
+
+.trace-header {
+  display: grid;
+  grid-template-columns: auto auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 0 14px;
+  border: 0;
+  background: #ffffff;
+  color: var(--color-title);
+  text-align: left;
+}
+
+.trace-spark {
+  display: inline-flex;
+  color: var(--color-red);
+}
+
+.trace-title {
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.trace-meta {
+  overflow: hidden;
+  color: var(--color-secondary);
+  font-size: 12px;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trace-chevron {
+  display: inline-flex;
+  color: var(--color-muted);
+  transition: transform 0.16s ease;
+}
+
+.trace-panel.open .trace-chevron {
+  transform: rotate(180deg);
+}
+
+.trace-panel.streaming .trace-header {
+  background: linear-gradient(90deg, #fff7f8, #ffffff);
+}
+
+.trace-body {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border-top: 1px solid rgba(17, 24, 39, 0.07);
+  background: #fbfbfc;
 }
 
 .agent-content-wrapper {
   width: 100%;
-  max-width: 60%;
+  max-width: min(900px, calc(100% - 64px));
   min-width: 0;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 12px;
 }
 
 .agent-content-wrapper.arena {
-  max-width: 100%;
+  max-width: min(1160px, calc(100% - 32px));
 }
 
 .compact-input-area {
-  padding: 12px 24px 16px;
+  padding: 12px 28px 18px;
   border-top: 1px solid var(--color-border);
-  background: var(--color-bg);
+  background: rgba(255, 255, 255, 0.86);
+  backdrop-filter: blur(16px);
 }
 
 .compress-notice { margin-top: 8px; font-size: 12px; color: var(--color-muted); line-height: 1.4; }
+
+.message-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 4px;
+}
+
+.sync-knowledge-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--color-border);
+  background: var(--color-card);
+  color: var(--color-secondary);
+  border-radius: 999px;
+  padding: 5px 12px;
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  font-family: var(--font-family);
+}
+
+.sync-knowledge-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.sync-knowledge-btn:hover:not(:disabled) {
+  border-color: var(--color-red);
+  color: var(--color-red);
+  background: #fff7f8;
+}
+
+:root[data-theme="dark"] .sync-knowledge-btn {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+
+:root[data-theme="dark"] .sync-knowledge-btn:hover:not(:disabled) {
+  border-color: var(--color-red-light);
+  color: var(--color-red-light);
+  background: var(--color-soft-red);
+}
 
 .workbench-trigger-wrapper {
   display: flex;
@@ -846,7 +1549,7 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 }
 
 .workbench-trigger-btn {
-  background: linear-gradient(135deg, #6366f1 0%, #a855f7 100%);
+  background: var(--gradient-brand);
   color: white;
   border: none;
   padding: 12px 28px;
@@ -854,7 +1557,7 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   font-weight: 600;
   border-radius: 50px;
   cursor: pointer;
-  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+  box-shadow: 0 14px 30px rgba(255, 36, 66, 0.24);
   transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
   display: inline-flex;
   align-items: center;
@@ -863,7 +1566,7 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 
 .workbench-trigger-btn:hover {
   transform: translateY(-2px) scale(1.02);
-  box-shadow: 0 6px 20px rgba(99, 102, 241, 0.6);
+  box-shadow: 0 18px 36px rgba(255, 36, 66, 0.3);
 }
 
 .workbench-trigger-btn:active:not(:disabled) {
@@ -895,6 +1598,584 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+.plan-inspector {
+  display: flex;
+  width: 318px;
+  height: 100%;
+  flex-shrink: 0;
+  flex-direction: column;
+  gap: 12px;
+  padding: 18px 16px;
+  border-left: 1px solid rgba(17, 24, 39, 0.08);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 247, 248, 0.96));
+  overflow-y: auto;
+}
+
+.run-card {
+  display: grid;
+  gap: 12px;
+  padding: 16px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.045);
+}
+
+.hero-card {
+  background: linear-gradient(180deg, #fff7f8, #ffffff);
+}
+
+.run-card-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.run-card-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+
+.inspector-toggle {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 28px;
+  padding: 0 9px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-card);
+  color: var(--color-secondary);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.run-kicker {
+  margin-bottom: 6px;
+  color: var(--color-red);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.run-card h2 {
+  margin: 0;
+  color: var(--color-title);
+  font-size: 22px;
+  line-height: 1.1;
+}
+
+.run-card p {
+  margin: 0;
+  color: var(--color-secondary);
+  font-size: 13px;
+  line-height: 1.7;
+}
+
+.run-status {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 0 9px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.run-status.idle {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+
+.run-status.running {
+  background: #fff1f3;
+  color: var(--color-red);
+}
+
+.run-status.waiting {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.run-status.done {
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+}
+
+.panel-title {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+  color: var(--color-title);
+  font-size: 11px;
+  font-weight: 950;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+}
+
+.panel-title strong {
+  margin-left: auto;
+}
+
+.run-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: var(--color-secondary);
+  font-size: 13px;
+}
+
+.run-row strong {
+  color: var(--color-title);
+  font-size: 13px;
+  font-weight: 950;
+  text-align: right;
+}
+
+.run-row strong.active {
+  color: var(--color-red);
+}
+
+.setting-switch-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.setting-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-width: 0;
+  min-height: 42px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--color-secondary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.setting-toggle span {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+  white-space: nowrap;
+}
+
+.setting-toggle i {
+  position: relative;
+  width: 30px;
+  height: 18px;
+  border-radius: 999px;
+  background: #e5e7eb;
+  flex-shrink: 0;
+  transition: background 0.15s ease;
+}
+
+.setting-toggle i::before {
+  content: '';
+  position: absolute;
+  top: 3px;
+  left: 3px;
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  background: #ffffff;
+  box-shadow: 0 1px 2px rgba(17, 24, 39, 0.14);
+  transition: transform 0.15s ease;
+}
+
+.setting-toggle.active {
+  border-color: rgba(255, 36, 66, 0.24);
+  background: #fff1f3;
+  color: var(--color-red);
+}
+
+.setting-toggle.active i {
+  background: var(--color-red);
+}
+
+.setting-toggle.active i::before {
+  transform: translateX(12px);
+}
+
+.panel-hint {
+  margin: 0;
+  color: var(--color-hint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.context-card {
+  display: grid;
+  gap: 12px;
+}
+
+.context-number {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.context-number span {
+  color: var(--color-title);
+  font-size: 28px;
+  font-weight: 950;
+  line-height: 1;
+}
+
+.context-number small {
+  color: var(--color-secondary);
+  font-size: 12px;
+  line-height: 1.5;
+  text-align: right;
+}
+
+.context-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 22px;
+  padding: 0 8px;
+  border-radius: 999px;
+  background: #fff1f3;
+  color: var(--color-red);
+  font-size: 11px;
+  font-weight: 950;
+}
+
+.context-badge.safe {
+  background: rgba(34, 197, 94, 0.12);
+  color: #15803d;
+}
+
+.context-badge.warning {
+  background: rgba(245, 158, 11, 0.12);
+  color: #b45309;
+}
+
+.context-badge.danger {
+  background: rgba(255, 36, 66, 0.12);
+  color: var(--color-red);
+}
+
+.context-meter {
+  height: 8px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: #fff1f3;
+}
+
+.context-meter span {
+  display: block;
+  width: 0;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gradient-brand);
+  transition: width 0.18s ease;
+}
+
+.token-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.token-cell {
+  display: grid;
+  gap: 4px;
+  padding: 10px 11px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.token-cell span {
+  color: var(--color-hint);
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.token-cell strong {
+  color: var(--color-title);
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.inspector-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 40px;
+  width: 100%;
+  border: none;
+  border-radius: 999px;
+  background: var(--gradient-brand);
+  color: #ffffff;
+  font-size: 12px;
+  font-weight: 950;
+  box-shadow: 0 10px 24px rgba(255, 36, 66, 0.2);
+}
+
+.inspector-action:hover:not(:disabled) {
+  filter: brightness(1.03);
+  transform: translateY(-1px);
+}
+
+.inspector-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.56;
+  box-shadow: none;
+}
+
+.asset-summary {
+  display: grid;
+  gap: 8px;
+}
+
+.asset-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+  min-height: 40px;
+  padding: 0 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: #ffffff;
+  color: var(--color-secondary);
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.asset-item strong {
+  color: var(--color-title);
+  font-size: 12px;
+}
+
+:root[data-theme="dark"] .ai-plan-page {
+  background: var(--color-page);
+  color: var(--color-body);
+}
+
+:root[data-theme="dark"] .center-panel {
+  background: linear-gradient(180deg, rgba(255, 36, 66, 0.06), transparent 180px), var(--color-page);
+}
+
+:root[data-theme="dark"] .compact-input-area {
+  border-top-color: rgba(255, 255, 255, 0.08);
+  background: rgba(16, 16, 18, 0.9);
+  backdrop-filter: blur(16px);
+}
+
+:root[data-theme="dark"] .scroll-jump-layer::before {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+:root[data-theme="dark"] .scroll-jump-dot {
+  background: rgba(255, 255, 255, 0.26);
+  box-shadow: 0 0 0 3px rgba(16, 16, 18, 0.9);
+}
+
+:root[data-theme="dark"] .scroll-jump-dot.user {
+  background: rgba(255, 36, 66, 0.5);
+}
+
+:root[data-theme="dark"] .trace-panel {
+  background: var(--color-card);
+  border-color: var(--color-border);
+}
+
+:root[data-theme="dark"] .trace-header {
+  background: var(--color-card);
+}
+
+:root[data-theme="dark"] .trace-panel.streaming .trace-header {
+  background: linear-gradient(90deg, rgba(255, 36, 66, 0.12), var(--color-card));
+}
+
+:root[data-theme="dark"] .trace-body {
+  border-top-color: var(--color-border);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+:root[data-theme="dark"] .plan-inspector {
+  border-left-color: rgba(255, 255, 255, 0.08);
+  background: linear-gradient(180deg, rgba(18, 18, 20, 0.98), rgba(14, 14, 16, 0.98));
+}
+
+:root[data-theme="dark"] .run-card,
+:root[data-theme="dark"] .tool-card,
+:root[data-theme="dark"] .editor-card,
+:root[data-theme="dark"] .token-cell,
+:root[data-theme="dark"] .asset-item {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.3);
+}
+
+:root[data-theme="dark"] .hero-card {
+  background: linear-gradient(180deg, rgba(255, 36, 66, 0.12), rgba(26, 26, 26, 0.98));
+}
+
+:root[data-theme="dark"] .setting-toggle {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+
+:root[data-theme="dark"] .setting-toggle i {
+  background: #2e2e32;
+}
+
+:root[data-theme="dark"] .setting-toggle.active {
+  background: rgba(255, 36, 66, 0.14);
+  border-color: rgba(255, 36, 66, 0.24);
+}
+
+:root[data-theme="dark"] .setting-toggle.active i {
+  background: var(--color-red);
+}
+
+:root[data-theme="dark"] .panel-title {
+  color: var(--color-secondary);
+}
+
+:root[data-theme="dark"] .panel-hint,
+:root[data-theme="dark"] .run-card p,
+:root[data-theme="dark"] .run-row,
+:root[data-theme="dark"] .context-number small,
+:root[data-theme="dark"] .token-cell span,
+:root[data-theme="dark"] .asset-item,
+:root[data-theme="dark"] .tool-desc,
+:root[data-theme="dark"] .section-head p {
+  color: var(--color-secondary);
+}
+
+:root[data-theme="dark"] .run-card h2,
+:root[data-theme="dark"] .run-row strong,
+:root[data-theme="dark"] .token-cell strong,
+:root[data-theme="dark"] .asset-item strong,
+:root[data-theme="dark"] .context-number span {
+  color: var(--color-title);
+}
+
+:root[data-theme="dark"] .context-meter {
+  background: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .context-badge.safe {
+  background: rgba(34, 197, 94, 0.16);
+  color: #7dd3a7;
+}
+
+:root[data-theme="dark"] .context-badge.warning {
+  background: rgba(245, 158, 11, 0.16);
+  color: #fbbf24;
+}
+
+:root[data-theme="dark"] .context-badge.danger {
+  background: rgba(255, 36, 66, 0.18);
+  color: #ff7a8d;
+}
+
+:root[data-theme="dark"] .inspector-action,
+:root[data-theme="dark"] .workbench-trigger-btn {
+  box-shadow: 0 12px 28px rgba(255, 36, 66, 0.24);
+}
+
+  :root[data-theme="dark"] .workbench-trigger-wrapper {
+  filter: none;
+}
+
+:root[data-theme="dark"] .inspector-toggle {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+
+@media (max-width: 1240px) {
+  .plan-inspector {
+    position: fixed;
+    right: 12px;
+    bottom: 12px;
+    width: min(420px, calc(100vw - 24px));
+    max-height: calc(100vh - 100px);
+    padding: 0;
+    border: 1px solid rgba(17, 24, 39, 0.1);
+    border-radius: 18px;
+    box-shadow: 0 18px 40px rgba(17, 24, 39, 0.16);
+    transform: translateY(calc(100% - 76px));
+    transition: transform 0.22s ease;
+    z-index: 1300;
+    overflow-x: hidden;
+    overflow-y: auto;
+  }
+
+  .plan-inspector.open {
+    transform: translateY(0);
+  }
+
+  .plan-inspector .run-card {
+    border-left: 0;
+    border-right: 0;
+    border-top: 0;
+    border-radius: 0;
+    box-shadow: none;
+  }
+
+  .plan-inspector .run-card + .run-card {
+    border-top: 1px solid var(--color-border);
+  }
+
+  .run-card-head {
+    align-items: center;
+  }
+
+  .inspector-toggle {
+    display: inline-flex;
+  }
+
+  :root[data-theme="dark"] .plan-inspector {
+    border-color: var(--color-border);
+    box-shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
+  }
+}
+
+@media (max-width: 760px) {
+  .messages-area {
+    padding: 20px 14px 22px;
+  }
+
+  .scroll-jump-layer {
+    display: none;
+  }
+
+  .agent-content-wrapper,
+  .agent-content-wrapper.arena {
+    max-width: 100%;
+  }
+
+  .compact-input-area {
+    padding: 10px 12px 14px;
   }
 }
 </style>

@@ -5,6 +5,7 @@ import org.example.backend.dto.arena.ArenaAutoResponse;
 import org.example.backend.dto.arena.ArenaLeaderboardEntry;
 import org.example.backend.dto.arena.ArenaLeaderboardResponse;
 import org.example.backend.dto.arena.ArenaVoteRequest;
+import org.example.backend.dto.arena.PairwiseMatrixResponse;
 import org.example.backend.entity.ModelArenaVote;
 import org.example.backend.repository.ModelArenaVoteRepository;
 import org.springframework.stereotype.Service;
@@ -443,6 +444,85 @@ public class ModelArenaService {
 
     private void incPair(Map<String, Map<String, Double>> map, String a, String b, double delta) {
         map.get(a).put(b, map.get(a).getOrDefault(b, 0.0) + delta);
+    }
+
+    public PairwiseMatrixResponse getPairwiseMatrix() {
+        List<ModelArenaVote> votes = voteRepository.findAll();
+        List<String> models = new ArrayList<>(DEFAULT_MODELS);
+
+        for (ModelArenaVote vote : votes) {
+            if (vote.getModelA() != null && !vote.getModelA().isBlank() && !models.contains(vote.getModelA())) {
+                models.add(vote.getModelA());
+            }
+            if (vote.getModelB() != null && !vote.getModelB().isBlank() && !models.contains(vote.getModelB())) {
+                models.add(vote.getModelB());
+            }
+        }
+        models.sort(String::compareTo);
+
+        Map<String, Map<String, Integer>> winCount = new LinkedHashMap<>();
+        Map<String, Map<String, Integer>> lossCount = new LinkedHashMap<>();
+        Map<String, Map<String, Integer>> tieCount = new LinkedHashMap<>();
+        Map<String, Map<String, Integer>> totalCount = new LinkedHashMap<>();
+
+        for (String model : models) {
+            winCount.put(model, new LinkedHashMap<>());
+            lossCount.put(model, new LinkedHashMap<>());
+            tieCount.put(model, new LinkedHashMap<>());
+            totalCount.put(model, new LinkedHashMap<>());
+            for (String other : models) {
+                winCount.get(model).put(other, 0);
+                lossCount.get(model).put(other, 0);
+                tieCount.get(model).put(other, 0);
+                totalCount.get(model).put(other, 0);
+            }
+        }
+
+        for (ModelArenaVote vote : votes) {
+            String a = vote.getModelA();
+            String b = vote.getModelB();
+            if (a == null || a.isBlank() || b == null || b.isBlank()) continue;
+
+            String result = vote.getResult();
+            if ("A".equalsIgnoreCase(result)) {
+                incMatrixCell(winCount, a, b, 1);
+                incMatrixCell(lossCount, b, a, 1);
+            } else if ("B".equalsIgnoreCase(result)) {
+                incMatrixCell(winCount, b, a, 1);
+                incMatrixCell(lossCount, a, b, 1);
+            } else {
+                incMatrixCell(tieCount, a, b, 1);
+                incMatrixCell(tieCount, b, a, 1);
+            }
+            incMatrixCell(totalCount, a, b, 1);
+            incMatrixCell(totalCount, b, a, 1);
+        }
+
+        Map<String, Map<String, PairwiseMatrixResponse.PairwiseCell>> matrix = new LinkedHashMap<>();
+        for (String rowModel : models) {
+            Map<String, PairwiseMatrixResponse.PairwiseCell> row = new LinkedHashMap<>();
+            for (String colModel : models) {
+                if (rowModel.equals(colModel)) {
+                    row.put(colModel, new PairwiseMatrixResponse.PairwiseCell(0, 0, 0, 0, 0.0));
+                } else {
+                    int w = winCount.get(rowModel).getOrDefault(colModel, 0);
+                    int l = lossCount.get(rowModel).getOrDefault(colModel, 0);
+                    int t = tieCount.get(rowModel).getOrDefault(colModel, 0);
+                    int tot = totalCount.get(rowModel).getOrDefault(colModel, 0);
+                    double wr = tot > 0 ? (w + t * 0.5) / tot : 0.0;
+                    row.put(colModel, new PairwiseMatrixResponse.PairwiseCell(w, l, t, tot, wr));
+                }
+            }
+            matrix.put(rowModel, row);
+        }
+
+        int totalVotes = votes.size();
+        return new PairwiseMatrixResponse(models, matrix, totalVotes);
+    }
+
+    private void incMatrixCell(Map<String, Map<String, Integer>> matrix, String row, String col, int delta) {
+        Map<String, Integer> rowMap = matrix.computeIfAbsent(row, k -> new LinkedHashMap<>());
+        rowMap.put(col, rowMap.getOrDefault(col, 0) + delta);
     }
 
     private Map<String, Double> computeBradleyTerryScores(

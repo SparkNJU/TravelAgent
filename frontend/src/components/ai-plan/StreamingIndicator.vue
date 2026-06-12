@@ -9,8 +9,15 @@
 <style scoped>
 .streaming-indicator {
   display: inline-flex;
-  gap: 4px;
-  padding: 8px 14px;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  margin: 0 auto;
+  padding: 10px 14px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(17, 24, 39, 0.055);
 }
 
 .dot {
@@ -27,6 +34,12 @@
 
 .dot:nth-child(3) {
   animation-delay: 0.4s;
+}
+
+:root[data-theme="dark"] .streaming-indicator {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.3);
 }
 
 @keyframes pulse {

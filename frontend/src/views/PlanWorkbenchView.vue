@@ -36,7 +36,7 @@
             placeholder="输入行程标题"
             @change="triggerAutoSave"
           />
-          <span class="destination-badge">{{ plan.destinationName }} · {{ plan.days }}天</span>
+          <span class="destination-badge">{{ planDestination }} · {{ plan.days }}天</span>
         </div>
       </div>
       <div class="bar-right">
@@ -74,11 +74,14 @@
       <!-- Fullscreen map -->
       <div class="map-area">
         <MapComponent
-          :destinations="[plan.destinationName]"
+          :destinations="[planDestination]"
           :itinerary="mapItinerary"
           :selectedDay="selectedDay"
           :pickingMode="pickingMode"
+          :showLocationPanel="false"
+          :showLocationDetail="false"
           @mapClick="onMapClick"
+          @markerClick="onMarkerClick"
         />
       </div>
 
@@ -104,8 +107,9 @@
             <div
               v-for="(act, idx) in getActivitiesByDay(selectedDay)"
               :key="act.id || idx"
+              :ref="el => setActivityCardRef(act.id, el)"
               class="activity-edit-card"
-              :class="{ highlighted: highlightedActivityId === act.id, picking: pickingActivityId === act.id }"
+              :class="{ highlighted: isSameActivity(highlightedActivityId, act.id), picking: isSameActivity(pickingActivityId, act.id) }"
             >
               <div class="card-header">
                 <span class="activity-index">{{ idx + 1 }}</span>
@@ -173,7 +177,7 @@
                     {{ Number(act.latitude).toFixed(4) }}, {{ Number(act.longitude).toFixed(4) }}
                   </span>
                   <button
-                    v-if="pickingActivityId !== act.id"
+                    v-if="!isSameActivity(pickingActivityId, act.id)"
                     class="pick-location-btn"
                     @click="startPicking(act.id)"
                   >📍 重选位置</button>
@@ -223,6 +227,7 @@ const plan = ref(null)
 const activities = ref([])
 const selectedDay = ref(null)
 const highlightedActivityId = ref(null)
+const activityCardRefs = new Map()
 
 // Picking mode state
 const pickingActivityId = ref(null)
@@ -235,7 +240,7 @@ let autoSaveTimer = null
 
 // Computed
 // Day color palette — must match MapComponent
-const DAY_COLORS = ['#6366f1', '#10b981', '#f59e0b', '#f43f5e', '#06b6d4', '#8b5cf6', '#ec4899', '#84cc16']
+const DAY_COLORS = ['#ff2442', '#10b981', '#f59e0b', '#ef4444', '#0891b2', '#f97316', '#ec4899', '#84cc16']
 function dayColor(day) {
   return DAY_COLORS[(day - 1) % DAY_COLORS.length]
 }
@@ -253,6 +258,7 @@ const mapItinerary = computed(() => {
     const d = act.dayNumber || 1
     if (!daysMap[d]) daysMap[d] = { day: d, activities: [] }
     daysMap[d].activities.push({
+      id: act.id,
       location: act.locationName,
       time: act.activityTime,
       description: act.description,
@@ -262,11 +268,40 @@ const mapItinerary = computed(() => {
   return Object.values(daysMap).sort((a, b) => a.day - b.day)
 })
 
+const planDestination = computed(() => plan.value?.destinationName || plan.value?.destination || '')
+
 // Helpers
 function stepStatus(step) {
   if (currentStep.value > step) return 'completed'
   if (currentStep.value === step) return 'active'
   return 'pending'
+}
+
+function queryValue(value) {
+  return Array.isArray(value) ? value[0] : value
+}
+
+function isSameActivity(a, b) {
+  return a != null && b != null && String(a) === String(b)
+}
+
+function setActivityCardRef(id, el) {
+  if (id == null) return
+  const key = String(id)
+  if (el) {
+    activityCardRefs.set(key, el)
+  } else {
+    activityCardRefs.delete(key)
+  }
+}
+
+async function focusActivityCard(id) {
+  if (id == null) return
+  await nextTick()
+  const el = activityCardRefs.get(String(id))
+  if (el?.scrollIntoView) {
+    el.scrollIntoView({ behavior: 'smooth', block: 'center' })
+  }
 }
 
 function getActivitiesByDay(day) {
@@ -278,7 +313,9 @@ function selectDay(day) {
   if (selectedDay.value === day) {
     closeEditor()
   } else {
+    cancelPicking()
     selectedDay.value = day
+    highlightedActivityId.value = null
   }
 }
 
@@ -291,6 +328,7 @@ function closeEditor() {
 // Picking mode
 function startPicking(activityId) {
   pickingActivityId.value = activityId
+  highlightedActivityId.value = activityId
 }
 
 function cancelPicking() {
@@ -299,11 +337,12 @@ function cancelPicking() {
 
 async function onMapClick({ lng, lat }) {
   if (!pickingActivityId.value) return
-  const act = activities.value.find(a => a.id === pickingActivityId.value)
+  const act = activities.value.find(a => isSameActivity(a.id, pickingActivityId.value))
   if (!act) return
 
   act.latitude = lat
   act.longitude = lng
+  highlightedActivityId.value = act.id
 
   // Reverse geocode to get address name
   try {
@@ -323,6 +362,20 @@ async function onMapClick({ lng, lat }) {
   cancelPicking()
 }
 
+function onMarkerClick(location) {
+  if (pickingActivityId.value) return
+
+  const activityId = location?.activityId
+  const act = activities.value.find(a => isSameActivity(a.id, activityId))
+  const day = act?.dayNumber || Number(location?.day)
+
+  if (day && !Number.isNaN(day)) {
+    selectedDay.value = day
+  }
+  highlightedActivityId.value = act?.id || activityId || null
+  focusActivityCard(act?.id || activityId)
+}
+
 function onKeydown(e) {
   if (e.key === 'Escape' && pickingActivityId.value) {
     cancelPicking()
@@ -331,7 +384,12 @@ function onKeydown(e) {
 
 // Navigation
 function goBack() {
-  router.push('/ai-plan')
+  const conversationId = queryValue(route.query.c)
+  if (conversationId) {
+    router.push({ name: 'aiPlan', query: { c: conversationId } })
+  } else {
+    router.push({ name: 'aiPlan' })
+  }
 }
 
 // Activity CRUD
@@ -423,9 +481,9 @@ function triggerAutoSave() {
 async function performSave() {
   if (!plan.value) return
   try {
-    const payload = {
-      title: plan.value.title,
-      destination: plan.value.destinationName,
+      const payload = {
+        title: plan.value.title,
+        destination: planDestination.value,
       days: plan.value.days,
       budget: plan.value.estimatedBudget || 1000,
       activities: activities.value.map(a => {
@@ -470,8 +528,8 @@ async function performSave() {
 
 // Initialization
 async function initWorkspace() {
-  const conversationId = route.query.c
-  const planId = route.query.planId
+  const conversationId = queryValue(route.query.c)
+  const planId = queryValue(route.query.planId)
 
   if (planId) {
     try {
@@ -508,7 +566,13 @@ async function initWorkspace() {
           plan.value = data.data
           activities.value = data.data.activities || []
           loading.value = false
-          router.replace({ query: { planId: data.data.planId } })
+          router.replace({
+            name: 'planWorkbench',
+            query: {
+              planId: data.data.planId,
+              ...(conversationId ? { c: conversationId } : {})
+            }
+          })
         }, 800)
       } else {
         alert('行程大纲提取失败: ' + (data.message || '暂不支持解析该对话'))
@@ -623,7 +687,7 @@ onUnmounted(() => {
 }
 .axis-day-chip:hover { border-color: var(--chip-color, #a5b4fc); color: var(--chip-color, #4f46e5); }
 .axis-day-chip.active {
-  background: var(--chip-color, #6366f1);
+  background: var(--chip-color, #ff2442);
   color: white;
   border-color: transparent;
 }
@@ -640,7 +704,7 @@ onUnmounted(() => {
   color: #9ca3af; padding: 6px 14px; border-radius: 20px;
   font-size: 12px; cursor: pointer; transition: all 0.2s; white-space: nowrap;
 }
-.axis-add-btn:hover { border-color: #6366f1; color: #6366f1; }
+.axis-add-btn:hover { border-color: #ff2442; color: #ff2442; }
 
 /* === Workspace Body === */
 .workspace-body {
@@ -741,21 +805,21 @@ onUnmounted(() => {
   transition: border-color 0.2s, box-shadow 0.2s;
 }
 .activity-edit-card:focus-within {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.08);
+  border-color: #ff2442;
+  box-shadow: 0 0 0 3px rgba(255,36,66,0.08);
 }
 .activity-edit-card.highlighted {
   border-color: #f59e0b;
   box-shadow: 0 0 0 3px rgba(245,158,11,0.12);
 }
 .activity-edit-card.picking {
-  border-color: #6366f1;
-  box-shadow: 0 0 0 3px rgba(99,102,241,0.15);
+  border-color: #ff2442;
+  box-shadow: 0 0 0 3px rgba(255,36,66,0.15);
   animation: pickingGlow 1.2s ease-in-out infinite alternate;
 }
 @keyframes pickingGlow {
-  from { box-shadow: 0 0 0 3px rgba(99,102,241,0.15); }
-  to { box-shadow: 0 0 0 6px rgba(99,102,241,0.08); }
+  from { box-shadow: 0 0 0 3px rgba(255,36,66,0.15); }
+  to { box-shadow: 0 0 0 6px rgba(255,36,66,0.08); }
 }
 
 .card-header {
@@ -765,7 +829,7 @@ onUnmounted(() => {
 }
 .activity-index {
   width: 22px; height: 22px; border-radius: 50%;
-  background: linear-gradient(135deg, #6366f1, #8b5cf6);
+  background: linear-gradient(135deg, #ff2442, #ff5f73);
   color: white; display: flex; align-items: center;
   justify-content: center; font-size: 11px; font-weight: 700;
   flex-shrink: 0;
@@ -779,7 +843,7 @@ onUnmounted(() => {
   flex: 1; min-width: 0; border: none; background: white; padding: 6px 8px;
   border-radius: 6px; font-size: 13px; font-weight: 600; color: #1f2937;
 }
-.field-time:focus, .field-location:focus { outline: none; box-shadow: 0 0 0 2px rgba(99,102,241,0.2); }
+.field-time:focus, .field-location:focus { outline: none; box-shadow: 0 0 0 2px rgba(255,36,66,0.2); }
 
 .card-move-actions { display: flex; gap: 3px; }
 .mini-btn {
@@ -820,11 +884,11 @@ onUnmounted(() => {
 }
 .coords-readout { font-size: 10px; color: #9ca3af; white-space: nowrap; flex: 1; }
 .pick-location-btn {
-  background: transparent; border: 1px solid #d1d5db; color: #6366f1;
+  background: transparent; border: 1px solid #d1d5db; color: #ff2442;
   padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 500;
   cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
 }
-.pick-location-btn:hover { background: #eef2ff; border-color: #6366f1; }
+.pick-location-btn:hover { background: #fff1f3; border-color: #ff2442; }
 .pick-location-btn.cancel { color: #ef4444; border-color: #fca5a5; }
 .pick-location-btn.cancel:hover { background: #fef2f2; }
 
@@ -839,7 +903,7 @@ onUnmounted(() => {
   padding: 10px; border-radius: 8px; font-size: 13px; cursor: pointer;
   transition: all 0.2s; text-align: center; width: 100%;
 }
-.add-activity-btn:hover { border-color: #6366f1; color: #6366f1; background: rgba(99,102,241,0.04); }
+.add-activity-btn:hover { border-color: #ff2442; color: #ff2442; background: rgba(255,36,66,0.04); }
 
 /* === Loading Overlay (unchanged) === */
 .loading-overlay {
@@ -854,8 +918,8 @@ onUnmounted(() => {
   flex-direction: column; align-items: center;
 }
 .spinner-premium {
-  width: 48px; height: 48px; border: 4px solid rgba(99,102,241,0.1);
-  border-top-color: #6366f1; border-radius: 50%;
+  width: 48px; height: 48px; border: 4px solid rgba(255,36,66,0.1);
+  border-top-color: #ff2442; border-radius: 50%;
   animation: spin 1s infinite linear; margin-bottom: 24px;
 }
 @keyframes spin { to { transform: rotate(360deg); } }
@@ -867,11 +931,11 @@ onUnmounted(() => {
   color: white; display: flex; align-items: center; justify-content: center; font-size: 11px;
 }
 .step-spinner {
-  width: 16px; height: 16px; border: 2px solid rgba(99,102,241,0.1);
-  border-top-color: #6366f1; border-radius: 50%; animation: spin 1s infinite linear;
+  width: 16px; height: 16px; border: 2px solid rgba(255,36,66,0.1);
+  border-top-color: #ff2442; border-radius: 50%; animation: spin 1s infinite linear;
 }
 .step.completed { color: #10b981; font-weight: 500; }
-.step.active { color: #6366f1; font-weight: 600; }
+.step.active { color: #ff2442; font-weight: 600; }
 .step.pending { color: #d1d5db; }
 .loading-hint { font-size: 12px; color: #9ca3af; margin: 0; }
 

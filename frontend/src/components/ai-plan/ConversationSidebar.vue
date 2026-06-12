@@ -1,8 +1,8 @@
 <template>
   <div :class="['conv-sidebar', { collapsed }]">
     <div class="sidebar-header">
-      <button v-if="!collapsed" class="collapse-btn" @click="$emit('toggle')">
-        <SvgIcon name="menu" :size="18" />
+      <button class="collapse-btn" :title="collapsed ? '展开对话记录' : '折叠对话记录'" @click="$emit('toggle')">
+        <SvgIcon :name="collapsed ? 'chevron-right' : 'menu'" :size="18" />
       </button>
       <span v-if="!collapsed" class="sidebar-title">对话记录</span>
       <button class="new-btn" @click="$emit('new')">
@@ -119,19 +119,19 @@ function formatTime(ts) {
   align-items: center;
   gap: 8px;
   padding: 10px 12px;
-  border-radius: 8px;
+  border-radius: 10px;
   cursor: pointer;
   transition: all 0.15s;
   margin-bottom: 2px;
 }
 
 .conv-item:hover {
-  background: var(--color-surface);
+  background: #fff7f8;
 }
 
 .conv-item.active {
-  background: var(--color-surface);
-  border-left: 3px solid var(--color-red-light);
+  background: #fff1f3;
+  border-left: 3px solid var(--color-red);
   padding-left: 9px;
 }
 
@@ -142,6 +142,7 @@ function formatTime(ts) {
 
 .conv-title {
   font-size: 13px;
+  font-weight: 850;
   color: var(--color-title);
   white-space: nowrap;
   overflow: hidden;
@@ -186,4 +187,22 @@ function formatTime(ts) {
   font-size: 13px;
 }
 
+:root[data-theme="dark"] .conv-sidebar {
+  background: rgba(16, 16, 18, 0.96);
+  border-right-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .sidebar-header {
+  border-bottom-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .collapse-btn:hover,
+:root[data-theme="dark"] .new-btn:hover,
+:root[data-theme="dark"] .conv-item:hover {
+  background: var(--color-soft-red);
+}
+
+:root[data-theme="dark"] .conv-item.active {
+  background: var(--color-soft-red);
+}
 </style>

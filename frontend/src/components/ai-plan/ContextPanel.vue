@@ -2,36 +2,15 @@
   <div 
     class="context-wrapper"
     :class="healthClass">
-    <!-- icon button -->
+    <!-- token pill trigger -->
     <button
       class="context-indicator"
+      :class="healthClass"
       @click="toggleOpen"
       :title="tooltipText"
     >
-      <svg viewBox="0 0 36 36">
-        <path
-          class="track"
-          d="M18 2
-            a 16 16 0 0 1 0 32
-            a 16 16 0 0 1 0 -32"
-        />
-
-        <path
-          class="progress"
-          :stroke-dasharray="
-            percent + ', 100'
-          "
-          d="M18 2
-            a 16 16 0 0 1 0 32
-            a 16 16 0 0 1 0 -32"
-        />
-      </svg>
-
-      <div class="dot" />
-
-      <span class="ring-percent" aria-hidden="true">
-        {{ percent }}%
-      </span>
+      <span class="token-dot" />
+      <span class="token-pct">{{ percent }}%</span>
     </button>
 
     <!-- popup -->
@@ -94,12 +73,17 @@
 
         <button
           class="compress-btn"
-          :disabled="loading || compressing"
+          :disabled="loading || compressing || !canCompress"
+          :title="compressButtonTitle"
           @click="compress"
         >
           <span v-if="compressing" class="compress-spinner" aria-hidden="true" />
           <span>{{ compressing ? '正在压缩中...' : '立即压缩对话' }}</span>
         </button>
+
+        <p v-if="!canCompress && compressHint" class="compress-hint">
+          {{ compressHint }}
+        </p>
       </div>
     </Transition>
   </div>
@@ -116,6 +100,8 @@ const props = defineProps({
   tokenStatus: Object,
   loading: Boolean,
   compressing: Boolean,
+  canCompress: { type: Boolean, default: true },
+  compressHint: { type: String, default: '' },
 })
 
 const emit = defineEmits([
@@ -129,8 +115,21 @@ function toggleOpen() {
 }
 
 function compress() {
+  if (!props.canCompress || props.loading || props.compressing) return
   emit('compress')
 }
+
+const compressButtonTitle = computed(() => {
+  if (props.loading || props.compressing) {
+    return '当前有请求在进行，稍后再压缩'
+  }
+
+  if (!props.canCompress) {
+    return props.compressHint || '历史消息不足，无法压缩'
+  }
+
+  return '压缩当前对话'
+})
 
 const percent = computed(() =>
   Math.round(
@@ -209,69 +208,52 @@ function formatToken(v) {
 }
 
 .context-indicator {
-  position: relative;
-  width: 26px;
-  height: 26px;
-  padding: 0;
-  border: none;
-  cursor: pointer;
-  display: flex;
+  display: inline-flex;
   align-items: center;
-  justify-content: center;
-  border-radius: 999px;
+  gap: 5px;
+  padding: 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
   background: transparent;
-  box-shadow: none;
-}
-
-.context-indicator svg {
-  width: 24px;
-  height: 24px;
-  transform: rotate(-90deg);
-}
-
-.ring-percent {
-  position: absolute;
-  inset: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
-  color: var(--color-title);
-  opacity: 0;
-  transform: scale(0.96);
-  transition: opacity 0.15s ease, transform 0.15s ease;
-  pointer-events: none;
-  letter-spacing: 0.1px;
+  color: var(--color-secondary);
+  cursor: pointer;
+  font-family: var(--font-family);
+  transition: all 0.15s;
 }
 
-.context-indicator:hover .ring-percent,
-.context-indicator:focus-visible .ring-percent {
-  opacity: 1;
-  transform: scale(1);
+.context-indicator:hover {
+  border-color: var(--color-red);
 }
 
-.track {
-  fill: none;
-  stroke: rgba(17, 24, 39, 0.14);
-  stroke-width: 2.8;
+.token-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+  flex-shrink: 0;
 }
 
-.progress {
-  fill: none;
-  stroke: currentColor;
-  stroke-width: 2.8;
-  stroke-linecap: round;
-  transition: stroke-dasharray .3s ease, stroke .3s ease;
+.token-pct {
+  flex-shrink: 0;
 }
 
-.dot {
-  position: absolute;
-  display: none;
-}
+/* healthy = safe */
+.context-wrapper.safe .token-dot { background: #22c55e; }
+.context-wrapper.safe { color: #22c55e; }
+.context-wrapper.safe .context-indicator { border-color: rgba(34, 197, 94, 0.2); color: #16a34a; }
+
+/* warning */
+.context-wrapper.warning .token-dot { background: #f59e0b; }
+.context-wrapper.warning .context-indicator { border-color: rgba(245, 158, 11, 0.25); color: #d97706; }
+
+/* danger */
+.context-wrapper.danger .token-dot { background: #ef4444; }
+.context-wrapper.danger .context-indicator { border-color: rgba(239, 68, 68, 0.3); color: #ef4444; }
 
 .context-wrapper.safe {
-  color: #111111;
+  color: #22c55e;
 }
 
 .context-wrapper.warning {
@@ -282,25 +264,8 @@ function formatToken(v) {
   color: #ef4444;
 }
 
-.context-wrapper.safe .progress {
-  stroke: #111111;
-}
-
-.context-wrapper.warning .progress {
-  stroke: #f59e0b;
-}
-
-.context-wrapper.danger .progress {
-  stroke: #ef4444;
-}
-
-:root[data-theme="dark"] .track {
-  stroke: rgba(255, 255, 255, 0.16);
-}
-
 :root[data-theme="dark"] .context-indicator {
   background: transparent;
-  box-shadow: none;
 }
 
 :root[data-theme="dark"] .context-popup {
@@ -316,34 +281,14 @@ function formatToken(v) {
   background: linear-gradient(90deg, rgba(255, 255, 255, 0.96), rgba(245, 158, 11, 0.92), rgba(239, 68, 68, 0.96));
 }
 
-:root[data-theme="dark"] .context-wrapper.safe {
-  color: #f8fafc;
-}
+:root[data-theme="dark"] .context-wrapper.safe .context-indicator { border-color: rgba(34, 197, 94, 0.25); color: #4ade80; }
+:root[data-theme="dark"] .context-wrapper.warning .context-indicator { border-color: rgba(245, 158, 11, 0.3); color: #fbbf24; }
+:root[data-theme="dark"] .context-wrapper.danger .context-indicator { border-color: rgba(239, 68, 68, 0.35); color: #f87171; }
 
 :root[data-theme="dark"] .status-pill.status-safe {
   color: #f8fafc;
   background: rgba(248, 250, 252, 0.08);
   border-color: rgba(248, 250, 252, 0.16);
-}
-
-:root[data-theme="dark"] .context-wrapper.safe .progress {
-  stroke: #f8fafc;
-}
-
-:root[data-theme="dark"] .context-wrapper.warning {
-  color: #f59e0b;
-}
-
-:root[data-theme="dark"] .context-wrapper.warning .progress {
-  stroke: #f59e0b;
-}
-
-:root[data-theme="dark"] .context-wrapper.danger {
-  color: #ef4444;
-}
-
-:root[data-theme="dark"] .context-wrapper.danger .progress {
-  stroke: #ef4444;
 }
 
 :root[data-theme="dark"] .progress-bar {
@@ -591,6 +536,17 @@ function formatToken(v) {
   cursor: not-allowed;
   opacity: 0.6;
   box-shadow: none;
+}
+
+.compress-hint {
+  margin: 8px 2px 0;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: rgba(107, 114, 128, 0.08);
+  border: 1px solid rgba(107, 114, 128, 0.14);
+  color: var(--color-secondary);
+  font-size: 12px;
+  line-height: 1.4;
 }
 
 @keyframes compress-spin {

@@ -22,7 +22,19 @@ from services.serper_client import SerperClient
 from services.amap_client import AMapClient
 from services.plan_parser import extract_plan_from_markdown
 from services.sse_events import sse_event, SSE_DONE
-from services.tool_registry import ActivateSkillTool, FileParserTool, FinishTool, SuggestQuestionsTool, ToolRegistry, UserConfirmTool, WebSearchTool
+from services.tool_registry import (
+    ActivateSkillTool,
+    FileParserTool,
+    FinishTool,
+    KnowledgeSearchTool,
+    SuggestQuestionsTool,
+    ToolRegistry,
+    UserConfirmTool,
+    WebSearchTool,
+)
+from knowledge.client import HttpKnowledgeClient, InProcessKnowledgeClient
+from knowledge.provider import get_knowledge_service
+from knowledge.router import router as knowledge_router
 
 def map_model(model_name: str) -> str:
     if "dashscope.aliyuncs.com" in config.llm.base_url.lower():
@@ -37,6 +49,7 @@ def map_model(model_name: str) -> str:
     return model_name
 
 app = FastAPI(title="Travel Assistant Agent", version="2.0.0")
+app.include_router(knowledge_router)
 
 # --- Initialize services ---
 
@@ -51,8 +64,15 @@ _llm = LLMService(
 _serper = SerperClient()
 _amap_client = AMapClient()
 
+if config.knowledge.mode == "http":
+    _knowledge_client = HttpKnowledgeClient(config.knowledge.base_url)
+else:
+    _knowledge_client = InProcessKnowledgeClient(get_knowledge_service)
+
 _tool_registry = ToolRegistry()
 _tool_registry.register(WebSearchTool(_serper))
+if config.knowledge.enabled:
+    _tool_registry.register(KnowledgeSearchTool(_knowledge_client, default_top_k=config.knowledge.top_k))
 _tool_registry.register(FileParserTool())
 _tool_registry.register(UserConfirmTool())
 _tool_registry.register(SuggestQuestionsTool(_llm))
@@ -63,6 +83,8 @@ _tool_registry.register(ActivateSkillTool(user_id=1))
 def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_suggestions: bool = True, user_id: int = 1) -> ToolRegistry:
     registry = ToolRegistry()
     registry.register(WebSearchTool(_serper))
+    if config.knowledge.enabled:
+        registry.register(KnowledgeSearchTool(_knowledge_client, default_top_k=config.knowledge.top_k))
     registry.register(FileParserTool())
     if allow_user_confirm:
         registry.register(UserConfirmTool())
@@ -105,6 +127,8 @@ def health() -> dict:
 async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
     # Build per-request scoped services
     llm = _llm
+    allow_user_confirm = not request.arena
+    allow_suggestions = not request.arena
     if request.model or request.temperature is not None:
         llm = LLMService(
             base_url=config.llm.base_url,
@@ -113,20 +137,18 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             temperature=request.temperature if request.temperature is not None else config.llm.temperature,
             max_tokens=config.llm.max_tokens,
         )
-        planner = MetaPlanner(llm)
-        allow_user_confirm = not request.arena
-        allow_suggestions = not request.arena
-        tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions,user_id=request.user_id)
-        agent = ReActAgent(
-            llm=llm,
-            tool_registry=tool_registry,
-            max_iterations=config.agent.max_iterations,
-            max_retries=config.agent.self_correction_retries,
-            max_context_tokens=config.agent.max_context_tokens,
-            compress_threshold=config.agent.compress_threshold,
-            compress_keep_last=config.agent.compress_keep_last,
-        )
-        reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
+    planner = MetaPlanner(llm)
+    tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions, user_id=request.user_id)
+    agent = ReActAgent(
+        llm=llm,
+        tool_registry=tool_registry,
+        max_iterations=config.agent.max_iterations,
+        max_retries=config.agent.self_correction_retries,
+        max_context_tokens=config.agent.max_context_tokens,
+        compress_threshold=config.agent.compress_threshold,
+        compress_keep_last=config.agent.compress_keep_last,
+    )
+    reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
 
     def event_stream():
         try:
