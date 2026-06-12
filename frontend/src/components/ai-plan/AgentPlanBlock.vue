@@ -71,16 +71,19 @@ const rendered = computed(() => DOMPurify.sanitize(md.render(props.content)))
 
 <style scoped>
 .plan-block {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-left: 3px solid var(--color-red);
+  border-radius: 10px;
   overflow: hidden;
-  margin-bottom: 6px;
-  background: var(--color-card);
-  transition: border-color 0.2s;
+  margin-bottom: 4px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(17, 24, 39, 0.045);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .plan-block:hover {
-  border-color: var(--color-secondary);
+  border-color: rgba(255, 36, 66, 0.24);
+  box-shadow: 0 14px 34px rgba(17, 24, 39, 0.06);
 }
 
 .plan-header {
@@ -88,34 +91,35 @@ const rendered = computed(() => DOMPurify.sanitize(md.render(props.content)))
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: none;
   background: transparent;
   cursor: pointer;
   font-family: var(--font-family);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-body);
   text-align: left;
   transition: background 0.15s;
 }
 
 .plan-header:hover {
-  background: var(--color-surface);
+  background: #fff7f8;
 }
 
 .plan-icon {
   display: flex;
   align-items: center;
   flex-shrink: 0;
-  color: #3b82f6;
+  color: var(--color-red);
 }
 
 .plan-label {
   flex: 1;
-  font-weight: 500;
+  font-weight: 900;
   display: flex;
   align-items: center;
   gap: 6px;
+  color: var(--color-title);
 }
 
 .streaming-dots {
@@ -128,7 +132,7 @@ const rendered = computed(() => DOMPurify.sanitize(md.render(props.content)))
   width: 4px;
   height: 4px;
   border-radius: 50%;
-  background: #3b82f6;
+  background: var(--color-red);
   animation: dotPulse 1.2s ease-in-out infinite;
 }
 
@@ -164,12 +168,12 @@ const rendered = computed(() => DOMPurify.sanitize(md.render(props.content)))
 }
 
 .plan-content {
-  padding: 12px;
+  padding: 12px 14px;
   font-size: 13px;
   line-height: 1.6;
   color: var(--color-body);
-  background: var(--color-surface);
-  border-top: 1px solid var(--color-border);
+  background: #fbfbfc;
+  border-top: 1px solid rgba(17, 24, 39, 0.08);
 }
 
 .plan-content :deep(p) {
@@ -187,14 +191,17 @@ const rendered = computed(() => DOMPurify.sanitize(md.render(props.content)))
 }
 
 .plan-content :deep(code) {
-  background: var(--color-card);
+  background: #fff1f3;
+  color: var(--color-red);
   padding: 2px 5px;
   border-radius: 4px;
   font-size: 12px;
 }
 
 .plan-content :deep(pre) {
-  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  background: #fffafa;
+  color: var(--color-title);
   padding: 10px;
   border-radius: 8px;
   overflow-x: auto;

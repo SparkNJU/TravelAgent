@@ -1,102 +1,128 @@
 <template>
   <div :class="['chat-input-wrapper', { compact, centered: !compact && !hasMessages }]">
+    <!-- Suggestion chips: only in empty state -->
+    <div v-if="!compact && !hasMessages" class="suggestions-row">
+      <button
+        v-for="tag in tags"
+        :key="tag"
+        type="button"
+        class="suggestion-chip"
+        @click="appendTag(tag)"
+      >{{ tag }}</button>
+    </div>
+
     <div class="chat-input-box">
       <textarea
         ref="textareaRef"
         v-model="localQuery"
-        :rows="compact ? 1 : 3"
+        :rows="compact ? 1 : 2"
         :placeholder="placeholder"
         class="chat-textarea"
         @keydown.enter.exact.prevent="handleSubmit"
         @input="autoResize"
       />
-      <div class="chat-input-footer">
-        <div class="footer-left">
-          <label class="upload-trigger">
+
+      <div class="chat-input-toolbar">
+        <!-- Left group: upload + mode + model -->
+        <div class="toolbar-left">
+          <label class="tool-btn upload-btn" title="上传文件">
             <input type="file" @change="onFileChange" hidden />
             <SvgIcon name="upload" :size="16" />
-            <span v-if="file" class="file-name">{{ file.name }}</span>
-            <span v-else>附件</span>
           </label>
+          <span v-if="file" class="file-chip">{{ file.name }}</span>
+
           <div class="mode-select-wrap">
             <select
               :value="mode"
-              class="mode-select"
+              class="chip-select"
               :disabled="arenaMode"
               @change="onModeChange"
             >
               <option v-for="m in modes" :key="m.value" :value="m.value">{{ m.label }}</option>
             </select>
           </div>
-          <select
-            :value="modelName"
-            class="model-select"
-            :disabled="arenaMode"
-            @change="$emit('update:selectedModel', $event.target.value)"
-          >
-            <option v-for="m in models" :key="m.value" :value="m.value">{{ m.label }}</option>
-          </select>
-          <button
-            type="button"
-            class="arena-toggle"
-            :class="{ active: arenaMode }"
-            :title="arenaMode ? '关闭竞技场模式' : '竞技场模式：随机选择两个模型回答'"
-            :aria-label="arenaMode ? '关闭竞技场模式' : '开启竞技场模式'"
-            @click="$emit('toggleArena')"
-          >
-            <SvgIcon :name="arenaMode ? 'close' : 'trophy'" :size="16" />
-          </button>
-          <span v-if="arenaMode" class="arena-pill">竞技场模式</span>
-          <div v-if="!compact" class="quick-tags">
-            <button
-              v-for="tag in tags"
-              :key="tag"
-              type="button"
-              class="quick-tag"
-              @click="appendTag(tag)"
-            >{{ tag }}</button>
+
+          <div class="model-chip">
+            <select
+              :value="modelName"
+              class="chip-select"
+              :disabled="arenaMode"
+              @change="$emit('update:selectedModel', $event.target.value)"
+            >
+              <option v-for="m in models" :key="m.value" :value="m.value">{{ m.label }}</option>
+            </select>
           </div>
         </div>
 
-        <button
-          v-if="loading"
-          class="stop-btn"
-          @click="emit('stop')"
-        >
-          <SvgIcon name="close" :size="14" />
-          <span>停止</span>
-        </button>
+        <!-- Right group: arena + context + send -->
+        <div class="toolbar-right">
+          <button
+            type="button"
+            class="arena-chip"
+            :class="{ active: arenaMode }"
+            title="竞技场模式"
+            @click="emit('toggleArena')"
+          >
+            <SvgIcon :name="arenaMode ? 'close' : 'trophy'" :size="13" />
+          </button>
 
-        <button
-          v-else
-          class="send-btn"
-          :disabled="!canSend"
-          @click="handleSubmit"
-        >
-          <SvgIcon name="send" :size="16" />
-        </button>
+          <ContextPanel
+            :tokenStatus="tokenStatus"
+            :loading="loading"
+            :compressing="compressing"
+            :canCompress="canCompress"
+            :compressHint="compressHint"
+            @compress="emit('compress')"
+          />
 
+          <button
+            v-if="loading"
+            class="stop-btn"
+            @click="emit('stop')"
+          >
+            <SvgIcon name="close" :size="14" />
+          </button>
+
+          <button
+            v-else
+            class="send-btn"
+            :disabled="!canSend"
+            @click="handleSubmit"
+            title="发送"
+          >
+            <SvgIcon name="send" :size="16" />
+          </button>
+        </div>
       </div>
-
     </div>
+
   </div>
 </template>
 
 <script setup>
-import { ref, watch, nextTick } from 'vue'
+import { computed, ref, watch, nextTick } from 'vue'
 import SvgIcon from '../SvgIcon.vue'
+import ContextPanel from './ContextPanel.vue'
 
 const props = defineProps({
   compact: { type: Boolean, default: false },
   loading: { type: Boolean, default: false },
+  compressing: { type: Boolean, default: false },
   placeholder: { type: String, default: '描述你的旅行想法，例如：帮我做一个东京5天旅行计划...' },
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
   arenaMode: { type: Boolean, default: false },
-  selectedModel: { type: String, default: 'qwen3.6-plus' },
+  selectedModel: { type: String, default: 'deepseek-chat' },
+  canCompress: { type: Boolean, default: true },
+  compressHint: { type: String, default: '' },
+  tokenStatus: {
+    type: Object,
+    default: () => null,
+  },
+  initialQuery: { type: String, default: '' },
 })
 
-const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena'])
+const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena', 'compress'])
 
 const mode = ref(props.modelValue)
 const modelName = ref(props.selectedModel)
@@ -111,8 +137,9 @@ const modes = [
 ]
 
 const models = [
+  { value: 'deepseek-chat', label: 'DeepSeek V4 Pro' },
+  { value: 'deepseek-reasoner', label: 'DeepSeek Reasoner' },
   { value: 'qwen3.6-plus', label: 'Qwen 3.6 Plus' },
-  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { value: 'kimi-k2.6', label: 'Kimi K2.6' },
   { value: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
   { value: 'glm-5.1', label: 'GLM 5.1' },
@@ -123,12 +150,33 @@ const localQuery = ref('')
 const file = ref(null)
 const textareaRef = ref(null)
 
-const canSend = ref(true)
+const canSend = computed(() => Boolean(localQuery.value.trim()) && !props.loading)
+
+const tokenPercent = computed(() => {
+  const ratio = props.tokenStatus?.utilization || 0
+  return Math.round(ratio * 100)
+})
+
+const tokenLevel = computed(() => {
+  const ratio = props.tokenStatus?.utilization || 0
+  if (ratio >= 0.85) return 'danger'
+  if (ratio >= 0.65) return 'warning'
+  return 'safe'
+})
+
+watch(() => props.initialQuery, (value) => {
+  if (!value || props.loading) return
+  if (!localQuery.value.trim()) {
+    localQuery.value = value
+    nextTick(autoResize)
+  }
+}, { immediate: true })
 
 function appendTag(tag) {
   if (!localQuery.value.includes(tag)) {
     localQuery.value = localQuery.value.trim() + (localQuery.value ? '，' : '') + tag
   }
+  textareaRef.value?.focus()
 }
 
 function onFileChange(e) {
@@ -139,7 +187,7 @@ function autoResize() {
   const el = textareaRef.value
   if (!el) return
   el.style.height = 'auto'
-  el.style.height = el.scrollHeight + 'px'
+  el.style.height = Math.min(el.scrollHeight, 200) + 'px'
 }
 
 function onModeChange(e) {
@@ -157,13 +205,16 @@ function handleSubmit() {
 </script>
 
 <style scoped>
+/* ── Wrapper ── */
 .chat-input-wrapper {
   width: 100%;
 }
 
 .chat-input-wrapper.centered {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
   padding: 0 20px;
 }
 
@@ -172,229 +223,238 @@ function handleSubmit() {
   width: 100%;
 }
 
-.chat-input-box {
-  border: 1.5px solid var(--color-border);
-  border-radius: var(--radius-card);
+/* ── Suggestions row (empty state) ── */
+.suggestions-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  justify-content: center;
+  max-width: 680px;
+  width: 100%;
+}
+
+.suggestion-chip {
+  padding: 6px 14px;
+  border: 1px solid var(--color-border);
+  border-radius: 20px;
   background: var(--color-card);
-  overflow: hidden;
-  transition: border-color 0.2s;
+  color: var(--color-secondary);
+  font-size: 13px;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.15s;
+  white-space: nowrap;
+}
+
+.suggestion-chip:hover {
+  border-color: var(--color-red);
+  color: var(--color-red);
+  background: #fff7f8;
+}
+
+/* ── Input box ── */
+.chat-input-box {
+  position: relative;
+  border: 1.5px solid var(--color-border);
+  border-radius: 16px;
+  background: var(--color-card);
+  overflow: visible;
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .chat-input-box:focus-within {
   border-color: var(--color-red);
-  box-shadow: 0 0 0 3px rgba(230, 57, 70, 0.08);
+  box-shadow: 0 0 0 4px rgba(255, 36, 66, 0.06);
 }
 
+/* ── Textarea ── */
 .chat-textarea {
   width: 100%;
   border: none;
   outline: none;
   resize: none;
-  padding: 14px 16px 8px;
-  font-size: 14px;
+  padding: 14px 16px 6px;
+  font-size: 15px;
   font-family: var(--font-family);
   background: transparent;
   color: var(--color-title);
-  line-height: 1.5;
+  line-height: 1.55;
 }
 
 .chat-textarea::placeholder {
-  color: var(--color-muted);
+  color: #9ca3af;
 }
 
 .compact .chat-textarea {
-  padding: 10px 16px 6px;
-  font-size: 13px;
+  padding: 10px 14px 4px;
+  font-size: 14px;
 }
 
-.chat-input-footer {
+/* ── Toolbar ── */
+.chat-input-toolbar {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 8px 12px;
+  padding: 6px 10px 10px;
   gap: 8px;
 }
 
-.footer-left {
+.toolbar-left {
   display: flex;
   align-items: center;
   gap: 8px;
-  flex: 1;
-  min-width: 0;
 }
 
-.upload-trigger {
+.toolbar-right {
   display: flex;
   align-items: center;
-  gap: 4px;
-  padding: 4px 10px;
-  border-radius: var(--radius-pill);
-  font-size: 12px;
-  color: var(--color-title);
+  gap: 8px;
+}
+
+/* ── Tool button ── */
+.tool-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border-radius: 8px;
+  color: var(--color-secondary);
   cursor: pointer;
   transition: all 0.15s;
-  white-space: nowrap;
 }
 
-.upload-trigger:hover {
+.tool-btn:hover {
   background: var(--color-surface);
-  color: var(--color-secondary);
+  color: var(--color-title);
 }
 
-.file-name {
-  max-width: 80px;
+.file-chip {
+  padding: 3px 10px;
+  border-radius: 6px;
+  background: rgba(255, 36, 66, 0.06);
+  color: var(--color-red);
+  font-size: 12px;
+  font-weight: 600;
+  max-width: 120px;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-
-.quick-tags {
-  display: flex;
-  gap: 6px;
-  overflow-x: auto;
-}
-
-.quick-tag {
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  padding: 3px 10px;
-  font-size: 11px;
-  color: var(--color-hint);
-  background: transparent;
-  cursor: pointer;
   white-space: nowrap;
-  transition: all 0.15s;
-  font-family: var(--font-family);
 }
 
-.quick-tag:hover {
-  border-color: var(--color-red);
-  color: var(--color-red-light);
-}
-
-.mode-select-wrap {
-  display: block;
-  width: 160px;
-  flex-shrink: 0;
-}
-
-.mode-select {
-  width: 100%;
+/* ── Token pill ── */
+.token-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
   padding: 3px 8px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
+  border-radius: 12px;
+  background: transparent;
   font-size: 11px;
+  font-weight: 700;
+  color: var(--color-secondary);
+  cursor: pointer;
   font-family: var(--font-family);
-  color: var(--color-title);
+  transition: all 0.15s;
+}
+
+.token-pill:hover {
+  border-color: var(--color-red);
+}
+
+.token-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: #22c55e;
+}
+
+.token-pill.warning .token-dot { background: #f59e0b; }
+.token-pill.danger .token-dot { background: var(--color-red); }
+.token-pill.danger { color: var(--color-red); border-color: rgba(255, 36, 66, 0.3); }
+
+/* ── Chip selects (mode / model) ── */
+.mode-select-wrap,
+.model-chip {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.chip-select {
+  padding: 4px 22px 4px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  font-size: 12px;
+  font-family: var(--font-family);
+  color: var(--color-secondary);
   background: transparent;
   cursor: pointer;
   outline: none;
-  -webkit-appearance: none;
   appearance: none;
-  padding-right: 20px;
+  -webkit-appearance: none;
+  transition: all 0.15s;
   background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
   background-repeat: no-repeat;
-  background-position: right 6px center;
+  background-position: right 5px center;
 }
 
-.mode-select:hover {
-  border-color: var(--color-secondary);
+.chip-select:hover {
+  border-color: var(--color-red);
+  color: var(--color-title);
 }
 
-.mode-select:disabled,
-.model-select:disabled {
-  opacity: 0.55;
+.chip-select:disabled {
+  opacity: 0.45;
   cursor: not-allowed;
 }
 
-.model-select {
-  width: 160px;
-  padding: 3px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-pill);
-  font-size: 11px;
-  font-family: var(--font-family);
-  color: var(--color-title);
-  background: transparent;
-  cursor: pointer;
-  outline: none;
-  flex-shrink: 0;
-  -webkit-appearance: none;
-  appearance: none;
-  padding-right: 20px;
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='10' viewBox='0 0 24 24' fill='none' stroke='%23999' stroke-width='2'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 6px center;
-}
-
-.model-select:hover {
-  border-color: var(--color-secondary);
-}
-
-.arena-toggle {
-  width: 34px;
-  height: 34px;
-  border-radius: 10px;
-  border: 1px solid var(--color-border);
-  background: var(--color-surface);
-  color: var(--color-secondary);
+/* ── Arena chip ── */
+.arena-chip {
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  width: 30px;
+  height: 30px;
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  background: transparent;
+  color: var(--color-muted);
+  cursor: pointer;
   transition: all 0.15s;
   flex-shrink: 0;
 }
 
-.arena-toggle:hover {
+.arena-chip:hover {
   border-color: var(--color-red);
-  color: var(--color-title);
+  color: var(--color-red);
 }
 
-.arena-toggle.active {
-  border-color: var(--color-red);
-  background: rgba(230, 57, 70, 0.08);
-  color: var(--color-red-light);
+.arena-chip.active {
+  border-color: rgba(255, 36, 66, 0.3);
+  background: rgba(255, 36, 66, 0.06);
+  color: var(--color-red);
 }
 
-.arena-pill {
-  padding: 3px 10px;
-  border: 1px solid rgba(230, 57, 70, 0.2);
-  border-radius: var(--radius-pill);
-  font-size: 11px;
-  color: var(--color-red-light);
-  background: rgba(230, 57, 70, 0.08);
-  white-space: nowrap;
-}
-
-
-
-.stop-btn {
+/* ── Model chip (kept for wrapper, select uses .chip-select above) ── */
+.model-chip {
+  position: relative;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 6px 12px;
-  border-radius: var(--radius-pill);
-  background: rgba(230, 57, 70, 0.12);
-  color: var(--color-red-light);
-  font-size: 12px;
-  font-weight: 600;
-  border: 1px solid rgba(230, 57, 70, 0.2);
-  transition: all 0.15s;
 }
 
-.stop-btn:hover {
-  background: rgba(230, 57, 70, 0.2);
-}
-
+/* ── Send button ── */
 .send-btn {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 36px;
-  height: 36px;
+  width: 34px;
+  height: 34px;
   border: none;
-  border-radius: 50%;
-  background: var(--gradient-brand);
-  color: white;
+  border-radius: 10px;
+  background: var(--color-red);
+  color: #fff;
   cursor: pointer;
   flex-shrink: 0;
   transition: all 0.15s;
@@ -402,11 +462,31 @@ function handleSubmit() {
 
 .send-btn:hover:not(:disabled) {
   filter: brightness(1.1);
-  transform: scale(1.05);
+  transform: scale(1.04);
 }
 
 .send-btn:disabled {
-  opacity: 0.4;
+  opacity: 0.35;
   cursor: not-allowed;
 }
+
+/* ── Stop button ── */
+.stop-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 34px;
+  height: 34px;
+  border: 1.5px solid rgba(255, 36, 66, 0.25);
+  border-radius: 10px;
+  background: rgba(255, 36, 66, 0.08);
+  color: var(--color-red);
+  cursor: pointer;
+  transition: all 0.15s;
+}
+
+.stop-btn:hover {
+  background: rgba(255, 36, 66, 0.16);
+}
+
 </style>

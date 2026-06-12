@@ -1,25 +1,26 @@
 package org.example.backend.dto;
 
 import java.util.List;
+import org.example.backend.entity.PlanActivity;
 
 public class TravelPlanResponse {
     private Long planId;
     private String title;
     private String destination;
     private Integer days;
-    private String itinerary; // AI generated detailed plan
+    private List<PlanActivity> activities;
     private Integer estimatedBudget;
     private Double aiConfidenceScore;
     private List<String> highlights;
 
     public TravelPlanResponse(Long planId, String title, String destination, Integer days,
-            String itinerary, Integer estimatedBudget, Double aiConfidenceScore,
+            List<PlanActivity> activities, Integer estimatedBudget, Double aiConfidenceScore,
             List<String> highlights) {
         this.planId = planId;
         this.title = title;
         this.destination = destination;
         this.days = days;
-        this.itinerary = itinerary;
+        this.activities = activities;
         this.estimatedBudget = estimatedBudget;
         this.aiConfidenceScore = aiConfidenceScore;
         this.highlights = highlights;
@@ -42,8 +43,8 @@ public class TravelPlanResponse {
         return days;
     }
 
-    public String getItinerary() {
-        return itinerary;
+    public List<PlanActivity> getActivities() {
+        return activities;
     }
 
     public Integer getEstimatedBudget() {

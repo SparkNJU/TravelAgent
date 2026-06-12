@@ -2,6 +2,7 @@ package org.example.backend.service;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import org.example.backend.dto.AgentChatRequest;
+import org.example.backend.dto.ChatMessage;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -49,8 +50,41 @@ public class TripAssistantService {
     @Value("${app.agent.chat-url:http://localhost:8000/api/agent/chat}")
     private String agentChatUrl;
 
+    @Value("${app.agent.parse-url:http://localhost:8000/api/agent/parse-plan}")
+    private String agentParseUrl;
+
+    @Value("${app.agent.compress-url:http://localhost:8000/api/agent/compress}")
+    private String agentCompressUrl;
+
     public TripAssistantService(RestTemplate restTemplate) {
         this.restTemplate = restTemplate;
+    }
+
+    public Map<String, Object> parsePlanMarkdown(String markdown, String destination) {
+        try {
+            Map<String, Object> payload = Map.of(
+                "markdown", markdown,
+                "destination", destination != null ? destination : ""
+            );
+            String requestBody = objectMapper.writeValueAsString(payload);
+            
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            
+            HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+            ResponseEntity<String> response = restTemplate.postForEntity(agentParseUrl, entity, String.class);
+            if (response.getStatusCode().is2xxSuccessful()) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> body = objectMapper.readValue(response.getBody(), Map.class);
+                if (body != null && Integer.valueOf(200).equals(body.get("code"))) {
+                    return (Map<String, Object>) body.get("data");
+                }
+            }
+            logger.warn("Failed to parse plan markdown from agent, status: {}, body: {}", response.getStatusCode(), response.getBody());
+        } catch (Exception e) {
+            logger.error("Error calling agent parse-plan", e);
+        }
+        return null;
     }
 
     /**
@@ -110,6 +144,9 @@ public class TripAssistantService {
                 payload.put("generate_plan_first", req.isGeneratePlanFirst());
                 if (req.isArena()) {
                     payload.put("arena", true);
+                }
+                if (req.isForceCompress()) {
+                    payload.put("force_compress", true);
                 }
 
                 if (req.getModel() != null && !req.getModel().isEmpty()) {
@@ -238,6 +275,43 @@ public class TripAssistantService {
         }
     }
 
+    public Map<String, Object> compressConversation(List<ChatMessage> chatHistory, Integer keepLast) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("chat_history", chatHistory == null ? List.of() : chatHistory);
+        if (keepLast != null) {
+            payload.put("keep_last", keepLast);
+        }
+
+        try {
+            String requestBody = objectMapper.writeValueAsString(payload);
+            HttpHeaders headers = new HttpHeaders();
+            headers.setContentType(MediaType.APPLICATION_JSON);
+            HttpEntity<String> entity = new HttpEntity<>(requestBody, headers);
+
+            ResponseEntity<String> response = restTemplate.postForEntity(agentCompressUrl, entity, String.class);
+            int status = response.getStatusCode().value();
+            if (status >= 200 && status < 300) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> data = objectMapper.readValue(response.getBody(), Map.class);
+                return data;
+            }
+            logger.warn("Agent compress error status: {}, body: {}", status, response.getBody());
+            return Map.of(
+                "summary", "",
+                "compressed", false,
+                "keep_last", keepLast,
+                "error", "Agent returned HTTP " + status
+            );
+        } catch (Exception e) {
+            return Map.of(
+                "summary", "",
+                "compressed", false,
+                "keep_last", keepLast,
+                "error", e.getMessage()
+            );
+        }
+    }
+
     public void streamAgentEvents(
             AgentChatRequest req,
             MultipartFile file,
@@ -298,6 +372,9 @@ public class TripAssistantService {
         payload.put("generate_plan_first", req.isGeneratePlanFirst());
         if (req.isArena()) {
             payload.put("arena", true);
+        }
+        if (req.isForceCompress()) {
+            payload.put("force_compress", true);
         }
 
         if (req.getModel() != null && !req.getModel().isEmpty()) {

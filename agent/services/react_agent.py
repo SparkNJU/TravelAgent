@@ -6,31 +6,62 @@ import json
 from typing import Any, Generator
 
 from .llm_service import LLMService
+from .plan_checker import PlanChecker
 from .tool_registry import ToolRegistry
 
 _SYSTEM_PROMPT_TEMPLATE = """\
-You are a travel planning assistant agent. You help users create detailed travel itineraries.
+You are a travel planning assistant agent.
 
-You have access to the following tools:
+You help users create detailed travel itineraries.
+
+=========================
+LONG-TERM USER MEMORY
+=========================
+
+{user_memory}
+
+The long-term memory above contains durable facts about the user.
+
+Rules for memory:
+1. Treat remembered facts as true unless the user explicitly corrects them.
+2. If the memory contains the user's name, preferences, travel habits, or commonly asked destinations, you SHOULD naturally use them.
+3. Never claim you cannot remember previous information if memory exists.
+4. Ignore invalid or contradictory memory.
+5. If current user instructions conflict with memory, ALWAYS prioritize the newest instruction.
+
+=========================
+AVAILABLE TOOLS
+=========================
+
 {tools}
 
 Follow the ReAct pattern:
-1. THINK: Analyze what information you need next
-2. ACT: Call a tool to gather information
-3. OBSERVE: Review the tool's result
 
-When you have gathered enough information:
-- Output the complete travel plan as your message content (for the user to see during your process)
-- Call the `finish` tool with the complete travel plan in the 'answer' parameter to finalize
-- You may call `suggest_questions` in the same turn before or after `finish`
+1. THINK:
+Analyze what information you need next.
+
+2. ACT:
+Call tools when needed.
+
+3. OBSERVE:
+Review tool results.
+
+When travel planning is needed and you have gathered enough information:
+- Output the complete travel plan
+- Call `finish`
+- You may call `suggest_questions`
+
+For casual conversation, greetings, memory updates, or profile information:
+- You may respond naturally without tool calls.
 
 Important:
-- Always search for up-to-date information about the destination
-- Check weather forecasts for the travel dates
-- If a tool call fails, try with different parameters or use a different approach
-- Structure your final answer as a detailed day-by-day itinerary with specific attractions, restaurants, and activities
-- Use ask_user to clarify user preferences when essential information is missing
-- Do NOT end your response without calling the `finish` tool"""
+- Always search for up-to-date information
+- Check weather forecasts
+- Retry failed tools
+- Structure answer day-by-day
+- Use ask_user to clarify travel preferences when essential information is missing
+- Only call finish when a travel-related task is complete
+"""
 
 
 class ReActAgent:
@@ -42,19 +73,62 @@ class ReActAgent:
         tool_registry: ToolRegistry,
         max_iterations: int = 8,
         max_retries: int = 2,
+        max_context_tokens: int = 12000,
+        compress_threshold: float = 0.85,
+        compress_keep_last: int = 6,
+        max_check_retries: int = 2,
     ) -> None:
         self._llm = llm
         self._tools = tool_registry
         self._max_iterations = max_iterations
         self._max_retries = max_retries
+        self._max_context_tokens = max_context_tokens
+        self._compress_threshold = compress_threshold
+        self._compress_keep_last = compress_keep_last
+        self._plan_checker = PlanChecker(llm)
+        self._max_check_retries = max_check_retries
 
+    def _sanitize_memory(self, memory_markdown: str) -> str:
+        """Remove misleading memory and keep durable user facts."""
+        if not memory_markdown:
+            return ""
+        BAD_PATTERNS = [
+            "无法访问历史对话",
+            "无法查看历史记录",
+            "无法记住之前",
+            "我是AI",
+            "不能记忆",
+            "无法访问用户信息",
+            "我无法得知",
+            "作为一个AI",
+            "不知道你的身份",
+        ]
+        cleaned_lines = []
+
+        for line in memory_markdown.splitlines():
+            line = line.strip()
+            if not line:
+                cleaned_lines.append("")
+                continue
+            skip = False
+            for pattern in BAD_PATTERNS:
+                if pattern in line:
+                    skip = True
+                    break
+            if not skip:
+                cleaned_lines.append(line)
+        return "\n".join(cleaned_lines).strip()
+    
     def run(
         self,
         query: str,
         file_summary: str = "",
         execution_plan: str = "",
         chat_history: list[dict] | None = None,
+        user_memory_markdown: str = "",
         arena_mode: bool = False,
+        force_compress: bool = False,
+        user_id: int = 1,
     ) -> Generator[str, None, None]:
         """Execute the ReAct loop. Yields SSE event JSON strings."""
         if chat_history is None:
@@ -64,7 +138,51 @@ class ReActAgent:
             f"- {t['function']['name']}: {t['function']['description']}"
             for t in self._tools.list_tools()
         )
-        system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(tools=tool_descriptions)
+        cleaned_memory = self._sanitize_memory(
+            user_memory_markdown
+        )
+        system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
+            tools=tool_descriptions,
+            user_memory=cleaned_memory or "(empty)",
+        )
+
+        # Level 1: Fetch active skills from backend and append to system prompt
+        try:
+            import os
+            import requests
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+            res = requests.get(f"{backend_url}/api/skills/active", params={"userId": user_id}, timeout=3)
+            if res.status_code == 200:
+                skills_data = res.json().get("data", [])
+                if skills_data and isinstance(skills_data, list):
+                    active_skills_desc = "\n\nYou have access to specialized Skills. If the user request matches the domain of a Skill, you MUST first call the `activate_skill(skill_name)` tool to retrieve its detailed instructions and follow them carefully.\nAvailable Skills:\n"
+                    for s in skills_data:
+                        if s and isinstance(s, dict):
+                            name = s.get("name")
+                            desc = s.get("description")
+                            if name and desc:
+                                active_skills_desc += f"- {name}: {desc}\n"
+                    system_prompt += active_skills_desc
+        except Exception:
+            pass
+        # Level 2: Fetch active memories from backend and append to system prompt
+        try:
+            import os
+            import requests
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+            res = requests.get(f"{backend_url}/api/memories/active", params={"userId": user_id}, timeout=3)
+            if res.status_code == 200:
+                memories_data = res.json().get("data", [])
+                if memories_data and isinstance(memories_data, list):
+                    active_memories_desc = "\n\nYou have access to the user's personal preferences and profile details (Personal Memories). You MUST strictly respect and satisfy all of these conditions during travel planning without asking the user about them:\nUser Personal Preferences/Memories:\n"
+                    for m in memories_data:
+                        if m and isinstance(m, dict):
+                            content = m.get("content")
+                            if content:
+                                active_memories_desc += f"- {content}\n"
+                    system_prompt += active_memories_desc
+        except Exception:
+            pass
         if arena_mode:
             system_prompt += (
                 "\nArena mode: do not call ask_user or suggest_questions. "
@@ -79,6 +197,19 @@ class ReActAgent:
             user_parts.append(f"\nExecution plan to follow:\n{execution_plan}")
 
         messages: list[dict] = [{"role": "system", "content": system_prompt}]
+        _check_retries = 0  # PlanChecker retry counter
+
+        if cleaned_memory:
+            messages.append(
+                {
+                    "role": "system",
+                    "content": (
+                        "You have remembered user information. "
+                        "Use it naturally in conversation. "
+                        "Do not say you cannot remember the user."
+                    ),
+                }
+            )
         
         # Append chat history
         messages.extend(chat_history)
@@ -91,41 +222,74 @@ class ReActAgent:
             # THINK
             yield self._emit("thought", f"Step {step}: Analyzing...", {"step": step})
 
+            messages, compressed = self._maybe_compress_context(messages, force_compress)
+
+            if compressed:
+                yield self._emit(
+                    "context_compressed",
+                    "已压缩旧消息以节省上下文。",
+                    {"strategy": "summary", "keep_last": self._compress_keep_last},
+                )
+                force_compress = False
+
+            token_snapshot = self._build_token_snapshot(messages)
+            yield self._emit("token_status", "", token_snapshot)
+
             response = self._llm.chat_with_tools(messages, tools_spec)
-            msg = response
+
+            msg = response["message"]
+            usage = response.get("usage") or {}
+            if usage:
+                yield self._emit("token_status", "", self._build_token_snapshot(messages, usage))
 
             if msg.content:
                 yield self._emit("thought", msg.content, {"step": step})
 
-            # No tool calls -> continue to next iteration
+            # No tool call -> treat as final conversational answer
             if not msg.tool_calls:
+                if msg.content and msg.content.strip():
+                    yield self._emit(
+                        "answer",
+                        msg.content,
+                        {"step": step, "mode": "natural_exit"},
+                    )
+                    yield self._emit("done", "", {})
+                    return
                 continue
 
-            # ACT
-            messages.append(msg.model_dump())
-
+            # ACT — validate arguments and collect tool calls to process
+            msg_dict = msg.model_dump()
             missing_finish_answer = False
-            for tool_call in msg.tool_calls:
-                func = tool_call.function
-                tool_name = func.name
+            tool_call_items = []  # (tc_dict, tool_name, arguments)
+
+            for tc_dict in msg_dict.get("tool_calls", []):
+                func = tc_dict["function"]
+                tool_name = func["name"]
+                raw_args = func["arguments"]
 
                 try:
-                    arguments = json.loads(func.arguments)
-                except json.JSONDecodeError:
+                    arguments = json.loads(raw_args)
+                except (json.JSONDecodeError, TypeError):
                     arguments = {}
+                    func["arguments"] = "{}"
 
+                tool_call_items.append((tc_dict, tool_name, arguments))
+
+            # Build tool_results and assistant tool_calls together
+            # so DeepSeek never sees assistant(tool_calls) without tool responses
+            assistant_msg = msg_dict
+            tool_results = []
+
+            for tc_dict, tool_name, arguments in tool_call_items:
                 if tool_name == "finish" and (not arguments or not str(arguments.get("answer", "")).strip()):
                     missing_finish_answer = True
-                    messages.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "Finish was called without a valid answer. "
-                                "Provide the full travel plan in the answer field and call finish again."
-                            ),
-                        }
-                    )
-                    break
+                    # Add a dummy tool result to satisfy API pairing requirement
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": tc_dict["id"],
+                        "content": json.dumps({"status": "error", "message": "Missing answer field"}, ensure_ascii=False),
+                    })
+                    continue
 
                 yield self._emit(
                     "action",
@@ -134,7 +298,6 @@ class ReActAgent:
                 )
 
                 result = self._execute_with_retry(tool_name, arguments)
-
                 result_str = (
                     json.dumps(result, ensure_ascii=False, default=str)
                     if not isinstance(result, str)
@@ -146,52 +309,85 @@ class ReActAgent:
                     {"step": step, "tool": tool_name},
                 )
 
-                messages.append(
-                    {
-                        "role": "tool",
-                        "tool_call_id": tool_call.id,
-                        "content": result_str[:4000],
-                    }
-                )
+                tool_results.append({
+                    "role": "tool",
+                    "tool_call_id": tc_dict["id"],
+                    "content": result_str[:4000],
+                })
 
-                # Detect finish -> extract answer and end
+                # Post-execution: activate_skill side effect
+                if tool_name == "activate_skill":
+                    try:
+                        pr = json.loads(result_str)
+                        if pr.get("status") == "activated" and pr.get("instructions"):
+                            messages.append({
+                                "role": "system",
+                                "content": f"[Skill Activated: {pr.get('name')}]\nInstructions to follow:\n{pr['instructions']}"
+                            })
+                    except Exception:
+                        pass
+
+                # Detect finish -> extract answer and return
                 if tool_name == "finish":
                     try:
-                        parsed_result = json.loads(result_str)
-                        answer = parsed_result.get("answer", "")
+                        pr = json.loads(result_str)
+                        answer = pr.get("answer", "")
                         if answer and answer.strip():
+                            # --- PlanChecker: validate before emitting ---
+                            if _check_retries < self._max_check_retries:
+                                compliant, violations = self._plan_checker.check(query, answer)
+                                if not compliant:
+                                    _check_retries += 1
+                                    violation_msg = "\n".join(f"- {v}" for v in violations)
+                                    feedback = (
+                                        "The plan has structural issues that must be fixed before submission:\n"
+                                        f"{violation_msg}\n\n"
+                                        "Please revise the plan to address these issues, then call finish again."
+                                    )
+                                    yield self._emit(
+                                        "observation",
+                                        f"[PlanChecker] Validation failed ({_check_retries}/{self._max_check_retries}): {violation_msg[:500]}",
+                                        {"step": step, "tool": "plan_checker", "violations": violations},
+                                    )
+                                    tool_results.append({
+                                        "role": "tool",
+                                        "tool_call_id": tc_dict["id"],
+                                        "content": json.dumps(
+                                            {"status": "validation_failed", "violations": violations, "message": feedback},
+                                            ensure_ascii=False,
+                                        ),
+                                    })
+                                    # Don't emit answer — continue the ReAct loop
+                                    break  # break out of tool_call_items loop, continue outer loop
+                            # --- Validation passed or max retries reached ---
+                            messages.append(assistant_msg)
+                            messages.extend(tool_results)
                             yield self._emit("answer", answer, {"step": step})
                             yield self._emit("done", "", {})
                             return
                     except (json.JSONDecodeError, AttributeError):
                         pass
-                    missing_finish_answer = True
-                    messages.append(
-                        {
-                            "role": "system",
-                            "content": (
-                                "The finish tool was called without a valid answer. "
-                                "Please provide the full travel plan in the answer field "
-                                "and call finish again."
-                            ),
-                        }
-                    )
-                    break
 
-                # Detect ask_user and break the loop
+                # Detect ask_user -> emit and return
                 if tool_name == "ask_user":
                     try:
-                        parsed_result = json.loads(result_str)
-                        if parsed_result.get("status") == "waiting_for_user":
+                        pr = json.loads(result_str)
+                        if pr.get("status") == "waiting_for_user":
+                            messages.append(assistant_msg)
+                            messages.extend(tool_results)
                             yield self._emit(
                                 "ask_user",
-                                parsed_result.get("message", ""),
-                                {"questions": parsed_result.get("questions", [])},
+                                pr.get("message", ""),
+                                {"questions": pr.get("questions", [])},
                             )
                             yield self._emit("done", "", {})
                             return
                     except (json.JSONDecodeError, AttributeError):
                         pass
+
+            # Append assistant(tool_calls) + all tool results together
+            messages.append(assistant_msg)
+            messages.extend(tool_results)
 
             if missing_finish_answer:
                 continue
@@ -202,6 +398,109 @@ class ReActAgent:
             {"iterations": self._max_iterations},
         )
         yield self._emit("done", "", {})
+
+    def _build_token_snapshot(self, messages: list[dict], usage: dict | None = None) -> dict:
+        history_messages = self._history_messages(messages)
+        history_tokens = self._estimate_tokens(history_messages)
+        input_tokens = self._estimate_tokens(messages)
+        output_budget = max(256, min(self._llm.max_tokens, self._max_context_tokens - input_tokens))
+        utilization = min(1.0, input_tokens / max(1, self._max_context_tokens))
+        snapshot = {
+            "input_tokens": input_tokens,
+            "history_tokens": history_tokens,
+            "output_budget": output_budget,
+            "max_context_tokens": self._max_context_tokens,
+            "utilization": utilization,
+        }
+        if usage:
+            snapshot.update({
+                "prompt_tokens": usage.get("prompt_tokens"),
+                "completion_tokens": usage.get("completion_tokens"),
+                "total_tokens": usage.get("total_tokens"),
+            })
+        return snapshot
+
+    def _history_messages(self, messages: list[dict]) -> list[dict]:
+        if len(messages) <= 2:
+            return []
+        return messages[1:-1]
+
+    def _estimate_tokens(self, messages: list[dict]) -> int:
+        total_chars = 0
+        for msg in messages:
+            content = str(msg.get("content", ""))
+            total_chars += len(content)
+        return max(1, total_chars // 4)
+
+    def _maybe_compress_context(self, messages: list[dict], force: bool) -> tuple[list[dict], bool]:
+        if len(messages) <= 3:
+            return messages, False
+
+        input_tokens = self._estimate_tokens(messages)
+        over_threshold = input_tokens >= int(self._max_context_tokens * self._compress_threshold)
+        if not force and not over_threshold:
+            return messages, False
+
+        keep_last = max(2, self._compress_keep_last)
+        system_msg = messages[0]
+        recent_messages = messages[-keep_last:]
+        old_messages = messages[1:-keep_last]
+        if not old_messages:
+            return messages, False
+
+        summary_input = "\n".join(
+            f"{item.get('role', 'unknown')}: {item.get('content', '')}" for item in old_messages
+        )
+        prompt = (
+            "你是上下文压缩器。请将下面的对话历史压缩为简洁摘要，保留用户偏好、关键决定、"
+            "以及后续执行需要的上下文。输出纯文本摘要，不要添加多余解释。\n\n"
+            f"对话历史:\n{summary_input[:6000]}"
+        )
+        summary = self._llm.chat([
+            {"role": "system", "content": "你是一个严格的对话摘要器。"},
+            {"role": "user", "content": prompt},
+        ], temperature=0.1)
+        compressed_message = {
+            "role": "system",
+            "content": f"Conversation summary (compressed):\n{summary.strip()}"
+        }
+        new_messages = [system_msg, compressed_message, *recent_messages]
+        return new_messages, True
+
+    def compress_history(self, chat_history: list[dict], keep_last: int | None = None) -> dict:
+        if not chat_history:
+            return {
+                "summary": "",
+                "compressed": False,
+                "keep_last": keep_last or self._compress_keep_last,
+            }
+
+        keep_last = max(2, keep_last or self._compress_keep_last)
+        old_messages = chat_history[:-keep_last]
+        if not old_messages:
+            return {
+                "summary": "",
+                "compressed": False,
+                "keep_last": keep_last,
+            }
+
+        summary_input = "\n".join(
+            f"{item.get('role', 'unknown')}: {item.get('content', '')}" for item in old_messages
+        )
+        prompt = (
+            "你是上下文压缩器。请将下面的对话历史压缩为简洁摘要，保留用户偏好、关键决定、"
+            "以及后续执行需要的上下文。输出纯文本摘要，不要添加多余解释。\n\n"
+            f"对话历史:\n{summary_input[:6000]}"
+        )
+        summary = self._llm.chat([
+            {"role": "system", "content": "你是一个严格的对话摘要器。"},
+            {"role": "user", "content": prompt},
+        ], temperature=0.1)
+        return {
+            "summary": summary.strip(),
+            "compressed": True,
+            "keep_last": keep_last,
+        }
 
     def _execute_with_retry(self, tool_name: str, arguments: dict) -> Any:
         last_error = None
@@ -229,6 +528,9 @@ class ReActAgent:
             return json.loads(corrected)
         except Exception:
             return None
+        
+    
+
 
     @staticmethod
     def _emit(event_type: str, content: str, metadata: dict) -> str:

@@ -1,10 +1,10 @@
 :root,
 :root[data-theme="light"] {
   /* Brand */
-  --gradient-brand: linear-gradient(135deg, #e63946, #ff6b6b);
-  --color-red: #e63946;
-  --color-red-light: #ff6b6b;
-  --gradient-pink: linear-gradient(135deg, #ff6b6b, #ff8fa3);
+  --gradient-brand: linear-gradient(135deg, #ff2442, #ff5f73);
+  --color-red: #ff2442;
+  --color-red-light: #ff5f73;
+  --gradient-pink: linear-gradient(135deg, #ff2442, #ff8fa3);
   --color-orange: #ff9f1c;
 
   /* Text */
@@ -16,9 +16,12 @@
 
   /* Surface */
   --color-bg: #ffffff;
+  --color-page: #fafafa;
+  --color-soft-red: #fff1f3;
   --color-surface: #f8f9fa;
   --color-card: #ffffff;
   --color-card-hover: #f1f3f5;
+  --color-card-muted: #fffafa;
   --color-border: #e5e7eb;
   --color-overlay: rgba(0, 0, 0, 0.4);
 
@@ -36,10 +39,10 @@
 
 :root[data-theme="dark"] {
   /* Brand (same across themes) */
-  --gradient-brand: linear-gradient(135deg, #e63946, #ff6b6b);
-  --color-red: #e63946;
-  --color-red-light: #ff6b6b;
-  --gradient-pink: linear-gradient(135deg, #ff6b6b, #ff8fa3);
+  --gradient-brand: linear-gradient(135deg, #ff2442, #ff5f73);
+  --color-red: #ff2442;
+  --color-red-light: #ff5f73;
+  --gradient-pink: linear-gradient(135deg, #ff2442, #ff8fa3);
   --color-orange: #ff9f1c;
 
   /* Text on dark */
@@ -51,9 +54,12 @@
 
   /* Surface */
   --color-bg: #0a0a0a;
+  --color-page: #0f1115;
+  --color-soft-red: rgba(255, 36, 66, 0.14);
   --color-surface: #141414;
   --color-card: #1a1a1a;
   --color-card-hover: #222222;
+  --color-card-muted: #151518;
   --color-border: #262626;
   --color-overlay: rgba(0, 0, 0, 0.7);
 
@@ -72,7 +78,7 @@
 /* Shared tokens (same across themes) */
 :root {
   --radius-pill: 999px;
-  --radius-card: 14px;
+  --radius-card: 10px;
   --radius-input: 10px;
   --radius-image: 10px;
   --radius-modal: 20px;
@@ -87,5 +93,7 @@
 
   --header-height: 56px;
   --drawer-width: 460px;
+  --sidebar-width: 198px;
+  --sidebar-width-compact: 76px;
   --max-width: 1400px;
 }

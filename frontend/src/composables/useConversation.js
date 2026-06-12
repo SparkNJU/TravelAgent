@@ -23,11 +23,10 @@ function persist() {
   syncActiveToBackend()
 }
 
-function syncActiveToBackend() {
+async function syncActiveToBackend() {
   const conv = activeConversation.value
   if (!conv) return
-  const userId = Number(localStorage.getItem('userId'))
-  if (!userId) return
+  const userId = Number(localStorage.getItem('userId')) || 1
 
   const body = {
     userId,
@@ -43,24 +42,22 @@ function syncActiveToBackend() {
     resultJson: conv.result ? JSON.stringify(conv.result) : null,
   }
 
-  // If conversation has a backend id stored, update; otherwise create
   if (conv.backendId) {
     body.id = conv.backendId
   }
 
-  fetch('/api/conversations', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-  })
-    .then(res => res.json())
-    .then(data => {
-      if (data.code === 200 && data.data?.id) {
-        conv.backendId = data.data.id
-        saveConversations(conversations.value)
-      }
+  try {
+    const res = await fetch('/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
     })
-    .catch(() => {})
+    const data = await res.json()
+    if (data.code === 200 && data.data?.id) {
+      conv.backendId = data.data.id
+      saveConversations(conversations.value)
+    }
+  } catch {}
 }
 
 const activeConversation = computed(() =>
@@ -137,8 +134,7 @@ export function useConversation() {
   }
 
   async function loadFromBackend() {
-    const userId = Number(localStorage.getItem('userId'))
-    if (!userId) return
+    const userId = Number(localStorage.getItem('userId')) || 1
 
     try {
       const res = await fetch(`/api/conversations?userId=${userId}`)
@@ -197,5 +193,6 @@ export function useConversation() {
     setResult,
     updateLastAssistantMessage,
     loadFromBackend,
+    syncActiveToBackend,
   }
 }

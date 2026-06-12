@@ -64,4 +64,9 @@ public class ModelArenaController {
     public ApiResponse<ArenaLeaderboardResponse> leaderboard() {
         return ApiResponse.success(modelArenaService.getLeaderboard());
     }
+
+    @GetMapping("/pairwise")
+    public ApiResponse<org.example.backend.dto.arena.PairwiseMatrixResponse> pairwise() {
+        return ApiResponse.success(modelArenaService.getPairwiseMatrix());
+    }
 }

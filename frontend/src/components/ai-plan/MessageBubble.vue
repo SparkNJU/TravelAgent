@@ -40,12 +40,14 @@ function escapeHtml(str) {
 <style scoped>
 .message-row {
   display: flex;
-  gap: 10px;
-  margin-bottom: 4px;
+  align-items: flex-start;
+  gap: 11px;
+  margin-bottom: 2px;
 }
 
 .message-row.user {
-  max-width: 80%;
+  width: fit-content;
+  max-width: min(72%, 720px);
   margin-left: auto;
   flex-direction: row-reverse;
 }
@@ -55,8 +57,8 @@ function escapeHtml(str) {
 }
 
 .avatar {
-  width: 32px;
-  height: 32px;
+  width: 34px;
+  height: 34px;
   border-radius: 50%;
   display: flex;
   align-items: center;
@@ -67,60 +69,204 @@ function escapeHtml(str) {
 .agent-avatar {
   background: var(--gradient-brand);
   color: white;
+  box-shadow: 0 10px 24px rgba(255, 36, 66, 0.22);
 }
 
 .user-avatar {
-  background: var(--color-surface);
+  background: #ffffff;
   color: var(--color-secondary);
   border: 1px solid var(--color-border);
 }
 
 .bubble {
-  padding: 10px 14px;
-  border-radius: 16px;
+  min-width: 0;
+  padding: 11px 14px;
+  border-radius: 14px;
   font-size: 14px;
-  line-height: 1.6;
+  line-height: 1.7;
   word-break: break-word;
 }
 
 .user .bubble {
   background: var(--gradient-brand);
   color: white;
-  border-bottom-right-radius: 4px;
+  border-bottom-right-radius: 6px;
+  box-shadow: 0 12px 26px rgba(255, 36, 66, 0.2);
 }
 
 .assistant .bubble {
-  background: var(--color-surface);
+  width: 100%;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  background: #ffffff;
   color: var(--color-body);
-  border-bottom-left-radius: 4px;
+  border-bottom-left-radius: 6px;
+  box-shadow: 0 12px 34px rgba(17, 24, 39, 0.055);
 }
 
 .assistant .bubble :deep(p) {
-  margin: 0 0 8px;
+  margin: 0 0 10px;
 }
 
-.agent .bubble :deep(p:last-child) {
+.assistant .bubble :deep(p:last-child) {
   margin-bottom: 0;
 }
 
-.agent .bubble :deep(ul),
-.agent .bubble :deep(ol) {
-  margin: 4px 0;
+.assistant .bubble :deep(h1),
+.assistant .bubble :deep(h2),
+.assistant .bubble :deep(h3) {
+  margin: 18px 0 9px;
+  color: var(--color-title);
+  font-weight: 900;
+  line-height: 1.28;
+  letter-spacing: 0;
+}
+
+.assistant .bubble :deep(h1:first-child),
+.assistant .bubble :deep(h2:first-child),
+.assistant .bubble :deep(h3:first-child) {
+  margin-top: 0;
+}
+
+.assistant .bubble :deep(h1) {
+  font-size: 22px;
+}
+
+.assistant .bubble :deep(h2) {
+  padding-top: 14px;
+  border-top: 1px solid rgba(17, 24, 39, 0.08);
+  font-size: 18px;
+}
+
+.assistant .bubble :deep(h3) {
+  font-size: 15px;
+}
+
+.assistant .bubble :deep(ul),
+.assistant .bubble :deep(ol) {
+  margin: 8px 0 12px;
   padding-left: 20px;
 }
 
-.agent .bubble :deep(code) {
-  background: var(--color-card);
+.assistant .bubble :deep(li) {
+  margin: 4px 0;
+}
+
+.assistant .bubble :deep(strong) {
+  color: var(--color-title);
+  font-weight: 900;
+}
+
+.assistant .bubble :deep(a) {
+  color: var(--color-red);
+  font-weight: 800;
+  text-decoration: none;
+  border-bottom: 1px solid rgba(255, 36, 66, 0.28);
+}
+
+.assistant .bubble :deep(blockquote) {
+  margin: 12px 0;
+  padding: 10px 12px;
+  border-left: 3px solid var(--color-red);
+  border-radius: 8px;
+  background: #fff7f8;
+  color: var(--color-secondary);
+}
+
+.assistant .bubble :deep(code) {
+  background: #fff1f3;
+  color: var(--color-red);
   padding: 2px 5px;
-  border-radius: 4px;
+  border-radius: 5px;
   font-size: 13px;
 }
 
-.agent .bubble :deep(pre) {
-  background: var(--color-card);
-  padding: 10px;
+.assistant .bubble :deep(pre) {
+  border: 1px solid var(--color-border);
+  background: #fffafa;
+  color: var(--color-title);
+  padding: 12px;
   border-radius: 8px;
   overflow-x: auto;
   font-size: 12px;
+}
+
+.assistant .bubble :deep(pre code) {
+  background: transparent;
+  color: inherit;
+  padding: 0;
+}
+
+.assistant .bubble :deep(table) {
+  width: 100%;
+  border-collapse: collapse;
+  margin: 12px 0;
+  overflow: hidden;
+  border-radius: 8px;
+}
+
+.assistant .bubble :deep(th),
+.assistant .bubble :deep(td) {
+  padding: 9px 10px;
+  border: 1px solid var(--color-border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.assistant .bubble :deep(th) {
+  background: #fff7f8;
+  color: var(--color-title);
+  font-weight: 900;
+}
+
+:root[data-theme="dark"] .agent-avatar {
+  box-shadow: 0 10px 24px rgba(255, 36, 66, 0.28);
+}
+
+:root[data-theme="dark"] .user-avatar {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+
+:root[data-theme="dark"] .assistant .bubble {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  color: var(--color-body);
+  box-shadow: 0 12px 34px rgba(0, 0, 0, 0.32);
+}
+
+:root[data-theme="dark"] .assistant .bubble :deep(h2) {
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .assistant .bubble :deep(blockquote) {
+  background: rgba(255, 36, 66, 0.1);
+  color: var(--color-body);
+}
+
+:root[data-theme="dark"] .assistant .bubble :deep(code) {
+  background: rgba(255, 36, 66, 0.14);
+  color: #ff8fa3;
+}
+
+:root[data-theme="dark"] .assistant .bubble :deep(pre) {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-body);
+}
+
+:root[data-theme="dark"] .assistant .bubble :deep(th) {
+  background: rgba(255, 36, 66, 0.1);
+  color: var(--color-title);
+}
+
+@media (max-width: 720px) {
+  .message-row.user {
+    max-width: 88%;
+  }
+
+  .avatar {
+    width: 30px;
+    height: 30px;
+  }
 }
 </style>

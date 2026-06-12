@@ -1,0 +1,20 @@
+{
+  "Delivery Rate": 0.9,
+  "Commonsense Constraint Micro Pass Rate": 0.8125,
+  "Commonsense Constraint Macro Pass Rate": 0.4,
+  "Hard Constraint Micro Pass Rate": 0.75,
+  "Hard Constraint Macro Pass Rate": 0.3,
+  "Final Pass Rate": 0.3,
+  "detail": {
+    "total": 10,
+    "delivered": 9,
+    "final_commonsense_pass": 4,
+    "final_hard_pass": 3,
+    "final_all_pass": 3,
+    "by_level": {
+      "easy": 3,
+      "medium": 0,
+      "hard": 0
+    }
+  }
+}

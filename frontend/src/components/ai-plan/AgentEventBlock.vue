@@ -4,7 +4,7 @@
       <span class="event-icon"><SvgIcon :name="iconName" :size="14" /></span>
       <span class="event-label">{{ label }}</span>
       <span v-if="actionSummary" class="event-summary">{{ actionSummary }}</span>
-      <span v-else-if="toolName" class="tool-tag">{{ toolName }}</span>
+      <span v-else-if="toolName" class="tool-tag">{{ toolDisplayName }}</span>
       <span v-if="observationSummary" class="event-summary">{{ observationSummary }}</span>
       <span class="expand-arrow" :class="{ open: expanded }">
         <SvgIcon name="chevron-right" :size="12" />
@@ -18,7 +18,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick } from 'vue'
+import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import SvgIcon from '../SvgIcon.vue'
@@ -51,6 +51,17 @@ function toggle() {
   updateHeight()
 }
 
+watch(() => props.expanded, (value) => {
+  expanded.value = value
+  updateHeight()
+})
+
+watch(() => props.content, () => {
+  updateHeight()
+})
+
+onMounted(updateHeight)
+
 const iconMap = {
   plan: 'sparkles',
   thought: 'brain',
@@ -71,6 +82,13 @@ const labelMap = {
 
 const iconName = computed(() => iconMap[props.type] || 'sparkles')
 
+const toolNameMap = {
+  web_search: '联网搜索',
+  parse_file: '文件解析',
+}
+
+const toolDisplayName = computed(() => toolNameMap[props.toolName] || props.toolName)
+
 const actionSummary = computed(() => {
   if (props.type !== 'action') return ''
   const content = props.content || ''
@@ -81,7 +99,7 @@ const actionSummary = computed(() => {
   const name = match[1]
   try {
     const args = JSON.parse(match[2])
-    if (name === 'web_search') return `搜索: ${args.query || ''}`
+    if (name === 'web_search') return `联网搜索：${args.query || ''}`
     if (name === 'parse_file') return `解析文件: ${args.file_name || ''}`
     const firstStr = Object.values(args).find(v => typeof v === 'string')
     return firstStr || ''
@@ -101,7 +119,7 @@ const observationSummary = computed(() => {
 
 const label = computed(() => {
   if (props.type === 'action' && props.toolName) {
-    return `调用工具: ${props.toolName}`
+    return `调用工具: ${toolDisplayName.value}`
   }
   if (props.type === 'thought' && props.metadata?.step) {
     return `思考中... (步骤 ${props.metadata.step})`
@@ -112,16 +130,18 @@ const label = computed(() => {
 
 <style scoped>
 .event-block {
-  border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border: 1px solid rgba(17, 24, 39, 0.08);
+  border-radius: 10px;
   overflow: hidden;
-  margin-bottom: 6px;
-  background: var(--color-card);
-  transition: border-color 0.2s;
+  margin-bottom: 4px;
+  background: #ffffff;
+  box-shadow: 0 8px 24px rgba(17, 24, 39, 0.04);
+  transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .event-block:hover {
-  border-color: var(--color-secondary);
+  border-color: rgba(255, 36, 66, 0.2);
+  box-shadow: 0 12px 30px rgba(17, 24, 39, 0.055);
 }
 
 .event-header {
@@ -129,19 +149,19 @@ const label = computed(() => {
   align-items: center;
   gap: 8px;
   width: 100%;
-  padding: 8px 12px;
+  padding: 10px 12px;
   border: none;
   background: transparent;
   cursor: pointer;
   font-family: var(--font-family);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-body);
   text-align: left;
   transition: background 0.15s;
 }
 
 .event-header:hover {
-  background: var(--color-surface);
+  background: #fff7f8;
 }
 
 .event-icon {
@@ -150,30 +170,34 @@ const label = computed(() => {
   flex-shrink: 0;
 }
 
-.plan .event-icon { color: #3b82f6; }
-.thought .event-icon { color: #a855f7; }
-.action .event-icon { color: #f97316; }
-.observation .event-icon { color: #22c55e; }
-.reflection .event-icon { color: #06b6d4; }
-.ask_user .event-icon { color: #3b82f6; }
+.plan .event-icon,
+.thought .event-icon,
+.action .event-icon,
+.observation .event-icon,
+.reflection .event-icon,
+.ask_user .event-icon {
+  color: var(--color-red);
+}
 
 .event-label {
   flex: 1;
-  font-weight: 500;
+  font-weight: 900;
+  color: var(--color-title);
 }
 
 .tool-tag {
   font-size: 11px;
-  padding: 2px 8px;
+  font-weight: 900;
+  padding: 3px 8px;
   border-radius: var(--radius-pill);
-  background: rgba(249, 115, 22, 0.1);
-  color: #f97316;
+  background: #fff1f3;
+  color: var(--color-red);
   white-space: nowrap;
 }
 
 .event-summary {
   font-size: 12px;
-  color: var(--color-body);
+  color: var(--color-secondary);
   max-width: 280px;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -200,15 +224,15 @@ const label = computed(() => {
 
 .event-content {
   margin: 0;
-  padding: 12px;
+  padding: 12px 14px;
   font-size: 12px;
   line-height: 1.5;
   color: var(--color-body);
-  background: var(--color-surface);
+  background: #fbfbfc;
   white-space: pre-wrap;
   word-break: break-word;
   font-family: var(--font-family);
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid rgba(17, 24, 39, 0.08);
 }
 
 .event-content.rendered {
@@ -232,17 +256,51 @@ const label = computed(() => {
 }
 
 .event-content.rendered :deep(code) {
-  background: var(--color-card);
+  background: #fff1f3;
+  color: var(--color-red);
   padding: 2px 5px;
   border-radius: 4px;
   font-size: 12px;
 }
 
 .event-content.rendered :deep(pre) {
-  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  background: #fffafa;
+  color: var(--color-title);
   padding: 10px;
   border-radius: 8px;
   overflow-x: auto;
   font-size: 12px;
+}
+
+:root[data-theme="dark"] .event-block {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.28);
+}
+
+:root[data-theme="dark"] .event-block:hover {
+  border-color: rgba(255, 36, 66, 0.24);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="dark"] .event-header:hover {
+  background: var(--color-soft-red);
+}
+
+:root[data-theme="dark"] .tool-tag,
+:root[data-theme="dark"] .event-content.rendered :deep(code) {
+  background: rgba(255, 36, 66, 0.14);
+  color: #ff8fa3;
+}
+
+:root[data-theme="dark"] .event-content {
+  background: rgba(255, 255, 255, 0.04);
+  border-top-color: rgba(255, 255, 255, 0.08);
+}
+
+:root[data-theme="dark"] .event-content.rendered :deep(pre) {
+  background: rgba(255, 255, 255, 0.04);
+  color: var(--color-body);
 }
 </style>

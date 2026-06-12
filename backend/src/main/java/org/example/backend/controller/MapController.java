@@ -14,6 +14,7 @@ public class MapController {
     private static final String GAODE_API_KEY = "f82d8169742adbacb555271943b16e2b";
     private static final String GAODE_PLACE_SEARCH_URL = "https://restapi.amap.com/v3/place/text";
     private static final String GAODE_GEOCODE_URL = "https://restapi.amap.com/v3/geocode/geo";
+    private static final String GAODE_REGEO_URL = "https://restapi.amap.com/v3/geocode/regeo";
 
     private final RestTemplate restTemplate;
 
@@ -44,6 +45,29 @@ public class MapController {
         } catch (Exception e) {
             e.printStackTrace();
             return ApiResponse.error("地理编码失败: " + e.getMessage());
+        }
+    }
+
+    @GetMapping("/regeocode")
+    public ApiResponse<Map<String, Object>> regeocode(@RequestParam double lng, @RequestParam double lat) {
+        try {
+            String location = lng + "," + lat;
+            String url = GAODE_REGEO_URL + "?key=" + GAODE_API_KEY + "&location=" + location + "&output=json";
+            Map<String, Object> result = restTemplate.getForObject(url, Map.class);
+            // Extract readable address from AMap response
+            Map<String, Object> simplified = new java.util.LinkedHashMap<>();
+            simplified.put("raw", result);
+            if (result != null && result.get("regeocode") instanceof Map) {
+                @SuppressWarnings("unchecked")
+                Map<String, Object> regeo = (Map<String, Object>) result.get("regeocode");
+                if (regeo.get("formatted_address") != null) {
+                    simplified.put("address", regeo.get("formatted_address").toString());
+                }
+            }
+            return ApiResponse.success(simplified);
+        } catch (Exception e) {
+            e.printStackTrace();
+            return ApiResponse.error("逆地理编码失败: " + e.getMessage());
         }
     }
 }

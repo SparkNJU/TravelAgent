@@ -5,6 +5,8 @@ import java.time.LocalDateTime;
 import java.time.LocalDate;
 import java.math.BigDecimal;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
 
 @Entity
 @Table(name = "travel_plans")
@@ -27,9 +29,6 @@ public class TravelPlan {
 
     @Column(nullable = false)
     private Integer days;
-
-    @Column(columnDefinition = "LONGTEXT")
-    private String itinerary;
 
     @Column(name = "estimated_budget", precision = 10, scale = 2)
     private BigDecimal estimatedBudget;
@@ -55,9 +54,13 @@ public class TravelPlan {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @OneToMany(cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
     @JoinColumn(name = "plan_id")
     private Set<PlanHighlight> highlights;
+
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
+    @JoinColumn(name = "plan_id")
+    private List<PlanActivity> activities = new ArrayList<>();
 
     @PrePersist
     protected void onCreate() {
@@ -122,12 +125,12 @@ public class TravelPlan {
         this.days = days;
     }
 
-    public String getItinerary() {
-        return itinerary;
+    public List<PlanActivity> getActivities() {
+        return activities;
     }
 
-    public void setItinerary(String itinerary) {
-        this.itinerary = itinerary;
+    public void setActivities(List<PlanActivity> activities) {
+        this.activities = activities;
     }
 
     public BigDecimal getEstimatedBudget() {

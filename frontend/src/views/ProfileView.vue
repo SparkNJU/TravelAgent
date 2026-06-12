@@ -63,7 +63,7 @@
               <span class="plan-date">{{ formatDate(item.createdAt) }}</span>
               <div class="plan-actions">
                 <button class="action-btn" @click="viewPlanDetail(item.planId)">查看</button>
-                <button class="action-btn primary" @click="$router.push(`/ai-plan?planId=${item.planId}`)">工作台</button>
+                <button class="action-btn primary" @click="$router.push(`/plan/workbench?planId=${item.planId}`)">工作台</button>
               </div>
             </div>
           </div>
@@ -202,7 +202,7 @@
             </div>
             <div class="modal-footer">
               <button class="footer-btn" @click="closeDetailModal">关闭</button>
-              <button class="footer-btn primary" @click="$router.push(`/ai-plan?planId=${selectedPlan?.planId}`); closeDetailModal()">
+              <button class="footer-btn primary" @click="$router.push(`/plan/workbench?planId=${selectedPlan?.planId}`); closeDetailModal()">
                 加到工作台
               </button>
             </div>

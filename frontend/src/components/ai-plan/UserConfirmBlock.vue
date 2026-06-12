@@ -128,7 +128,7 @@ function handleSubmit() {
   gap: 8px;
   padding: 10px 14px;
   border-bottom: 1px solid var(--color-border);
-  color: #3b82f6;
+  color: var(--color-red);
   font-size: 13px;
   font-weight: 500;
 }

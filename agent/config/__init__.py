@@ -15,9 +15,9 @@ load_dotenv(_agent_root / ".env")
 
 
 class LLMConfig(BaseModel):
-    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
-    api_key_env: str = "DASHSCOPE_API_KEY"
-    chat_model: str = "qwen-plus"
+    base_url: str = "https://api.deepseek.com/v1"
+    api_key_env: str = "DEEPSEEK_API_KEY"
+    chat_model: str = "deepseek-chat"
     temperature: float = 0.7
     max_tokens: int = 4096
 
@@ -25,6 +25,9 @@ class LLMConfig(BaseModel):
 class AgentConfig(BaseModel):
     max_iterations: int = 8
     self_correction_retries: int = 2
+    max_context_tokens: int = 10000
+    compress_threshold: float = 0.80
+    compress_keep_last: int = 6
 
 
 class ToolsConfig(BaseModel):
@@ -35,11 +38,38 @@ class ToolsConfig(BaseModel):
     weather_base_url: str = "https://api.weatherapi.com/v1"
     file_parser_enabled: bool = True
 
+class BackendConfig(BaseModel):
+    base_url: str = "http://localhost:8080"
+
+
+
+class KnowledgeConfig(BaseModel):
+    enabled: bool = True
+    mode: str = "inprocess"
+    base_url: str = "http://localhost:8000/api/knowledge"
+    milvus_uri: str = "http://localhost:19530"
+    collection: str = "travel_knowledge_chunks"
+    namespace: str = "default"
+    chunk_size: int = 800
+    chunk_overlap: int = 200
+    embedding_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    embedding_api_key_env: str = "DASHSCOPE_API_KEY"
+    embedding_model: str = "text-embedding-v4"
+    embedding_dim: int = 2048
+    recall_limit: int = 30
+    top_k: int = 6
+    dense_weight: float = 0.75
+    sparse_weight: float = 0.25
+    rerank_enabled: bool = False
+    rerank_model: str = "qwen3-rerank"
+
 
 class AppConfig(BaseModel):
     llm: LLMConfig = LLMConfig()
     agent: AgentConfig = AgentConfig()
     tools: ToolsConfig = ToolsConfig()
+    backend: BackendConfig = BackendConfig()
+    knowledge: KnowledgeConfig = KnowledgeConfig()
 
 
 def load_config() -> AppConfig:
@@ -75,12 +105,38 @@ def load_config() -> AppConfig:
         agent_data["max_iterations"] = int(os.getenv("AGENT_MAX_ITERATIONS"))
     if os.getenv("AGENT_SELF_CORRECTION_RETRIES"):
         agent_data["self_correction_retries"] = int(os.getenv("AGENT_SELF_CORRECTION_RETRIES"))
+    if os.getenv("AGENT_MAX_CONTEXT_TOKENS"):
+        agent_data["max_context_tokens"] = int(os.getenv("AGENT_MAX_CONTEXT_TOKENS"))
+    if os.getenv("AGENT_COMPRESS_THRESHOLD"):
+        agent_data["compress_threshold"] = float(os.getenv("AGENT_COMPRESS_THRESHOLD"))
+    if os.getenv("AGENT_COMPRESS_KEEP_LAST"):
+        agent_data["compress_keep_last"] = int(os.getenv("AGENT_COMPRESS_KEEP_LAST"))
 
     tools_data = data.get("tools", {})
     for key in ("serper_enabled", "weather_enabled", "file_parser_enabled"):
         env_key = f"TOOLS_{key.upper()}"
         if os.getenv(env_key):
             tools_data[key] = os.getenv(env_key).lower() in ("true", "1", "yes")
+
+    backend_data = data.get("backend", {})
+    if os.getenv("BACKEND_BASE_URL"):
+        backend_data["base_url"] = os.getenv("BACKEND_BASE_URL")
+
+    knowledge_data = data.get("knowledge", {})
+    if os.getenv("KNOWLEDGE_ENABLED"):
+        knowledge_data["enabled"] = os.getenv("KNOWLEDGE_ENABLED", "").lower() in ("true", "1", "yes")
+    if os.getenv("KNOWLEDGE_MODE"):
+        knowledge_data["mode"] = os.getenv("KNOWLEDGE_MODE")
+    if os.getenv("KNOWLEDGE_BASE_URL"):
+        knowledge_data["base_url"] = os.getenv("KNOWLEDGE_BASE_URL")
+    if os.getenv("MILVUS_URI"):
+        knowledge_data["milvus_uri"] = os.getenv("MILVUS_URI")
+    if os.getenv("KNOWLEDGE_COLLECTION"):
+        knowledge_data["collection"] = os.getenv("KNOWLEDGE_COLLECTION")
+    if os.getenv("KNOWLEDGE_NAMESPACE"):
+        knowledge_data["namespace"] = os.getenv("KNOWLEDGE_NAMESPACE")
+    if os.getenv("KNOWLEDGE_RERANK_ENABLED"):
+        knowledge_data["rerank_enabled"] = os.getenv("KNOWLEDGE_RERANK_ENABLED", "").lower() in ("true", "1", "yes")
 
     return AppConfig(**data)
 

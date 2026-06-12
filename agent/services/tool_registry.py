@@ -88,6 +88,42 @@ class WebSearchTool(Tool):
         return self._serper.search(query, num=num)
 
 
+class KnowledgeSearchTool(Tool):
+    def __init__(self, knowledge_client, default_top_k: int = 6) -> None:
+        self._knowledge_client = knowledge_client
+        self._default_top_k = default_top_k
+
+    @property
+    def name(self) -> str:
+        return "knowledge_search"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Search the local knowledge center for saved travel conversations, "
+            "prior web search digests, itinerary notes, and reusable travel knowledge. "
+            "Use this before or alongside web_search when relevant saved knowledge may help."
+        )
+
+    @property
+    def parameters_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "query": {"type": "string", "description": "Search query for the knowledge center"},
+                "top_k": {
+                    "type": "integer",
+                    "description": "Maximum number of knowledge chunks to return",
+                    "default": self._default_top_k,
+                },
+            },
+            "required": ["query"],
+        }
+
+    def execute(self, query: str, top_k: int | None = None) -> dict:
+        return self._knowledge_client.search(query=query, top_k=top_k or self._default_top_k)
+
+
 class FileParserTool(Tool):
     @property
     def name(self) -> str:
@@ -258,3 +294,60 @@ class FinishTool(Tool):
         return json.dumps(
             {"status": "finished", "answer": answer}, ensure_ascii=False
         )
+
+
+class ActivateSkillTool(Tool):
+    def __init__(self, user_id: int = 1) -> None:
+        self._user_id = user_id
+
+    @property
+    def name(self) -> str:
+        return "activate_skill"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Load and activate a specific travel planning skill. "
+            "Use this tool when the user's intent or current context matches a skill's description. "
+            "This will retrieve and load the skill's detailed instructions and knowledge base."
+        )
+
+    @property
+    def parameters_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "skill_name": {
+                    "type": "string",
+                    "description": "The unique name identifier of the skill to activate (e.g. 'budget-optimizer' or 'packing-helper')"
+                }
+            },
+            "required": ["skill_name"]
+        }
+
+    def execute(self, skill_name: str) -> str:
+        import os
+        import requests
+        try:
+            backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+            url = f"{backend_url}/api/skills/active"
+            res = requests.get(url, params={"userId": self._user_id}, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                if data and isinstance(data, dict):
+                    skills = data.get("data", [])
+                    if skills and isinstance(skills, list):
+                        for skill in skills:
+                            if skill and isinstance(skill, dict) and skill.get("name") == skill_name:
+                                return json.dumps({
+                                    "status": "activated",
+                                    "name": skill_name,
+                                    "title": skill.get("title"),
+                                    "instructions": skill.get("instructions"),
+                                    "scripts_code": skill.get("scriptsCode"),
+                                    "references_data": skill.get("referencesData")
+                                }, ensure_ascii=False)
+            return json.dumps({"status": "error", "message": f"Skill '{skill_name}' not found or is currently inactive."}, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"status": "error", "message": f"Failed to activate skill: {str(e)}"}, ensure_ascii=False)
+

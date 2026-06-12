@@ -1,20 +1,6 @@
 -- Travel Planning System Database Schema
 -- Created for AgentLLM Travel Platform
 
-SET FOREIGN_KEY_CHECKS = 0;
-
-DROP TABLE IF EXISTS comments;
-DROP TABLE IF EXISTS community_posts;
-DROP TABLE IF EXISTS plan_highlights;
-DROP TABLE IF EXISTS travel_plans;
-
-DROP TABLE IF EXISTS ai_planning_history;
-DROP TABLE IF EXISTS model_arena_votes;
-DROP TABLE IF EXISTS destinations;
-DROP TABLE IF EXISTS users;
-
-SET FOREIGN_KEY_CHECKS = 1;
-
 -- Users Table
 CREATE TABLE IF NOT EXISTS users (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -28,6 +14,80 @@ CREATE TABLE IF NOT EXISTS users (
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     INDEX idx_username (username),
     INDEX idx_email (email)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Chat Conversations Table (conversation archive)
+CREATE TABLE IF NOT EXISTS chat_conversations (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    title VARCHAR(200),
+    messages_json LONGTEXT,
+    result_json LONGTEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    INDEX idx_chat_conversations_user_id (user_id),
+    INDEX idx_chat_conversations_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- User Agent Memory Table (long-term per-user memory, like AGENT.md)
+CREATE TABLE IF NOT EXISTS user_agent_memory (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    memory_markdown LONGTEXT NOT NULL,
+    memory_json JSON,
+    memory_version VARCHAR(50) DEFAULT 'v1',
+    source_conversation_id BIGINT,
+    summary_source VARCHAR(50) DEFAULT 'conversation',
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL,
+    UNIQUE KEY uk_user_agent_memory_user_id (user_id),
+    INDEX idx_user_agent_memory_updated_at (updated_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Public Knowledge Table (shareable knowledge extracted from conversations)
+CREATE TABLE IF NOT EXISTS agent_public_knowledge (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    knowledge_key VARCHAR(128) NOT NULL,
+    knowledge_title VARCHAR(255) NOT NULL,
+    knowledge_content LONGTEXT NOT NULL,
+    knowledge_json JSON,
+    knowledge_scope VARCHAR(50) DEFAULT 'global',
+    contributor_user_id BIGINT,
+    source_conversation_id BIGINT,
+    confidence_score DECIMAL(3, 2) DEFAULT 0.80,
+    usage_count INT NOT NULL DEFAULT 0,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (contributor_user_id) REFERENCES users(id) ON DELETE SET NULL,
+    FOREIGN KEY (source_conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL,
+    UNIQUE KEY uk_agent_public_knowledge_key (knowledge_key),
+    INDEX idx_agent_public_knowledge_scope (knowledge_scope),
+    INDEX idx_agent_public_knowledge_created_at (created_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Memory Change Log Table (audit trail for memory updates)
+CREATE TABLE IF NOT EXISTS agent_memory_change_logs (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    user_id BIGINT NOT NULL,
+    memory_scope VARCHAR(30) NOT NULL,
+    change_type VARCHAR(30) NOT NULL,
+    target_key VARCHAR(128),
+    source_conversation_id BIGINT,
+    trigger_query TEXT,
+    before_snapshot LONGTEXT,
+    after_snapshot LONGTEXT,
+    token_input INT,
+    token_output INT,
+    model_version VARCHAR(50),
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+    FOREIGN KEY (source_conversation_id) REFERENCES chat_conversations(id) ON DELETE SET NULL,
+    INDEX idx_agent_memory_change_logs_user_id (user_id),
+    INDEX idx_agent_memory_change_logs_scope (memory_scope),
+    INDEX idx_agent_memory_change_logs_created_at (created_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- Destinations Table
@@ -48,6 +108,7 @@ CREATE TABLE IF NOT EXISTS destinations (
     INDEX idx_country (country)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+
 -- Travel Plans Table
 CREATE TABLE IF NOT EXISTS travel_plans (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -56,7 +117,6 @@ CREATE TABLE IF NOT EXISTS travel_plans (
     destination_id BIGINT,
     destination_name VARCHAR(100),
     days INT NOT NULL,
-    itinerary LONGTEXT,
     estimated_budget DECIMAL(10, 2),
     ai_confidence_score DECIMAL(3, 2),
     interests VARCHAR(255),
@@ -71,6 +131,25 @@ CREATE TABLE IF NOT EXISTS travel_plans (
     INDEX idx_status (status)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- Plan Activities Table
+CREATE TABLE IF NOT EXISTS plan_activities (
+    id BIGINT PRIMARY KEY AUTO_INCREMENT,
+    plan_id BIGINT,
+    day_number INT NOT NULL,
+    activity_time VARCHAR(50),
+    location_name VARCHAR(255) NOT NULL,
+    latitude DECIMAL(10, 8),
+    longitude DECIMAL(11, 8),
+    description TEXT,
+    tips TEXT,
+    cost DECIMAL(10, 2) DEFAULT 0.00,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    FOREIGN KEY (plan_id) REFERENCES travel_plans(id) ON DELETE CASCADE,
+    INDEX idx_plan_id (plan_id),
+    INDEX idx_day_number (day_number)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Travel Plan Highlights Table
 CREATE TABLE IF NOT EXISTS plan_highlights (
     id BIGINT PRIMARY KEY AUTO_INCREMENT,
@@ -80,6 +159,7 @@ CREATE TABLE IF NOT EXISTS plan_highlights (
     FOREIGN KEY (plan_id) REFERENCES travel_plans(id) ON DELETE CASCADE,
     INDEX idx_plan_id (plan_id)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 
 -- AI Planning History Table (for tracking AI requests)
 CREATE TABLE IF NOT EXISTS ai_planning_history (
@@ -120,7 +200,7 @@ INSERT IGNORE INTO destinations (name, description, rating, review_count, image_
 ('新加坡', '狮城明珠。现代化城市，美食天堂，购物天地。', 4.8, 2050, 'https://picsum.photos/400/200?random=6', '新加坡', '亚洲');
 
 -- Community Posts Table
-CREATE TABLE community_posts (
+CREATE TABLE IF NOT EXISTS community_posts (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     title VARCHAR(255) NOT NULL,
     description TEXT,
@@ -158,7 +238,7 @@ INSERT IGNORE INTO community_posts (title, description, images, likes, comments,
 ('云南丽江｜古城之外的小众秘境', '大家都去古城，但其实丽江周边有很多更美的地方，比如白沙古镇、玉湖村', '["https://images.unsplash.com/photo-1528164344705-47542687000d?w=400&h=400&fit=crop"]', 1678, 112, 67, '丽江,小众,云南,秘境', 1, NOW(), NOW());
 
 -- Comments Table
-CREATE TABLE comments (
+CREATE TABLE IF NOT EXISTS comments (
     id BIGINT AUTO_INCREMENT PRIMARY KEY,
     post_id BIGINT NOT NULL,
     user_id BIGINT NOT NULL,

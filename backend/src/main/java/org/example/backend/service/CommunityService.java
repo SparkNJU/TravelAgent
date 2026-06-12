@@ -359,9 +359,23 @@ public class CommunityService {
         }
         sb.append("\n\n");
 
-        // 从itinerary中提取摘要
-        if (plan.getItinerary() != null && !plan.getItinerary().isEmpty()) {
-            String summary = extractSummaryFromMarkdown(plan.getItinerary());
+        // 从 activities 中提取摘要
+        if (plan.getActivities() != null && !plan.getActivities().isEmpty()) {
+            StringBuilder summarySb = new StringBuilder();
+            int currentDay = -1;
+            for (org.example.backend.entity.PlanActivity act : plan.getActivities()) {
+                if (act.getDayNumber() != currentDay) {
+                    currentDay = act.getDayNumber();
+                    summarySb.append("\n第").append(currentDay).append("天: ");
+                } else {
+                    summarySb.append(" -> ");
+                }
+                summarySb.append(act.getLocationName());
+            }
+            String summary = summarySb.toString().trim();
+            if (summary.length() > 200) {
+                summary = summary.substring(0, 200) + "...";
+            }
             sb.append(summary);
         } else {
             sb.append("使用AI旅行规划助手生成的专属行程攻略，包含详细的每日行程安排、景点推荐和美食推荐！");

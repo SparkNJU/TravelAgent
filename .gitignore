@@ -1,49 +1,76 @@
-# OS
+# ============================================================
+# OS generated files
+# ============================================================
 .DS_Store
 Thumbs.db
+Desktop.ini
 
-# IDE
+# ============================================================
+# IDE & Editor
+# ============================================================
 .idea/
 .vscode/
 *.iml
 .claude/
 
-# Logs
-*.log
-
-# Env files
+# ============================================================
+# Environment & Secrets
+# ============================================================
 .env
 .env.*
+!.env.example
 *.local
 
-# Java / Spring Boot
+# ============================================================
+# Logs
+# ============================================================
+*.log
+
+# ============================================================
+# Java / Spring Boot (backend/)
+# ============================================================
 target/
 **/target/
 *.class
+*.jar
+!**/mvnw
+*.war
 
-# Frontend / Vite
+# ============================================================
+# Frontend / Node (frontend/)
+# ============================================================
 node_modules/
 **/node_modules/
 dist/
 **/dist/
-*.vite/
+.vite/
 **/.vite/
 *.eslintcache
-**/.eslintcache
 
-# Python / Agent
-StudyAgent-main
-StudyAgent-main/__pycache__/
+# ============================================================
+# Python / Agent (agent/)
+# ============================================================
 __pycache__/
 **/__pycache__/
-StudyAgent-main/.pytest_cache/
-StudyAgent-main/.mypy_cache/
-StudyAgent-main/.ruff_cache/
-StudyAgent-main/*.py[cod]
-StudyAgent-main/embedding_cache.json
-StudyAgent-main/tmp/
+*.py[cod]
+*.pyo
+*.egg-info/
+.venv/
+**/.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+# Agent runtime caches
+.knowledge_embedding_cache.json
 
-# Archives / temp files
+# ============================================================
+# Temporary & Archive
+# ============================================================
 *.zip
+*.rar
+*.7z
 *.tmp
 *.temp
+*.swp
+*.swo
+*~
