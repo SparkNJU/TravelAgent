@@ -23,6 +23,8 @@
         <ChatInput
           :loading="loading"
           :compressing="compressing"
+          :canCompress="canCompress"
+          :compressHint="compressHint"
           v-model="selectedMode"
           :selectedModel="selectedModel"
           :arenaMode="arenaMode"
@@ -122,6 +124,8 @@
             compact
             :loading="loading"
             :compressing="compressing"
+            :canCompress="canCompress"
+            :compressHint="compressHint"
             :hasMessages="true"
             v-model="selectedMode"
             :selectedModel="selectedModel"
@@ -181,11 +185,27 @@ const syncingKnowledgeTurns = ref(new Set())
 
 // Token / compress state
 const TOKEN_STATUS_KEY = 'travel_token_status'
+const COMPRESS_KEEP_LAST = 6
 const tokenStatus = ref(null)
 const forceCompress = ref(false)
 const compressing = ref(false)
 const compressNotice = ref('')
 let compressNoticeTimer = null
+
+const compressibleMessages = computed(() => {
+  const messages = activeConversation.value?.messages || []
+  return messages.filter(m => m.role === 'user' || m.role === 'assistant')
+})
+
+const canCompress = computed(() => compressibleMessages.value.length > COMPRESS_KEEP_LAST)
+
+const compressHint = computed(() => {
+  const count = compressibleMessages.value.length
+  if (count <= COMPRESS_KEEP_LAST) {
+    return `历史消息不足，至少需要 ${COMPRESS_KEEP_LAST + 1} 条对话才能压缩`
+  }
+  return ''
+})
 
 const contextHealth = computed(() => {
   const ratio = tokenStatus.value?.utilization || 0
@@ -781,14 +801,14 @@ function triggerForceCompress() {
   const conv = activeConversation.value
   if (!conv) { setCompressNotice('没有可压缩的对话。', 'warn'); return }
   const raw = conv.messages.filter(m => m.role === 'user' || m.role === 'assistant')
-  if (raw.length < 3) { setCompressNotice('历史消息太少，无法压缩。', 'warn'); return }
+  if (raw.length <= COMPRESS_KEEP_LAST) { setCompressNotice(compressHint.value || `历史消息不足，至少需要 ${COMPRESS_KEEP_LAST + 1} 条对话才能压缩`, 'warn'); return }
   setCompressNotice('开始压缩历史消息...', 'info')
   compressing.value = true
-  fetch('/api/assistant/compress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatHistory: raw.map(m => ({ role: m.role, content: m.content || m.answer || '' })), keepLast: 6 }) })
+  fetch('/api/assistant/compress', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ chatHistory: raw.map(m => ({ role: m.role, content: m.content || m.answer || '' })), keepLast: COMPRESS_KEEP_LAST }) })
     .then(r => r.json()).then(d => {
       if (d.code !== 200 || !d.data) { setCompressNotice('压缩异常', 'error'); forceCompress.value = true; return }
       const s = (d.data.summary || '').trim(); if (!d.data.compressed || !s) { setCompressNotice('无可用的摘要', 'warn'); return }
-      const kl = d.data.keep_last || 6; conv.messages = [{ role: 'assistant', answer: '【对话摘要】\n' + s, events: [] }, ...conv.messages.slice(-kl)]
+      const kl = d.data.keep_last || COMPRESS_KEEP_LAST; conv.messages = [{ role: 'assistant', answer: '【对话摘要】\n' + s, events: [] }, ...conv.messages.slice(-kl)]
       conv.updatedAt = Date.now(); tokenStatus.value = buildTokenSnapshot(conv.messages)
       setCompressNotice('压缩完成', 'info'); persist(); nextTick(() => { const el = messagesRef.value; if (el) el.scrollTop = 0 })
     }).catch(e => { setCompressNotice('压缩失败: ' + e.message, 'error'); forceCompress.value = true })
