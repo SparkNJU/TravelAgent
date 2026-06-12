@@ -67,7 +67,7 @@
                     :key="j"
                     :type="ev.type"
                     :content="ev.content"
-                    :toolName="ev.metadata?.tool_name || ''"
+                    :toolName="ev.metadata?.tool || ev.metadata?.tool_name || ''"
                     :metadata="ev.metadata"
                   />
                   <MessageBubble
@@ -75,6 +75,15 @@
                     role="assistant"
                     :content="msg.answer"
                   />
+                  <div v-if="msg.answer && !loading" class="message-actions">
+                    <button
+                      class="sync-knowledge-btn"
+                      :disabled="isSyncingKnowledgeTurn(i)"
+                      @click="syncTurnToKnowledge(i)"
+                    >
+                      {{ isSyncingKnowledgeTurn(i) ? '同步中...' : '同步本轮到知识中心' }}
+                    </button>
+                  </div>
                 </template>
               </div>
             </template>
@@ -145,6 +154,7 @@ import ConversationSidebar from '../components/ai-plan/ConversationSidebar.vue'
 import UserConfirmBlock from '../components/ai-plan/UserConfirmBlock.vue'
 import SuggestionChips from '../components/ai-plan/SuggestionChips.vue'
 import ModelArenaCompare from '../components/ai-plan/ModelArenaCompare.vue'
+import { buildKnowledgeSyncPayload } from '../utils/knowledgeSync'
 
 const route = useRoute()
 const router = useRouter()
@@ -167,6 +177,7 @@ const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
 const navigatingToWorkbench = ref(false)
+const syncingKnowledgeTurns = ref(new Set())
 
 // Token / compress state
 const TOKEN_STATUS_KEY = 'travel_token_status'
@@ -695,6 +706,56 @@ async function goToWorkbench() {
   router.push('/plan-workbench?c=' + conv.backendId)
 }
 
+async function syncTurnToKnowledge(index) {
+  if (!activeConversation.value) return
+  const key = knowledgeTurnKey(index)
+  if (syncingKnowledgeTurns.value.has(key)) return
+  syncingKnowledgeTurns.value = new Set([...syncingKnowledgeTurns.value, key])
+  try {
+    const payload = buildKnowledgeSyncPayload(activeConversation.value, index, {
+      model: selectedModel.value,
+      mode: selectedMode.value,
+    })
+    if (!payload.userMessage && !payload.assistantAnswer) {
+      alert('没有可同步的对话内容')
+      return
+    }
+    const res = await fetch('/api/knowledge/sync-turn', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+    const data = await safeReadJson(res)
+    if (!res.ok) {
+      throw new Error(data?.message || `HTTP ${res.status}`)
+    }
+    alert(data.code === 200 ? '已同步到知识中心' : `同步失败: ${data.message}`)
+  } catch (error) {
+    console.error('同步知识中心失败:', error)
+    alert(`同步失败: ${error.message || '请稍后重试'}`)
+  } finally {
+    const next = new Set(syncingKnowledgeTurns.value)
+    next.delete(key)
+    syncingKnowledgeTurns.value = next
+  }
+}
+
+function knowledgeTurnKey(index) {
+  return `${activeConversation.value?.id || 'unknown'}:${index}`
+}
+
+function isSyncingKnowledgeTurn(index) {
+  return syncingKnowledgeTurns.value.has(knowledgeTurnKey(index))
+}
+
+async function safeReadJson(response) {
+  try {
+    return await response.json()
+  } catch {
+    return { message: `HTTP ${response.status}` }
+  }
+}
+
 function handleUpdateItinerary(updated) {
   const result = activeConversation.value?.result
   if (result) { setResult({ ...result, itinerary: updated }) }
@@ -756,6 +817,33 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   flex-direction: column;
   min-width: 0;
   height: 100%;
+}
+
+.message-actions {
+  display: flex;
+  justify-content: flex-start;
+  margin: 8px 0 14px;
+}
+
+.sync-knowledge-btn {
+  border: 1px solid var(--color-border);
+  background: var(--color-surface);
+  color: var(--color-body);
+  border-radius: 999px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: all 0.18s ease;
+}
+
+.sync-knowledge-btn:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.sync-knowledge-btn:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
 }
 
 .empty-state {
