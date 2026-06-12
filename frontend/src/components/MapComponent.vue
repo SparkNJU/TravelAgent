@@ -89,7 +89,7 @@ const mapElement = ref(null)
 const selectedIndex = ref(0)
 const selectedLocation = ref(null)
 const searchQuery = ref('')
-const panelCollapsed = ref(true)
+const panelCollapsed = ref(false)
 const pickingActive = ref(false)
 watch(() => props.pickingMode, (v) => { pickingActive.value = v })
 

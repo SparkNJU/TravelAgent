@@ -162,7 +162,7 @@ const loading = ref(false)
 const messagesRef = ref(null)
 const activeController = ref(null)
 const selectedMode = ref('agent')
-const selectedModel = ref('deepseek-chat')
+const selectedModel = ref('qwen3.6-plus')
 const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
@@ -428,8 +428,10 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
   formData.append('model', selectedModel.value)
 
   // Append history (excluding the two we just added for this current turn)
+  // If a plan was already generated, start fresh (don't carry old context)
   const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
-  const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
+  const relevantHistory = activeConversation.value.result ? [] : historyRaw.slice(-10)
+  const historyToSent = relevantHistory.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
   formData.append('chatHistoryJson', JSON.stringify(historyToSent))
 
   if (forceCompress.value) { formData.append('forceCompress', 'true'); forceCompress.value = false }
@@ -458,6 +460,9 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
         msg.events.push({ type: 'ask_user', content: event.content, metadata: event.metadata })
       } else if (event.type === 'suggestions') {
         activeSuggestions.value = event.metadata?.questions || []
+      } else if (event.type === 'action' && event.metadata?.tool === 'finish') {
+        msg._planFinished = true
+        msg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
       } else if (['thought', 'action', 'observation', 'reflection'].includes(event.type)) {
         msg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
       } else if (event.type === 'error') {
@@ -486,7 +491,10 @@ async function finishStream() {
         setResult(parsed)
       }
     } catch {
-      setResult({ markdown: msg.answer, source: 'markdown' })
+      // Only show workbench button when finish tool was called (actual travel plan)
+      if (msg._planFinished) {
+        setResult({ markdown: msg.answer, source: 'markdown' })
+      }
     }
   }
   // Sync first, then show button — so backendId is ready on click
@@ -544,8 +552,10 @@ async function handleAutoSend({ query, file }) {
   formData.append('query', query)
   formData.append('userId', localStorage.getItem('userId') || '1')
 
+  // If a plan was already generated, start fresh (don't carry old context)
   const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
-  const historyToSent = historyRaw.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
+  const relevantHistory = activeConversation.value.result ? [] : historyRaw.slice(-10)
+  const historyToSent = relevantHistory.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
   formData.append('chatHistoryJson', JSON.stringify(historyToSent))
 
   if (forceCompress.value) { formData.append('forceCompress', 'true'); forceCompress.value = false }
