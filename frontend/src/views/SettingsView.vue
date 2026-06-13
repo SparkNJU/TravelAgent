@@ -355,9 +355,12 @@
 </template>
 
 <script setup>
-import { ref, reactive, onMounted } from 'vue'
+import { ref, reactive, computed, onMounted } from 'vue'
 import SvgIcon from '../components/SvgIcon.vue'
+import { useAuth } from '../composables/useAuth'
 
+const { userId, isLoggedIn } = useAuth()
+const currentUserId = computed(() => Number(userId.value) || null)
 const formatDescription = (desc) => {
   if (!desc) return ''
   let cleaned = desc.trim()
@@ -371,8 +374,6 @@ const formatDescription = (desc) => {
   }
   return cleaned
 }
-
-const userId = 1 // Standard local user ID
 
 // Loading States
 const loadingSkills = ref(false)
@@ -416,7 +417,7 @@ const memoryForm = reactive({
 const loadSkills = async () => {
   loadingSkills.value = true
   try {
-    const res = await fetch(`/api/skills?userId=${userId}`)
+    const res = await fetch(`/api/skills?userId=${currentUserId.value}`)
     const data = await res.json()
     if (data.code === 200) {
       const all = data.data || []
@@ -433,10 +434,20 @@ const loadSkills = async () => {
 const loadMemories = async () => {
   loadingMemories.value = true
   try {
-    const res = await fetch(`/api/memories?userId=${userId}`)
+    const res = await fetch(`/api/agent/memory/${currentUserId.value}`)
     const data = await res.json()
     if (data.code === 200) {
-      memories.value = data.data || []
+      const memory = data.data?.memory
+      if (memory?.memoryJson) {
+        try {
+          const parsed = JSON.parse(memory.memoryJson)
+          memories.value = Array.isArray(parsed) ? parsed : []
+        } catch {
+          memories.value = []
+        }
+      } else {
+        memories.value = []
+      }
     }
   } catch (e) {
     console.error("加载偏好记忆失败:", e)
@@ -455,7 +466,7 @@ const toggleSkill = async (skill) => {
   updatingSkill.value = skill.id
   const targetStatus = !skill.isEnabled
   try {
-    const res = await fetch(`/api/skills/${skill.id}/toggle?userId=${userId}&isEnabled=${targetStatus}`, {
+    const res = await fetch(`/api/skills/${skill.id}/toggle?userId=${currentUserId.value}&isEnabled=${targetStatus}`, {
       method: 'PUT'
     })
     const data = await res.json()
@@ -511,7 +522,7 @@ const confirmDeleteSkill = async (skill) => {
     return
   }
   try {
-    const res = await fetch(`/api/skills/${skill.id}?userId=${userId}`, {
+    const res = await fetch(`/api/skills/${skill.id}?userId=${currentUserId.value}`, {
       method: 'DELETE'
     })
     const data = await res.json()
@@ -528,7 +539,7 @@ const confirmDeleteSkill = async (skill) => {
 const saveSkill = async () => {
   savingSkill.value = true
   try {
-    const url = isEditSkill.value ? `/api/skills/${skillForm.id}?userId=${userId}` : `/api/skills?userId=${userId}`
+    const url = isEditSkill.value ? `/api/skills/${skillForm.id}?userId=${currentUserId.value}` : `/api/skills?userId=${currentUserId.value}`
     const method = isEditSkill.value ? 'PUT' : 'POST'
     
     if (!isEditSkill.value) {
@@ -564,20 +575,37 @@ const saveSkill = async () => {
 
 // ------------------- MEMORY ACTIONS -------------------
 
+const syncMemoriesToLongTermMemory = async () => {
+  const userFactsJson = JSON.stringify(memories.value)
+  const memoryMarkdown = memories.value
+    .filter(m => m.isEnabled)
+    .map(m => `- ${m.content}`)
+    .join('\n')
+
+  const res = await fetch('/api/agent/memory/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: currentUserId.value,
+      userFactsJson,
+      memoryMarkdown: memoryMarkdown ? `# 用户偏好记忆\n\n${memoryMarkdown}` : ''
+    })
+  })
+  const data = await res.json()
+  if (data.code !== 200) {
+    throw new Error(data.message || '同步长期记忆失败')
+  }
+}
+
 const toggleMemory = async (mem) => {
   updatingMemory.value = mem.id
   const targetStatus = !mem.isEnabled
   try {
-    const res = await fetch(`/api/memories/${mem.id}/toggle?userId=${userId}&isEnabled=${targetStatus}`, {
-      method: 'PUT'
-    })
-    const data = await res.json()
-    if (data.code === 200) {
-      mem.isEnabled = targetStatus
-    } else {
-      alert("修改状态失败: " + data.message)
-    }
+    mem.isEnabled = targetStatus
+    await syncMemoriesToLongTermMemory()
   } catch (e) {
+    mem.isEnabled = !targetStatus
+    alert("修改状态失败: " + e.message)
     console.error("切换记忆状态失败:", e)
   }
   updatingMemory.value = null
@@ -607,16 +635,10 @@ const confirmDeleteMemory = async (mem) => {
     return
   }
   try {
-    const res = await fetch(`/api/memories/${mem.id}?userId=${userId}`, {
-      method: 'DELETE'
-    })
-    const data = await res.json()
-    if (data.code === 200) {
-      memories.value = memories.value.filter(m => m.id !== mem.id)
-    } else {
-      alert("删除记忆失败: " + data.message)
-    }
+    memories.value = memories.value.filter(m => m.id !== mem.id)
+    await syncMemoriesToLongTermMemory()
   } catch (e) {
+    alert("删除记忆失败: " + e.message)
     console.error("删除记忆失败:", e)
   }
 }
@@ -624,28 +646,29 @@ const confirmDeleteMemory = async (mem) => {
 const saveMemory = async () => {
   savingMemory.value = true
   try {
-    const url = isEditMemory.value ? `/api/memories/${memoryForm.id}?userId=${userId}` : `/api/memories?userId=${userId}`
-    const method = isEditMemory.value ? 'PUT' : 'POST'
-
-    const res = await fetch(url, {
-      method: method,
-      headers: {
-        'Content-Type': 'application/json'
-      },
-      body: JSON.stringify({
-        content: memoryForm.content,
-        isEnabled: memoryForm.isEnabled
-      })
-    })
-
-    const data = await res.json()
-    if (data.code === 200) {
-      memoryModalVisible.value = false
-      await loadMemories()
+    if (isEditMemory.value) {
+      const idx = memories.value.findIndex(m => m.id === memoryForm.id)
+      if (idx !== -1) {
+        memories.value[idx] = {
+          ...memories.value[idx],
+          content: memoryForm.content,
+          isEnabled: memoryForm.isEnabled
+        }
+      }
     } else {
-      alert("保存记忆失败: " + data.message)
+      const newCard = {
+        id: Date.now(),
+        content: memoryForm.content,
+        isEnabled: memoryForm.isEnabled,
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+      memories.value.push(newCard)
     }
+    await syncMemoriesToLongTermMemory()
+    memoryModalVisible.value = false
   } catch (e) {
+    alert("保存记忆失败: " + e.message)
     console.error("保存记忆失败:", e)
   }
   savingMemory.value = false

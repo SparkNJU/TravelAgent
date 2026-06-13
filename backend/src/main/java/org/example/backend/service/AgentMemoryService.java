@@ -151,14 +151,52 @@ public class AgentMemoryService {
         String existingFacts = memory != null ? normalizeJson(memory.getMemoryJson()) : null;
         boolean factsChanged = normalizedFacts != null && !normalizedFacts.isBlank()
                 && (existingFacts == null || !existingFacts.equals(normalizedFacts));
+        boolean isAgentSync = request.getTriggerQuery() != null && !request.getTriggerQuery().isBlank()
+            || request.getConversationSummary() != null && !request.getConversationSummary().isBlank()
+            || request.getSourceConversationId() != null;
 
         if (memory == null && hasAnyMemoryPayload) {
             memory = new UserAgentMemory();
             memory.setUserId(userId);
         }
 
-        if (memory != null && (factsChanged || existingMemoryOpt.isEmpty())) {
-            memory.setMemoryMarkdown(buildMemoryMarkdown(username, request));
+        if (memory != null && isAgentSync) {
+            List<Map<String, Object>> newFacts = parseFactArray(normalizedFacts);
+            String currentMarkdown = memory.getMemoryMarkdown();
+            if (currentMarkdown == null) currentMarkdown = "";
+            StringBuilder mdBuilder = new StringBuilder(currentMarkdown);
+            if (!currentMarkdown.isBlank() && !currentMarkdown.endsWith("\n")) {
+                mdBuilder.append("\n");
+            }
+            boolean hasNewContent = false;
+            for (Map<String, Object> fact : newFacts) {
+                String value = (String) fact.get("value");
+                if (value == null || value.isBlank()) continue;
+                if (!currentMarkdown.contains(value)) {
+                    if (!hasNewContent) {
+                        mdBuilder.append("\n### 对话提取\n");
+                        hasNewContent = true;
+                    }
+                    mdBuilder.append("- ").append(value).append("\n");
+                }
+            }
+            if (hasNewContent || existingMemoryOpt.isEmpty()) {
+                memory.setMemoryMarkdown(mdBuilder.toString().trim());
+                memory.setSourceConversationId(request.getSourceConversationId());
+                memory.setSummarySource("conversation");
+                if (request.getModelVersion() != null && !request.getModelVersion().isBlank()) {
+                    memory.setMemoryVersion(request.getModelVersion());
+                }
+                userAgentMemoryRepository.save(memory);
+                memoryChanged = true;
+            }
+        } else if (memory != null && (factsChanged || existingMemoryOpt.isEmpty())) {
+            String frontendMarkdown = request.getMemoryMarkdown();
+            if (frontendMarkdown != null && !frontendMarkdown.isBlank()) {
+                memory.setMemoryMarkdown(frontendMarkdown);
+            } else {
+                memory.setMemoryMarkdown(buildMemoryMarkdown(username, request));
+            }
             memory.setMemoryJson(normalizedFacts != null && !normalizedFacts.isBlank() ? normalizedFacts : existingFacts);
             memory.setSourceConversationId(request.getSourceConversationId());
             memory.setSummarySource("conversation");
@@ -336,6 +374,98 @@ public class AgentMemoryService {
         }
         JsonNode publicKnowledge = readJsonNode(request.getPublicKnowledgeJson());
         return publicKnowledge != null && publicKnowledge.isArray() && publicKnowledge.size() > 0;
+    }
+
+    private List<Map<String, Object>> parseCardArray(String json) {
+        List<Map<String, Object>> cards = new ArrayList<>();
+        if (json == null || json.isBlank()) return cards;
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            if (node != null && node.isArray()) {
+                for (JsonNode item : node) {
+                    if (!item.has("content")) continue;
+                    Map<String, Object> card = new HashMap<>();
+                    card.put("id", item.has("id") ? item.get("id").asLong() : System.currentTimeMillis());
+                    card.put("content", item.get("content").asText());
+                    card.put("isEnabled", item.has("isEnabled") ? item.get("isEnabled").asBoolean() : true);
+                    card.put("createdAt", item.has("createdAt") ? item.get("createdAt").asText() : java.time.LocalDateTime.now().toString());
+                    card.put("updatedAt", item.has("updatedAt") ? item.get("updatedAt").asText() : java.time.LocalDateTime.now().toString());
+                    cards.add(card);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse card array: {}", e.getMessage());
+        }
+        return cards;
+    }
+
+    private List<Map<String, Object>> parseFactArray(String json) {
+        List<Map<String, Object>> facts = new ArrayList<>();
+        if (json == null || json.isBlank()) return facts;
+        try {
+            JsonNode node = objectMapper.readTree(json);
+            if (node != null && node.isArray()) {
+                for (JsonNode item : node) {
+                    if (!item.has("value")) continue;
+                    Map<String, Object> fact = new HashMap<>();
+                    fact.put("key", item.has("key") ? item.get("key").asText() : "fact");
+                    fact.put("value", item.get("value").asText());
+                    fact.put("evidence", item.has("evidence") ? item.get("evidence").asText() : "");
+                    fact.put("confidence", item.has("confidence") ? item.get("confidence").asDouble() : 0.6);
+                    facts.add(fact);
+                }
+            }
+        } catch (Exception e) {
+            log.warn("Failed to parse fact array: {}", e.getMessage());
+        }
+        return facts;
+    }
+
+    private boolean mergeFactsIntoCardArray(List<Map<String, Object>> cards, List<Map<String, Object>> facts) {
+        boolean appended = false;
+        long baseId = System.currentTimeMillis();
+        int counter = 0;
+        for (Map<String, Object> fact : facts) {
+            String value = (String) fact.get("value");
+            if (value == null || value.isBlank()) continue;
+            boolean exists = false;
+            String valueNorm = value.replaceAll("\\s+", "").toLowerCase();
+            for (Map<String, Object> card : cards) {
+                String content = (String) card.get("content");
+                if (content == null) continue;
+                if (content.replaceAll("\\s+", "").toLowerCase().contains(valueNorm)
+                    || valueNorm.contains(content.replaceAll("\\s+", "").toLowerCase())) {
+                    exists = true;
+                    break;
+                }
+            }
+            if (!exists) {
+                Map<String, Object> newCard = new HashMap<>();
+                newCard.put("id", baseId + counter++);
+                newCard.put("content", value);
+                newCard.put("isEnabled", true);
+                newCard.put("createdAt", java.time.LocalDateTime.now().toString());
+                newCard.put("updatedAt", java.time.LocalDateTime.now().toString());
+                cards.add(newCard);
+                appended = true;
+            }
+        }
+        return appended || facts.isEmpty();
+    }
+
+    private String buildUserPreferenceMarkdown(List<Map<String, Object>> cards) {
+        List<String> lines = new ArrayList<>();
+        lines.add("# 用户偏好记忆");
+        lines.add("");
+        for (Map<String, Object> card : cards) {
+            boolean enabled = card.get("isEnabled") instanceof Boolean
+                ? (Boolean) card.get("isEnabled") : true;
+            String content = (String) card.get("content");
+            if (content != null && !content.isBlank()) {
+                lines.add((enabled ? "- " : "- ~~") + content + (enabled ? "" : "~~"));
+            }
+        }
+        return String.join("\n", lines);
     }
 
     private String text(JsonNode node, String fieldName, String defaultValue) {

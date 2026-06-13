@@ -32,6 +32,8 @@ class AgentChatRequest(BaseModel):
     file_mime_type: str | None = None
     chat_history: List[ChatMessage] = []
     force_compress: bool = False
+    web_search_enabled: bool = True
+    knowledge_search_enabled: bool = True
 
 
 class ParsePlanRequest(BaseModel):

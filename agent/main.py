@@ -82,10 +82,18 @@ _tool_registry.register(ActivateSkillTool(user_id=1))
 _tool_registry.register(CreateSkillTool(user_id=1))
 
 
-def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_suggestions: bool = True, user_id: int = 1) -> ToolRegistry:
+def build_tool_registry(
+    llm: LLMService,
+    allow_user_confirm: bool = True,
+    allow_suggestions: bool = True,
+    user_id: int = 1,
+    web_search_enabled: bool = True,
+    knowledge_search_enabled: bool = True,
+) -> ToolRegistry:
     registry = ToolRegistry()
-    registry.register(WebSearchTool(_serper))
-    if config.knowledge.enabled:
+    if web_search_enabled:
+        registry.register(WebSearchTool(_serper))
+    if knowledge_search_enabled and config.knowledge.enabled:
         registry.register(KnowledgeSearchTool(_knowledge_client, default_top_k=config.knowledge.top_k))
     registry.register(FileParserTool())
     if allow_user_confirm:
@@ -141,7 +149,12 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
             max_tokens=config.llm.max_tokens,
         )
     planner = MetaPlanner(llm)
-    tool_registry = build_tool_registry(llm, allow_user_confirm, allow_suggestions, user_id=request.user_id)
+    tool_registry = build_tool_registry(
+        llm, allow_user_confirm, allow_suggestions,
+        user_id=request.user_id,
+        web_search_enabled=request.web_search_enabled,
+        knowledge_search_enabled=request.knowledge_search_enabled,
+    )
     agent = ReActAgent(
         llm=llm,
         tool_registry=tool_registry,

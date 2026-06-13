@@ -156,6 +156,9 @@ public class TripAssistantService {
                     payload.put("temperature", req.getTemperature());
                 }
 
+                payload.put("web_search_enabled", req.isWebSearchEnabled());
+                payload.put("knowledge_search_enabled", req.isKnowledgeSearchEnabled());
+
                 if (req.getChatHistory() != null && !req.getChatHistory().isEmpty()) {
                     payload.put("chat_history", req.getChatHistory());
                 } else if (req.getChatHistoryJson() != null && !req.getChatHistoryJson().isEmpty()) {
@@ -383,6 +386,9 @@ public class TripAssistantService {
         if (req.getTemperature() != null) {
             payload.put("temperature", req.getTemperature());
         }
+
+        payload.put("web_search_enabled", req.isWebSearchEnabled());
+        payload.put("knowledge_search_enabled", req.isKnowledgeSearchEnabled());
 
         if (req.getChatHistory() != null && !req.getChatHistory().isEmpty()) {
             payload.put("chat_history", req.getChatHistory());
