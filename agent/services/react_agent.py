@@ -170,16 +170,24 @@ class ReActAgent:
             import os
             import requests
             backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
-            res = requests.get(f"{backend_url}/api/memories/active", params={"userId": user_id}, timeout=3)
+            res = requests.get(f"{backend_url}/api/agent/memory/{user_id}", timeout=3)
             if res.status_code == 200:
-                memories_data = res.json().get("data", [])
-                if memories_data and isinstance(memories_data, list):
+                body = res.json()
+                memory_obj = body.get("data", {}).get("memory")
+                if memory_obj and isinstance(memory_obj, dict):
+                    memory_json_str = memory_obj.get("memoryJson") or "[]"
                     active_memories_desc = "\n\nYou have access to the user's personal preferences and profile details (Personal Memories). You MUST strictly respect and satisfy all of these conditions during travel planning without asking the user about them:\nUser Personal Preferences/Memories:\n"
-                    for m in memories_data:
-                        if m and isinstance(m, dict):
-                            content = m.get("content")
-                            if content:
-                                active_memories_desc += f"- {content}\n"
+                    try:
+                        cards = json.loads(memory_json_str) if isinstance(memory_json_str, str) else memory_json_str
+                        if isinstance(cards, list):
+                            for card in cards:
+                                if isinstance(card, dict):
+                                    content = card.get("content", "")
+                                    enabled = card.get("isEnabled", True)
+                                    if content and enabled:
+                                        active_memories_desc += f"- {content}\n"
+                    except Exception:
+                        pass
                     system_prompt += active_memories_desc
         except Exception:
             pass

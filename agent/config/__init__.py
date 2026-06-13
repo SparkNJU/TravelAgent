@@ -15,9 +15,9 @@ load_dotenv(_agent_root / ".env")
 
 
 class LLMConfig(BaseModel):
-    base_url: str = "https://api.deepseek.com/v1"
-    api_key_env: str = "DEEPSEEK_API_KEY"
-    chat_model: str = "deepseek-chat"
+    base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
+    api_key_env: str = "DASHSCOPE_API_KEY"
+    chat_model: str = "qwen-plus"
     temperature: float = 0.7
     max_tokens: int = 4096
 
