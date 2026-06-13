@@ -14,6 +14,10 @@ You are a travel planning assistant agent.
 
 You help users create detailed travel itineraries.
 
+CRITICAL: You MUST respond in Chinese (简体中文) at all times. Never use English.
+
+Today's date is {current_date}. Use this as the reference date for all travel planning.
+
 =========================
 LONG-TERM USER MEMORY
 =========================
@@ -53,6 +57,11 @@ When travel planning is needed and you have gathered enough information:
 
 For casual conversation, greetings, memory updates, or profile information:
 - You may respond naturally without tool calls.
+
+When you need to ask the user clarifying questions about their travel preferences:
+- You MUST call the `ask_user` tool with the 'message' and 'questions' parameters
+- Each question MUST include at least 2 predefined options
+- Do NOT write questions as text in your response — always use ask_user
 
 Important:
 - Always search for up-to-date information
@@ -141,9 +150,11 @@ class ReActAgent:
         cleaned_memory = self._sanitize_memory(
             user_memory_markdown
         )
+        from datetime import date
         system_prompt = _SYSTEM_PROMPT_TEMPLATE.format(
             tools=tool_descriptions,
             user_memory=cleaned_memory or "(empty)",
+            current_date=date.today().strftime("%Y年%m月%d日"),
         )
 
         # Level 1: Fetch active skills from backend and append to system prompt
@@ -253,21 +264,22 @@ class ReActAgent:
             if msg.content:
                 yield self._emit("thought", msg.content, {"step": step})
 
-            # No tool call -> treat as final conversational answer
+            # No tool call -> short = casual chat, long = prompt model to use tools
             if not msg.tool_calls:
-                if msg.content and msg.content.strip():
-                    yield self._emit(
-                        "answer",
-                        msg.content,
-                        {"step": step, "mode": "natural_exit"},
-                    )
+                content = (msg.content or "").strip()
+                if content and len(content) < 200:
+                    yield self._emit("answer", content, {"step": step, "mode": "natural_exit"})
                     yield self._emit("done", "", {})
                     return
+                # Add assistant message so model sees it already said this
+                messages.append({"role": "assistant", "content": content})
+                messages.append({"role": "system", "content": "You must call a tool (ask_user or finish) to proceed. Do not repeat the same text."})
                 continue
 
             # ACT — validate arguments and collect tool calls to process
             msg_dict = msg.model_dump()
             missing_finish_answer = False
+            bad_ask_user = False
             tool_call_items = []  # (tc_dict, tool_name, arguments)
 
             for tc_dict in msg_dict.get("tool_calls", []):
@@ -291,11 +303,19 @@ class ReActAgent:
             for tc_dict, tool_name, arguments in tool_call_items:
                 if tool_name == "finish" and (not arguments or not str(arguments.get("answer", "")).strip()):
                     missing_finish_answer = True
-                    # Add a dummy tool result to satisfy API pairing requirement
                     tool_results.append({
                         "role": "tool",
                         "tool_call_id": tc_dict["id"],
                         "content": json.dumps({"status": "error", "message": "Missing answer field"}, ensure_ascii=False),
+                    })
+                    continue
+
+                if tool_name == "ask_user" and (not arguments or not arguments.get("questions")):
+                    bad_ask_user = True
+                    tool_results.append({
+                        "role": "tool",
+                        "tool_call_id": tc_dict["id"],
+                        "content": json.dumps({"status": "error", "message": "Missing questions field"}, ensure_ascii=False),
                     })
                     continue
 
@@ -397,7 +417,12 @@ class ReActAgent:
             messages.append(assistant_msg)
             messages.extend(tool_results)
 
-            if missing_finish_answer:
+            if missing_finish_answer or bad_ask_user:
+                if bad_ask_user:
+                    messages.append({
+                        "role": "system",
+                        "content": "ask_user was called without questions. You must provide at least one question with 2+ options.",
+                    })
                 continue
 
         yield self._emit(
