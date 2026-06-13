@@ -2,7 +2,7 @@
   <div class="skills-page">
     <header class="skills-header">
       <div class="header-left">
-        <h1>技能工坊 <span class="subtitle">Skill Studio</span></h1>
+        <h1>技能工坊</h1>
         <p class="description">在此动态开启或添加特殊的 AI 规划技能。技能基于 Anthropic Skills 范式，赋予 Agent 专属领域的决策与推理本领。</p>
       </div>
       <button class="create-btn" @click="openCreateModal">
@@ -17,11 +17,44 @@
     </div>
 
     <div v-else class="skills-content">
+      <!-- Meta Controller Skill -->
+      <section v-if="creatorSkill" class="skills-section meta-section">
+        <h2 class="section-title">
+          <SvgIcon name="sparkles" :size="18" />
+          元智能技能
+        </h2>
+        <div class="meta-skill-banner">
+          <div class="meta-banner-left">
+            <div class="meta-icon-wrap">
+              <SvgIcon name="wrench" :size="20" />
+            </div>
+            <div class="meta-info">
+              <div class="meta-header-row">
+                <h3>{{ creatorSkill.title }}</h3>
+              </div>
+              <p class="skill-desc"><strong>激活条件：</strong>{{ formatDescription(creatorSkill.description) }}</p>
+            </div>
+          </div>
+          <div class="meta-banner-right">
+            <button class="view-btn" @click="viewSkill(creatorSkill)">查看指令手册</button>
+            <label class="switch">
+              <input 
+                type="checkbox" 
+                :checked="creatorSkill.isEnabled" 
+                @change="toggleSkill(creatorSkill)"
+                :disabled="updating === creatorSkill.id"
+              />
+              <span class="slider round"></span>
+            </label>
+          </div>
+        </div>
+      </section>
+
       <!-- System Built-in Skills -->
       <section class="skills-section">
         <h2 class="section-title">
           <SvgIcon name="brain" :size="18" />
-          系统内置技能 (Built-in)
+          系统内置技能
         </h2>
         <div class="skills-grid">
           <div 
@@ -36,7 +69,6 @@
               </span>
               <div class="skill-meta">
                 <h3>{{ skill.title }}</h3>
-                <span class="skill-name-tag">@{{ skill.name }}</span>
               </div>
               <label class="switch">
                 <input 
@@ -48,7 +80,7 @@
                 <span class="slider round"></span>
               </label>
             </div>
-            <p class="skill-desc">{{ skill.description }}</p>
+            <p class="skill-desc"><strong>激活条件：</strong>{{ formatDescription(skill.description) }}</p>
             <div class="card-footer">
               <span class="skill-type">通用推荐</span>
               <button class="view-btn" @click="viewSkill(skill)">查看指令手册</button>
@@ -61,7 +93,7 @@
       <section class="skills-section">
         <h2 class="section-title">
           <SvgIcon name="wrench" :size="18" />
-          我的自定义技能 (Custom)
+          我的自定义技能
         </h2>
         <div v-if="customSkills.length === 0" class="empty-custom-card" @click="openCreateModal">
           <div class="empty-icon-wrap">
@@ -83,7 +115,6 @@
               </span>
               <div class="skill-meta">
                 <h3>{{ skill.title }}</h3>
-                <span class="skill-name-tag">@{{ skill.name }}</span>
               </div>
               <label class="switch">
                 <input 
@@ -95,7 +126,7 @@
                 <span class="slider round"></span>
               </label>
             </div>
-            <p class="skill-desc">{{ skill.description }}</p>
+            <p class="skill-desc"><strong>激活条件：</strong>{{ formatDescription(skill.description) }}</p>
             <div class="card-footer">
               <button class="delete-btn" @click="confirmDelete(skill)">
                 <SvgIcon name="trash" :size="14" />
@@ -132,7 +163,7 @@
               />
             </div>
             <div class="form-group flex-1">
-              <label>唯一英文标识 (Name)</label>
+              <label>唯一英文标识</label>
               <input 
                 v-model="form.name" 
                 class="form-input" 
@@ -145,17 +176,17 @@
           </div>
 
           <div class="form-group">
-            <label>触发场景描述 (Description)</label>
+            <label>激活条件</label>
             <textarea 
               v-model="form.description" 
               class="form-textarea desc-textarea" 
-              placeholder="极度关键！告知 Agent 应该在什么对话场景下触发加载此技能。例如：当用户提到度蜜月、情侣游、求婚或浪漫旅游时触发。"
+              placeholder="极度关键！告知 Agent 应该在什么对话场景下激活此技能。例如：用户提到度蜜月、情侣游、求婚或浪漫旅游。"
               required
             ></textarea>
           </div>
 
           <div class="form-group">
-            <label>技能指令手册 (SKILL.md Instructions)</label>
+            <label>技能指令手册</label>
             <textarea 
               v-model="form.instructions" 
               class="form-textarea code-textarea" 
@@ -191,7 +222,7 @@
               <strong>唯一标识：</strong> <code>@{{ selectedSkill?.name }}</code>
             </div>
             <div class="meta-item">
-              <strong>触发条件：</strong> {{ selectedSkill?.description }}
+              <strong>激活条件：</strong> {{ formatDescription(selectedSkill?.description) }}
             </div>
           </div>
           <div class="instructions-content">
@@ -207,12 +238,27 @@
 import { ref, reactive, onMounted } from 'vue'
 import SvgIcon from '../components/SvgIcon.vue'
 
+const formatDescription = (desc) => {
+  if (!desc) return ''
+  let cleaned = desc.trim()
+  if (cleaned.startsWith('当') && (cleaned.endsWith('时激活。') || cleaned.endsWith('时激活') || cleaned.endsWith('时触发。') || cleaned.endsWith('时触发'))) {
+    cleaned = cleaned.substring(1)
+    if (cleaned.endsWith('时激活。') || cleaned.endsWith('时触发。')) {
+      cleaned = cleaned.substring(0, cleaned.length - 4)
+    } else {
+      cleaned = cleaned.substring(0, cleaned.length - 3)
+    }
+  }
+  return cleaned
+}
+
 const userId = 1 // Standard local user
 
 const loading = ref(false)
 const saving = ref(false)
 const updating = ref(null)
 
+const creatorSkill = ref(null)
 const systemSkills = ref([])
 const customSkills = ref([])
 
@@ -237,7 +283,8 @@ const loadSkills = async () => {
     const data = await res.json()
     if (data.code === 200) {
       const all = data.data || []
-      systemSkills.value = all.filter(s => s.userId === null)
+      creatorSkill.value = all.find(s => s.name === 'skill-creator')
+      systemSkills.value = all.filter(s => s.userId === null && s.name !== 'skill-creator')
       customSkills.value = all.filter(s => s.userId !== null)
     }
   } catch (e) {
@@ -934,5 +981,89 @@ input:checked + .slider:before {
 @keyframes scaleIn {
   from { transform: scale(0.95); opacity: 0; }
   to { transform: scale(1); opacity: 1; }
+}
+
+/* Meta Skill Banner Styles */
+.meta-section {
+  margin-bottom: 10px;
+}
+
+.meta-skill-banner {
+  background: linear-gradient(135deg, rgba(230, 57, 70, 0.04), rgba(69, 123, 157, 0.04));
+  border: 1px solid rgba(230, 57, 70, 0.15);
+  border-radius: var(--radius-card);
+  padding: 20px 24px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 20px;
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 4px 20px rgba(230, 57, 70, 0.02);
+}
+
+.meta-skill-banner::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--gradient-brand);
+}
+
+.meta-banner-left {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  flex: 1;
+}
+
+.meta-icon-wrap {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: rgba(230, 57, 70, 0.08);
+  color: var(--color-red-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.meta-info {
+  flex: 1;
+}
+
+.meta-header-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.meta-header-row h3 {
+  font-size: 15px;
+  color: var(--color-title);
+  margin: 0;
+  font-weight: 700;
+}
+
+.meta-banner-right {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+@media (max-width: 600px) {
+  .meta-skill-banner {
+    flex-direction: column;
+    align-items: stretch;
+    padding: 16px;
+  }
+  .meta-banner-right {
+    justify-content: space-between;
+    margin-top: 10px;
+  }
 }
 </style>

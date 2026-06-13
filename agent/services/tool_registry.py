@@ -351,3 +351,85 @@ class ActivateSkillTool(Tool):
         except Exception as e:
             return json.dumps({"status": "error", "message": f"Failed to activate skill: {str(e)}"}, ensure_ascii=False)
 
+
+class CreateSkillTool(Tool):
+    def __init__(self, user_id: int = 1) -> None:
+        self._user_id = user_id
+
+    @property
+    def name(self) -> str:
+        return "create_skill"
+
+    @property
+    def description(self) -> str:
+        return (
+            "Create a new custom skill for the travel assistant. "
+            "Use this tool when the user wants to add, create, or register a new skill."
+        )
+
+    @property
+    def parameters_schema(self) -> dict:
+        return {
+            "type": "object",
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "description": "Unique lowercase English identifier of the skill, words separated by hyphens (e.g., 'food-expert', 'history-guide')."
+                },
+                "title": {
+                    "type": "string",
+                    "description": "Human-readable name of the skill in Chinese (e.g., '美食寻味专家', '历史讲解助手')."
+                },
+                "description": {
+                    "type": "string",
+                    "description": "Short description of when this skill should be activated (e.g., '当用户想了解当地小吃或经典餐馆时激活')."
+                },
+                "instructions": {
+                    "type": "string",
+                    "description": "Detailed instructions/rules in Chinese that the agent must follow when this skill is active."
+                }
+            },
+            "required": ["name", "title", "description", "instructions"]
+        }
+
+    def execute(self, name: str, title: str, description: str, instructions: str) -> str:
+        import os
+        import requests
+        try:
+            try:
+                from config import config
+                backend_url = config.backend.base_url
+            except Exception:
+                backend_url = os.getenv("BACKEND_URL", "http://localhost:8080")
+            
+            url = f"{backend_url}/api/skills"
+            payload = {
+                "name": name.strip().lower().replace(" ", "-"),
+                "title": title.strip(),
+                "description": description.strip(),
+                "instructions": instructions.strip(),
+                "isEnabled": True
+            }
+            res = requests.post(url, params={"userId": self._user_id}, json=payload, timeout=5)
+            if res.status_code == 200:
+                data = res.json()
+                if data and isinstance(data, dict):
+                    if data.get("code") == 200:
+                        return json.dumps({
+                            "status": "success",
+                            "message": f"Skill '{title}' ({name}) created successfully.",
+                            "data": data.get("data")
+                        }, ensure_ascii=False)
+                    else:
+                        return json.dumps({
+                            "status": "error",
+                            "message": data.get("message", "Unknown backend error")
+                        }, ensure_ascii=False)
+            return json.dumps({
+                "status": "error",
+                "message": f"Backend returned status code {res.status_code}: {res.text}"
+            }, ensure_ascii=False)
+        except Exception as e:
+            return json.dumps({"status": "error", "message": f"Failed to create skill: {str(e)}"}, ensure_ascii=False)
+
+

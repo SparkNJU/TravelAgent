@@ -24,6 +24,7 @@ from services.plan_parser import extract_plan_from_markdown
 from services.sse_events import sse_event, SSE_DONE
 from services.tool_registry import (
     ActivateSkillTool,
+    CreateSkillTool,
     FileParserTool,
     FinishTool,
     KnowledgeSearchTool,
@@ -78,6 +79,7 @@ _tool_registry.register(UserConfirmTool())
 _tool_registry.register(SuggestQuestionsTool(_llm))
 _tool_registry.register(FinishTool())
 _tool_registry.register(ActivateSkillTool(user_id=1))
+_tool_registry.register(CreateSkillTool(user_id=1))
 
 
 def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_suggestions: bool = True, user_id: int = 1) -> ToolRegistry:
@@ -92,6 +94,7 @@ def build_tool_registry(llm: LLMService, allow_user_confirm: bool = True, allow_
         registry.register(SuggestQuestionsTool(llm))
     registry.register(FinishTool())
     registry.register(ActivateSkillTool(user_id=user_id))
+    registry.register(CreateSkillTool(user_id=user_id))
     return registry
 
 _planner = MetaPlanner(_llm)

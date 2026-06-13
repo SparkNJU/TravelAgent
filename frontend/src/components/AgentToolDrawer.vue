@@ -103,8 +103,8 @@
                   />
                 </label>
                 <label class="field">
-                  <span>触发场景</span>
-                  <textarea v-model="skillForm.description" rows="3" placeholder="当用户提到..." required />
+                  <span>激活条件</span>
+                  <textarea v-model="skillForm.description" rows="3" placeholder="例如：用户提到..." required />
                 </label>
                 <label class="field">
                   <span>指令手册</span>
@@ -145,7 +145,7 @@
                   <span />
                 </label>
               </div>
-              <p class="tool-desc">{{ skill.description }}</p>
+              <p class="tool-desc"><strong>激活条件：</strong>{{ formatDescription(skill.description) }}</p>
               <details class="detail-block">
                 <summary>查看指令</summary>
                 <pre>{{ skill.instructions }}</pre>
@@ -265,6 +265,20 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import SvgIcon from './SvgIcon.vue'
 import { useAgentTools } from '../composables/useAgentTools'
+
+const formatDescription = (desc) => {
+  if (!desc) return ''
+  let cleaned = desc.trim()
+  if (cleaned.startsWith('当') && (cleaned.endsWith('时激活。') || cleaned.endsWith('时激活') || cleaned.endsWith('时触发。') || cleaned.endsWith('时触发'))) {
+    cleaned = cleaned.substring(1)
+    if (cleaned.endsWith('时激活。') || cleaned.endsWith('时触发。')) {
+      cleaned = cleaned.substring(0, cleaned.length - 4)
+    } else {
+      cleaned = cleaned.substring(0, cleaned.length - 3)
+    }
+  }
+  return cleaned
+}
 
 const {
   activeToolDrawer,
