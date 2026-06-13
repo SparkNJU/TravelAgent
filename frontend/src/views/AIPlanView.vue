@@ -238,8 +238,19 @@
             @click="toggleWebSearch"
           >
             <span>
-              <SvgIcon name="globe" :size="15" />
               联网搜索
+            </span>
+            <i />
+          </button>
+          <button
+            type="button"
+            class="setting-toggle"
+            :class="{ active: knowledgeSearchEnabled }"
+            :aria-pressed="knowledgeSearchEnabled"
+            @click="toggleKnowledgeSearch"
+          >
+            <span>
+              知识检索
             </span>
             <i />
           </button>
@@ -251,15 +262,11 @@
             @click="toggleArenaMode"
           >
             <span>
-              <SvgIcon name="trophy" :size="15" />
               竞技场
             </span>
             <i />
           </button>
         </div>
-        <p class="panel-hint">
-          联网搜索和竞技场模式只在这里控制，输入框保持轻量。
-        </p>
       </section>
 
       <section class="run-card">
@@ -342,7 +349,9 @@ const {
 const { streamPost } = useSSE()
 const {
   webSearchEnabled,
+  knowledgeSearchEnabled,
   toggleWebSearch,
+  toggleKnowledgeSearch,
   openToolDrawer,
   skillsSummary,
   memoriesSummary,
@@ -846,8 +855,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
   formData.append('generatePlanFirst', String(generatePlanFirst))
   formData.append('model', selectedModel.value)
   formData.append('webSearchEnabled', String(webSearchEnabled.value))
-
-  // Append history (excluding the two we just added for this current turn)
+  formData.append('knowledgeSearchEnabled', String(knowledgeSearchEnabled.value))
   // If a plan was already generated, start fresh (don't carry old context)
   const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
   const relevantHistory = activeConversation.value.result ? [] : historyRaw.slice(-10)
@@ -980,8 +988,7 @@ async function handleAutoSend({ query, file }) {
   formData.append('query', query)
   formData.append('userId', localStorage.getItem('userId') || '1')
   formData.append('webSearchEnabled', String(webSearchEnabled.value))
-
-  // If a plan was already generated, start fresh (don't carry old context)
+  formData.append('knowledgeSearchEnabled', String(knowledgeSearchEnabled.value))
   const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
   const relevantHistory = activeConversation.value.result ? [] : historyRaw.slice(-10)
   const historyToSent = relevantHistory.map(m => ({ role: m.role, content: m.content || m.answer || '' }))

@@ -9,6 +9,8 @@ public class AgentChatRequest {
     private boolean generatePlanFirst = true;
     private boolean arena = false;
     private boolean forceCompress = false;
+    private boolean webSearchEnabled = true;
+    private boolean knowledgeSearchEnabled = true;
     private String model;
     private Double temperature;
     private String fileName;
@@ -36,6 +38,12 @@ public class AgentChatRequest {
 
     public boolean isForceCompress() { return forceCompress; }
     public void setForceCompress(boolean forceCompress) { this.forceCompress = forceCompress; }
+
+    public boolean isWebSearchEnabled() { return webSearchEnabled; }
+    public void setWebSearchEnabled(boolean webSearchEnabled) { this.webSearchEnabled = webSearchEnabled; }
+
+    public boolean isKnowledgeSearchEnabled() { return knowledgeSearchEnabled; }
+    public void setKnowledgeSearchEnabled(boolean knowledgeSearchEnabled) { this.knowledgeSearchEnabled = knowledgeSearchEnabled; }
 
     public String getModel() { return model; }
     public void setModel(String model) { this.model = model; }
