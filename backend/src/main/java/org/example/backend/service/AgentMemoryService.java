@@ -161,19 +161,27 @@ public class AgentMemoryService {
         }
 
         if (memory != null && isAgentSync) {
-            List<Map<String, Object>> existingCards = parseCardArray(existingFacts);
             List<Map<String, Object>> newFacts = parseFactArray(normalizedFacts);
-            boolean cardsAppended = mergeFactsIntoCardArray(existingCards, newFacts);
-            if (cardsAppended || existingMemoryOpt.isEmpty() || factsChanged) {
-                String mergedJson;
-                try {
-                    mergedJson = objectMapper.writeValueAsString(existingCards);
-                } catch (Exception e) {
-                    mergedJson = existingFacts != null ? existingFacts : "[]";
-                    log.warn("Failed to serialize merged cards, keeping existing: {}", e.getMessage());
+            String currentMarkdown = memory.getMemoryMarkdown();
+            if (currentMarkdown == null) currentMarkdown = "";
+            StringBuilder mdBuilder = new StringBuilder(currentMarkdown);
+            if (!currentMarkdown.isBlank() && !currentMarkdown.endsWith("\n")) {
+                mdBuilder.append("\n");
+            }
+            boolean hasNewContent = false;
+            for (Map<String, Object> fact : newFacts) {
+                String value = (String) fact.get("value");
+                if (value == null || value.isBlank()) continue;
+                if (!currentMarkdown.contains(value)) {
+                    if (!hasNewContent) {
+                        mdBuilder.append("\n### 对话提取\n");
+                        hasNewContent = true;
+                    }
+                    mdBuilder.append("- ").append(value).append("\n");
                 }
-                memory.setMemoryJson(mergedJson);
-                memory.setMemoryMarkdown(buildUserPreferenceMarkdown(existingCards));
+            }
+            if (hasNewContent || existingMemoryOpt.isEmpty()) {
+                memory.setMemoryMarkdown(mdBuilder.toString().trim());
                 memory.setSourceConversationId(request.getSourceConversationId());
                 memory.setSummarySource("conversation");
                 if (request.getModelVersion() != null && !request.getModelVersion().isBlank()) {
