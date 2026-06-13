@@ -345,9 +345,10 @@ function openTab(type) {
   activeToolDrawer.value = type
 }
 
-const userId = computed(() => {
-  if (typeof window === 'undefined') return '1'
-  return window.localStorage.getItem('userId') || '1'
+const currentUserId = computed(() => {
+  if (typeof window === 'undefined') return null
+  const uid = window.localStorage.getItem('userId')
+  return uid ? Number(uid) : null
 })
 
 const filteredSkills = computed(() => {
@@ -385,7 +386,7 @@ async function fetchJson(url, options = {}) {
 async function loadSkills() {
   skillLoading.value = true
   try {
-    const data = await fetchJson(`/api/skills?userId=${userId.value}`)
+    const data = await fetchJson(`/api/skills?userId=${currentUserId.value}`)
     skills.value = Array.isArray(data) ? data : []
     updateSkillsSummary(skills.value)
   } catch (error) {
@@ -398,8 +399,18 @@ async function loadSkills() {
 async function loadMemories() {
   memoryLoading.value = true
   try {
-    const data = await fetchJson(`/api/memories?userId=${userId.value}`)
-    memories.value = Array.isArray(data) ? data : []
+    const data = await fetchJson(`/api/agent/memory/${currentUserId.value}`)
+    const memory = data?.memory
+    if (memory?.memoryJson) {
+      try {
+        const parsed = JSON.parse(memory.memoryJson)
+        memories.value = Array.isArray(parsed) ? parsed : []
+      } catch {
+        memories.value = []
+      }
+    } else {
+      memories.value = []
+    }
     updateMemoriesSummary(memories.value)
   } catch (error) {
     console.error('加载记忆失败:', error)
@@ -440,7 +451,7 @@ async function toggleSkill(skill) {
   try {
     const targetStatus = !skill.isEnabled
     await fetchJson(
-      `/api/skills/${skill.id}/toggle?userId=${userId.value}&isEnabled=${targetStatus}`,
+      `/api/skills/${skill.id}/toggle?userId=${currentUserId.value}&isEnabled=${targetStatus}`,
       { method: 'PUT' },
     )
     skill.isEnabled = targetStatus
@@ -456,7 +467,7 @@ async function saveSkill() {
   savingSkill.value = true
   try {
     const isEdit = isEditingSkill.value
-    const url = isEdit ? `/api/skills/${skillForm.id}?userId=${userId.value}` : `/api/skills?userId=${userId.value}`
+    const url = isEdit ? `/api/skills/${skillForm.id}?userId=${currentUserId.value}` : `/api/skills?userId=${currentUserId.value}`
     const method = isEdit ? 'PUT' : 'POST'
     const payload = {
       name: isEdit ? skillForm.name : skillForm.name.trim().toLowerCase().replace(/[^a-z0-9-]/g, '-'),
@@ -483,7 +494,7 @@ async function saveSkill() {
 async function removeSkill(skill) {
   if (!confirm(`确认删除自定义技能 @${skill.name} 吗？`)) return
   try {
-    await fetchJson(`/api/skills/${skill.id}?userId=${userId.value}`, { method: 'DELETE' })
+    await fetchJson(`/api/skills/${skill.id}?userId=${currentUserId.value}`, { method: 'DELETE' })
     await loadSkills()
   } catch (error) {
     console.error('删除技能失败:', error)
@@ -491,18 +502,35 @@ async function removeSkill(skill) {
   }
 }
 
+async function syncMemoriesToLongTermMemory() {
+  const userFactsJson = JSON.stringify(memories.value)
+  const memoryMarkdown = memories.value
+    .filter(m => m.isEnabled)
+    .map(m => `- ${m.content}`)
+    .join('\n')
+
+  await fetchJson('/api/agent/memory/sync', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      userId: currentUserId.value,
+      userFactsJson,
+      memoryMarkdown: memoryMarkdown ? `# 用户偏好记忆\n\n${memoryMarkdown}` : ''
+    })
+  })
+}
+
 async function toggleMemory(memory) {
   updatingMemory.value = memory.id
   try {
     const targetStatus = !memory.isEnabled
-    await fetchJson(
-      `/api/memories/${memory.id}/toggle?userId=${userId.value}&isEnabled=${targetStatus}`,
-      { method: 'PUT' },
-    )
     memory.isEnabled = targetStatus
+    await syncMemoriesToLongTermMemory()
     updateMemoriesSummary(memories.value)
   } catch (error) {
+    memory.isEnabled = !targetStatus
     console.error('切换记忆状态失败:', error)
+    alert(error.message || '切换记忆状态失败')
   } finally {
     updatingMemory.value = null
   }
@@ -511,18 +539,27 @@ async function toggleMemory(memory) {
 async function saveMemory() {
   savingMemory.value = true
   try {
-    const isEdit = isEditingMemory.value
-    const url = isEdit ? `/api/memories/${memoryForm.id}?userId=${userId.value}` : `/api/memories?userId=${userId.value}`
-    const method = isEdit ? 'PUT' : 'POST'
-    await fetchJson(url, {
-      method,
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
+    if (isEditingMemory.value) {
+      const idx = memories.value.findIndex(m => m.id === memoryForm.id)
+      if (idx !== -1) {
+        memories.value[idx] = {
+          ...memories.value[idx],
+          content: memoryForm.content,
+          isEnabled: memoryForm.isEnabled
+        }
+      }
+    } else {
+      const newCard = {
+        id: Date.now(),
         content: memoryForm.content,
         isEnabled: memoryForm.isEnabled,
-      }),
-    })
-    await loadMemories()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      }
+      memories.value.push(newCard)
+    }
+    await syncMemoriesToLongTermMemory()
+    updateMemoriesSummary(memories.value)
     memoryEditorVisible.value = false
   } catch (error) {
     console.error('保存记忆失败:', error)
@@ -535,8 +572,9 @@ async function saveMemory() {
 async function removeMemory(memory) {
   if (!confirm('确认删除这条偏好记忆吗？')) return
   try {
-    await fetchJson(`/api/memories/${memory.id}?userId=${userId.value}`, { method: 'DELETE' })
-    await loadMemories()
+    memories.value = memories.value.filter(m => m.id !== memory.id)
+    await syncMemoriesToLongTermMemory()
+    updateMemoriesSummary(memories.value)
   } catch (error) {
     console.error('删除记忆失败:', error)
     alert(error.message || '删除记忆失败')
