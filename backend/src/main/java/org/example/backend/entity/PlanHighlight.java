@@ -10,7 +10,7 @@ public class PlanHighlight {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "plan_id", nullable = false)
+    @Column(name = "plan_id", nullable = false, insertable = false, updatable = false)
     private Long planId;
 
     @Column(name = "highlight_text", nullable = false, length = 255)

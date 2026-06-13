@@ -54,12 +54,12 @@ public class TravelPlan {
     @Column(name = "updated_at")
     private LocalDateTime updatedAt;
 
-    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    @JoinColumn(name = "plan_id")
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
+    @JoinColumn(name = "plan_id", nullable = false)
     private Set<PlanHighlight> highlights;
 
-    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER)
-    @JoinColumn(name = "plan_id")
+    @OneToMany(cascade = CascadeType.ALL, fetch = FetchType.EAGER, orphanRemoval = true)
+    @JoinColumn(name = "plan_id", nullable = false)
     private List<PlanActivity> activities = new ArrayList<>();
 
     @PrePersist
