@@ -207,15 +207,23 @@
       </div>
     </div>
 
-    <aside class="plan-inspector" :class="{ open: inspectorOpen }" aria-label="Agent Run Panel">
+    <aside class="plan-inspector" :class="{ open: inspectorOpen, collapsed: inspectorCollapsed }" aria-label="Agent Run Panel">
+      <button
+        type="button"
+        class="inspector-edge-toggle"
+        :aria-expanded="!inspectorCollapsed"
+        :title="inspectorCollapsed ? '展开运行面板' : '折叠运行面板'"
+        @click="toggleInspectorCollapse"
+      >
+        <SvgIcon :name="inspectorCollapsed ? 'chevron-left' : 'chevron-right'" :size="16" />
+      </button>
       <section class="run-card hero-card">
         <div class="run-card-head">
           <div>
-            <div class="run-kicker">Travel Agent</div>
-            <h2>Run Panel</h2>
+            <div class="run-kicker">旅游规划Agent</div>
+            <h2>运行参数</h2>
           </div>
           <div class="run-card-actions">
-            <span :class="['run-status', runStatusClass]">{{ runStatusLabel }}</span>
             <button
               type="button"
               class="inspector-toggle"
@@ -227,13 +235,12 @@
             </button>
           </div>
         </div>
-        <p>运行设置、上下文占用和 Agent 资产集中在这里，输入区只保留必要操作。</p>
       </section>
 
       <section class="run-card">
         <div class="panel-title">
           <SvgIcon name="settings" :size="15" />
-          <span>Run Settings</span>
+          <span>运行设置</span>
         </div>
         <div class="run-row">
           <span>模式</span>
@@ -253,6 +260,11 @@
           >
             <span>
               联网搜索
+              <span
+                class="setting-info-dot"
+                title="查看说明"
+                @click.stop="settingTooltip = settingTooltip === 'webSearch' ? null : 'webSearch'"
+              >ⓘ</span>
             </span>
             <i />
           </button>
@@ -265,6 +277,11 @@
           >
             <span>
               知识检索
+              <span
+                class="setting-info-dot"
+                title="查看说明"
+                @click.stop="settingTooltip = settingTooltip === 'knowledgeSearch' ? null : 'knowledgeSearch'"
+              >ⓘ</span>
             </span>
             <i />
           </button>
@@ -277,24 +294,36 @@
           >
             <span>
               竞技场
+              <span
+                class="setting-info-dot"
+                title="查看说明"
+                @click.stop="settingTooltip = settingTooltip === 'arena' ? null : 'arena'"
+              >ⓘ</span>
             </span>
             <i />
           </button>
+
+          <Transition name="tooltip-fade">
+            <div v-if="settingTooltip" class="setting-tooltip">
+              <p>{{ settingInfoMap[settingTooltip] }}</p>
+              <button class="tooltip-close" @click.stop="settingTooltip = null">知道了</button>
+            </div>
+          </Transition>
         </div>
       </section>
 
       <section class="run-card">
         <div class="panel-title">
           <SvgIcon name="sparkles" :size="15" />
-          <span>Agent Assets</span>
+          <span>Agent工具管理</span>
         </div>
         <div class="asset-summary">
           <button type="button" class="asset-item" @click="openToolDrawer('skills')">
-            <span>Skills</span>
+            <span>技能管理</span>
             <strong>{{ skillsSummary.enabled }}/{{ skillsSummary.total }}</strong>
           </button>
           <button type="button" class="asset-item" @click="openToolDrawer('memory')">
-            <span>Memory</span>
+            <span>记忆管理</span>
             <strong>{{ memoriesSummary.enabled }}/{{ memoriesSummary.total }}</strong>
           </button>
         </div>
@@ -307,7 +336,7 @@
       <section class="run-card context-card">
         <div class="panel-title">
           <SvgIcon name="brain" :size="15" />
-          <span>Context</span>
+          <span>上下文窗口</span>
           <strong :class="['context-badge', contextHealth.level]">{{ contextHealth.label }}</strong>
         </div>
         <div class="context-number">
@@ -333,7 +362,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch, onMounted } from 'vue'
+import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSSE } from '../composables/useSSE'
 import { useConversation } from '../composables/useConversation'
@@ -388,6 +417,7 @@ const syncingKnowledgeTurns = ref(new Set())
 
 const COMPRESS_KEEP_LAST = 6
 const inspectorOpen = ref(false)
+const inspectorCollapsed = ref(false)
 const activeTurnIndex = ref(0)
 const manualTraceOpen = ref({})
 const turnMarkerPositions = ref({})
@@ -448,6 +478,28 @@ const modelLabelMap = {
 
 const selectedModeLabel = computed(() => modeLabelMap[selectedMode.value] || selectedMode.value)
 const selectedModelLabel = computed(() => modelLabelMap[selectedModel.value] || selectedModel.value)
+
+const settingInfoMap = {
+  webSearch: '开启后，Agent 可调用 Google 搜索引擎获取实时旅游信息，包括景点开放时间、最新评价、交通状况等。适合需要最新资讯的旅行规划。',
+  knowledgeSearch: '开启后，Agent 可从知识库中检索相关旅行攻略和用户经验，增强规划的准确性和个性化程度。',
+  arena: '开启后，可同时对比多个 AI 模型的规划结果，通过投票选出最优方案。适合需要横向评估模型表现的场景。',
+}
+
+const settingTooltip = ref(null)
+
+function onDocClick(e) {
+  if (!e.target.closest('.setting-info-dot') && !e.target.closest('.setting-tooltip')) {
+    settingTooltip.value = null
+  }
+}
+
+watch(settingTooltip, (val) => {
+  if (val) nextTick(() => document.addEventListener('click', onDocClick))
+  else document.removeEventListener('click', onDocClick)
+})
+
+onUnmounted(() => document.removeEventListener('click', onDocClick))
+
 const contextPercent = computed(() => Math.round((tokenStatus.value?.utilization || 0) * 100))
 const contextStats = computed(() => [
   { label: '历史对话', value: formatToken(tokenStatus.value?.history_tokens) },
@@ -860,6 +912,10 @@ function toggleArenaMode() {
 
 function toggleInspector() {
   inspectorOpen.value = !inspectorOpen.value
+}
+
+function toggleInspectorCollapse() {
+  inspectorCollapsed.value = !inspectorCollapsed.value
 }
 
 function startStream(query, mode = selectedMode.value, generatePlanFirst = null, file = null) {
@@ -1567,9 +1623,8 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 
 .compact-input-area {
   padding: 12px 28px 18px;
-  border-top: 1px solid var(--color-border);
-  background: rgba(255, 255, 255, 0.86);
-  backdrop-filter: blur(16px);
+  border-top: 1px solid transparent;
+  background: transparent;
 }
 
 .compress-notice { margin-top: 8px; font-size: 12px; color: var(--color-muted); line-height: 1.4; }
@@ -1738,6 +1793,7 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 }
 
 .plan-inspector {
+  position: relative;
   display: flex;
   width: 318px;
   height: 100%;
@@ -1748,6 +1804,51 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   border-left: 1px solid rgba(17, 24, 39, 0.08);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.95), rgba(255, 247, 248, 0.96));
   overflow-y: auto;
+  overflow-x: hidden;
+  transition: width 0.25s ease, padding 0.25s ease;
+}
+
+/* ── 折叠状态 ────────────── */
+.plan-inspector.collapsed {
+  width: 48px;
+  padding: 18px 8px;
+  overflow: hidden;
+}
+
+.plan-inspector.collapsed > :not(.inspector-edge-toggle) {
+  display: none;
+}
+
+/* ── 左侧边缘折叠按钮 ───── */
+.inspector-edge-toggle {
+  position: absolute;
+  left: 10px;
+  top: 50%;
+  z-index: 10;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 32px;
+  padding: 0;
+  border: 1px solid var(--color-border);
+  border-radius: 5px;
+  background: var(--color-card);
+  color: var(--color-secondary);
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+
+.inspector-edge-toggle:hover {
+  background: var(--color-soft-red);
+  border-color: rgba(255, 36, 66, 0.22);
+  color: var(--color-red);
+}
+
+.inspector-edge-toggle :deep(svg) {
+  width: 12px;
+  height: 12px;
 }
 
 .run-card {
@@ -1887,6 +1988,7 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 8px;
+  position: relative;
 }
 
 .setting-toggle {
@@ -1956,6 +2058,112 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   color: var(--color-hint);
   font-size: 12px;
   line-height: 1.6;
+}
+
+/* ── Setting info dot & tooltip ── */
+.setting-info-dot {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  margin-left: 2px;
+  margin-top: -5px;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--color-hint);
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+  vertical-align: text-top;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.setting-info-dot:hover {
+  background: var(--color-surface);
+  color: var(--color-title);
+}
+
+.setting-tooltip {
+  position: absolute;
+  left: 0;
+  right: 0;
+  top: 100%;
+  margin-top: 8px;
+  padding: 14px 16px;
+  border: 1px solid var(--color-border);
+  border-radius: 12px;
+  background: var(--color-card);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.1);
+  z-index: 10;
+}
+
+.setting-tooltip p {
+  margin: 0 0 12px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--color-body);
+}
+
+.tooltip-close {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 3px 12px;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  background: var(--color-surface);
+  color: var(--color-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tooltip-close:hover {
+  border-color: var(--color-red);
+  color: var(--color-red);
+  background: var(--color-soft-red);
+}
+
+/* tooltip transition */
+.tooltip-fade-enter-active,
+.tooltip-fade-leave-active {
+  transition: opacity 0.18s ease, transform 0.18s ease;
+}
+.tooltip-fade-enter-from,
+.tooltip-fade-leave-to {
+  opacity: 0;
+  transform: translateY(-6px);
+}
+
+/* Dark mode */
+:root[data-theme="dark"] .setting-info-dot {
+  color: var(--color-hint);
+}
+:root[data-theme="dark"] .setting-info-dot:hover {
+  background: var(--color-card-hover);
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .setting-tooltip {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+:root[data-theme="dark"] .setting-tooltip p {
+  color: var(--color-body);
+}
+:root[data-theme="dark"] .tooltip-close {
+  background: var(--color-card-hover);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+:root[data-theme="dark"] .tooltip-close:hover {
+  border-color: var(--color-red-light);
+  color: var(--color-red-light);
+  background: var(--color-soft-red);
 }
 
 .context-card {
@@ -2117,9 +2325,7 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 }
 
 :root[data-theme="dark"] .compact-input-area {
-  border-top-color: rgba(255, 255, 255, 0.08);
-  background: rgba(16, 16, 18, 0.9);
-  backdrop-filter: blur(16px);
+  border-top-color: transparent;
 }
 
 :root[data-theme="dark"] .scroll-jump-layer::before {
@@ -2156,6 +2362,18 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 :root[data-theme="dark"] .plan-inspector {
   border-left-color: rgba(255, 255, 255, 0.08);
   background: linear-gradient(180deg, rgba(18, 18, 20, 0.98), rgba(14, 14, 16, 0.98));
+}
+
+:root[data-theme="dark"] .inspector-edge-toggle {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+
+:root[data-theme="dark"] .inspector-edge-toggle:hover {
+  background: var(--color-soft-red);
+  border-color: rgba(255, 36, 66, 0.24);
+  color: var(--color-red-light);
 }
 
 :root[data-theme="dark"] .run-card,
@@ -2264,6 +2482,25 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
     z-index: 1300;
     overflow-x: hidden;
     overflow-y: auto;
+  }
+
+  /* 防止固定定位的运行参数面板遮挡底部对话输入框 */
+  .center-panel {
+    padding-bottom: calc(76px + 12px + 2px);
+  }
+
+  .plan-inspector.collapsed {
+    width: min(420px, calc(100vw - 24px));
+    padding: 0;
+    overflow-y: auto;
+  }
+
+  .plan-inspector.collapsed > :not(.inspector-edge-toggle) {
+    display: revert;
+  }
+
+  .inspector-edge-toggle {
+    display: none;
   }
 
   .plan-inspector.open {

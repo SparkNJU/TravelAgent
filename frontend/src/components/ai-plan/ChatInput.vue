@@ -23,7 +23,7 @@
       />
 
       <div class="chat-input-toolbar">
-        <!-- Left group: upload + mode + model -->
+        <!-- Left group: upload + mode + model + arena -->
         <div class="toolbar-left">
           <label class="tool-btn upload-btn" title="上传文件">
             <input type="file" @change="onFileChange" hidden />
@@ -52,20 +52,20 @@
               <option v-for="m in models" :key="m.value" :value="m.value">{{ m.label }}</option>
             </select>
           </div>
-        </div>
 
-        <!-- Right group: arena + context + send -->
-        <div class="toolbar-right">
           <button
             type="button"
             class="arena-chip"
             :class="{ active: arenaMode }"
-            title="竞技场模式"
             @click="emit('toggleArena')"
           >
-            <SvgIcon :name="arenaMode ? 'close' : 'trophy'" :size="13" />
+            <SvgIcon :name="arenaMode ? 'close' : 'trophy'" :size="14" />
+            <span>竞技场模式</span>
           </button>
+        </div>
 
+        <!-- Right group: context + send -->
+        <div class="toolbar-right">
           <ContextPanel
             :tokenStatus="tokenStatus"
             :loading="loading"
@@ -251,19 +251,22 @@ function handleSubmit() {
   background: #fff7f8;
 }
 
-/* ── Input box ── */
+/* ── Input box (glassmorphism) ── */
 .chat-input-box {
   position: relative;
-  border: 1.5px solid var(--color-border);
+  border: none;
   border-radius: 16px;
-  background: var(--color-card);
+  background: rgba(255, 255, 255, 0.25);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
   overflow: visible;
-  transition: border-color 0.2s, box-shadow 0.2s;
+  transition: box-shadow 0.22s ease, background 0.22s ease;
+  box-shadow: 0 2px 14px rgba(0, 0, 0, 0.06);
 }
 
 .chat-input-box:focus-within {
-  border-color: var(--color-red);
-  box-shadow: 0 0 0 4px rgba(255, 36, 66, 0.06);
+  background: rgba(255, 255, 255, 0.55);
+  box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.08), 0 4px 22px rgba(255, 36, 66, 0.1);
 }
 
 /* ── Textarea ── */
@@ -294,20 +297,22 @@ function handleSubmit() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  padding: 6px 10px 10px;
+  padding: 4px 10px 10px;
   gap: 8px;
 }
 
 .toolbar-left {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-wrap: wrap;
 }
 
 .toolbar-right {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 /* ── Tool button ── */
@@ -413,27 +418,36 @@ function handleSubmit() {
 .arena-chip {
   display: inline-flex;
   align-items: center;
-  justify-content: center;
-  width: 30px;
-  height: 30px;
+  gap: 6px;
+  padding: 4px 12px;
   border: 1px solid var(--color-border);
   border-radius: 8px;
   background: transparent;
-  color: var(--color-muted);
+  color: var(--color-secondary);
+  font-size: 12px;
+  font-weight: 700;
+  font-family: var(--font-family);
   cursor: pointer;
-  transition: all 0.15s;
+  transition: all 0.18s ease;
   flex-shrink: 0;
+  white-space: nowrap;
 }
 
 .arena-chip:hover {
   border-color: var(--color-red);
   color: var(--color-red);
+  background: rgba(255, 36, 66, 0.04);
 }
 
 .arena-chip.active {
-  border-color: rgba(255, 36, 66, 0.3);
-  background: rgba(255, 36, 66, 0.06);
+  border-color: rgba(255, 36, 66, 0.35);
+  background: rgba(255, 36, 66, 0.08);
   color: var(--color-red);
+}
+
+.arena-chip.active:hover {
+  border-color: var(--color-red);
+  background: rgba(255, 36, 66, 0.12);
 }
 
 /* ── Model chip (kept for wrapper, select uses .chip-select above) ── */
@@ -456,17 +470,21 @@ function handleSubmit() {
   color: #fff;
   cursor: pointer;
   flex-shrink: 0;
-  transition: all 0.15s;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 2px 8px rgba(255, 36, 66, 0.18);
 }
 
 .send-btn:hover:not(:disabled) {
-  filter: brightness(1.1);
-  transform: scale(1.04);
+  filter: brightness(1.08);
+  transform: scale(1.06);
+  box-shadow: 0 4px 14px rgba(255, 36, 66, 0.28);
 }
 
 .send-btn:disabled {
-  opacity: 0.35;
+  opacity: 0.3;
   cursor: not-allowed;
+  box-shadow: none;
+  transform: none;
 }
 
 /* ── Stop button ── */
@@ -478,14 +496,63 @@ function handleSubmit() {
   height: 34px;
   border: 1.5px solid rgba(255, 36, 66, 0.25);
   border-radius: 10px;
-  background: rgba(255, 36, 66, 0.08);
+  background: rgba(255, 36, 66, 0.06);
   color: var(--color-red);
   cursor: pointer;
   transition: all 0.15s;
 }
 
 .stop-btn:hover {
-  background: rgba(255, 36, 66, 0.16);
+  background: rgba(255, 36, 66, 0.14);
+  border-color: var(--color-red);
+}
+
+/* ── Dark mode ── */
+:root[data-theme="dark"] .chat-input-box {
+  background: rgba(20, 20, 22, 0.3);
+  box-shadow: 0 2px 16px rgba(0, 0, 0, 0.35);
+}
+
+:root[data-theme="dark"] .chat-input-box:focus-within {
+  background: rgba(20, 20, 22, 0.6);
+  box-shadow: 0 0 0 3px rgba(255, 36, 66, 0.1), 0 4px 24px rgba(255, 36, 66, 0.16);
+}
+
+:root[data-theme="dark"] .chip-select {
+  color: var(--color-secondary);
+  background-color: transparent;
+}
+
+:root[data-theme="dark"] .chip-select:hover {
+  border-color: var(--color-red-light);
+  color: var(--color-title);
+}
+
+:root[data-theme="dark"] .arena-chip {
+  color: var(--color-secondary);
+}
+
+:root[data-theme="dark"] .arena-chip:hover {
+  border-color: var(--color-red-light);
+  color: var(--color-red-light);
+}
+
+:root[data-theme="dark"] .arena-chip.active {
+  border-color: rgba(255, 36, 66, 0.35);
+  background: rgba(255, 36, 66, 0.12);
+  color: var(--color-red-light);
+}
+
+:root[data-theme="dark"] .suggestion-chip {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+
+:root[data-theme="dark"] .suggestion-chip:hover {
+  border-color: var(--color-red-light);
+  color: var(--color-red-light);
+  background: rgba(255, 36, 66, 0.1);
 }
 
 </style>

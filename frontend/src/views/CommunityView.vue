@@ -30,7 +30,30 @@
         </button>
       </section>
 
-      <section class="note-grid" aria-label="旅行笔记">
+      <!-- 骨架屏：后端数据加载中 -->
+      <section v-if="postsLoading && !backendNotes.length" class="note-grid" aria-label="加载中">
+        <article v-for="i in 6" :key="'skel-' + i" class="note-card skeleton-card" aria-hidden="true">
+          <div class="note-cover skel-cover"></div>
+          <div class="note-body">
+            <div class="skel-line skel-title"></div>
+            <div class="skel-line skel-text"></div>
+            <div class="skel-line skel-text short"></div>
+            <div class="skel-footer">
+              <div class="skel-avatar"></div>
+              <div class="skel-line skel-name"></div>
+            </div>
+          </div>
+        </article>
+      </section>
+
+      <!-- 真实笔记列表 -->
+      <TransitionGroup
+        v-else
+        tag="section"
+        name="note"
+        class="note-grid"
+        aria-label="旅行笔记"
+      >
         <article
           v-for="note in filteredNotes"
           :key="note.id"
@@ -64,9 +87,9 @@
             </footer>
           </div>
         </article>
-      </section>
+      </TransitionGroup>
 
-      <div v-if="!filteredNotes.length" class="empty-state">
+      <div v-if="!postsLoading && !filteredNotes.length" class="empty-state">
         <SvgIcon name="search" :size="32" />
         <p>没有找到相关旅行灵感</p>
         <button @click="resetFilters">查看推荐内容</button>
@@ -184,6 +207,7 @@ const showLogin = inject('showLoginModal')
 const searchQuery = ref('')
 const activeChannel = ref('all')
 const backendNotes = ref([])
+const postsLoading = ref(false)
 const selectedNote = ref(null)
 const showPublishModal = ref(false)
 const showComments = ref(false)
@@ -245,10 +269,12 @@ function normalizePost(post) {
   }
 }
 
-const allNotes = computed(() => [
-  ...backendNotes.value,
-  ...travelNotes,
-])
+// 去重：后端数据优先，同标题的静态笔记会被过滤掉，避免重复卡片闪烁
+const allNotes = computed(() => {
+  const backendTitles = new Set(backendNotes.value.map(n => n.title))
+  const dedupedStatic = travelNotes.filter(n => !backendTitles.has(n.title))
+  return [...backendNotes.value, ...dedupedStatic]
+})
 
 const filteredNotes = computed(() => {
   const keyword = searchQuery.value.trim().toLowerCase()
@@ -267,6 +293,9 @@ const filteredNotes = computed(() => {
 })
 
 async function loadPosts() {
+  postsLoading.value = true
+  // 首次加载给一个最小延迟，让骨架屏有足够时间渲染，避免"闪一下"
+  const minDelay = new Promise(r => setTimeout(r, 300))
   try {
     const res = await fetch('/api/community/posts')
     const data = await res.json()
@@ -275,6 +304,9 @@ async function loadPosts() {
       : []
   } catch {
     backendNotes.value = []
+  } finally {
+    await minDelay
+    postsLoading.value = false
   }
 }
 
@@ -399,6 +431,10 @@ function closePublishModal() {
 }
 
 watch(() => route.query.publish, openPublishFromQuery)
+
+watch(() => route.query.q, (q) => {
+  if (q) searchQuery.value = String(q)
+}, { immediate: true })
 
 onMounted(() => {
   loadPosts()
@@ -550,6 +586,9 @@ onMounted(() => {
   background: var(--color-card);
   cursor: pointer;
   transition: transform 0.2s ease, box-shadow 0.2s ease;
+  /* 视口外的卡片跳过渲染，减少初次布局计算 */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 380px;
 }
 
 .note-card:hover {
@@ -557,18 +596,43 @@ onMounted(() => {
   box-shadow: 0 14px 36px rgba(31, 31, 31, 0.08);
 }
 
+/* ── 卡片渐入过渡 ────────────── */
+.note-enter-active {
+  transition: opacity 0.35s ease, transform 0.35s ease;
+}
+
+.note-enter-from {
+  opacity: 0;
+  transform: translateY(12px);
+}
+
+.note-leave-active {
+  transition: opacity 0.2s ease;
+}
+
+.note-leave-to {
+  opacity: 0;
+}
+
+.note-move {
+  transition: transform 0.3s ease;
+}
+
 .note-cover {
   position: relative;
   overflow: hidden;
   background: var(--color-surface);
+  /* 固定宽高比防止图片加载后高度变化引起 layout shift */
+  aspect-ratio: 4 / 3;
 }
 
 .note-cover img {
   display: block;
   width: 100%;
-  min-height: 210px;
-  max-height: 360px;
+  height: 100%;
   object-fit: cover;
+  /* 图片加载完成前不显示空白区域 */
+  background: var(--color-surface);
 }
 
 .note-city {
@@ -706,6 +770,75 @@ onMounted(() => {
 
 .liked {
   color: var(--color-red) !important;
+}
+
+/* ── 骨架屏 ────────────────── */
+.skeleton-card {
+  cursor: default;
+  pointer-events: none;
+}
+
+.skeleton-card:hover {
+  transform: none;
+  box-shadow: none;
+}
+
+.skel-cover {
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite ease-in-out;
+}
+
+.skel-line {
+  height: 14px;
+  border-radius: 7px;
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite ease-in-out;
+}
+
+.skel-title {
+  width: 75%;
+  height: 18px;
+  margin-bottom: 10px;
+}
+
+.skel-text {
+  width: 90%;
+  margin-bottom: 8px;
+}
+
+.skel-text.short {
+  width: 55%;
+}
+
+.skel-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 14px;
+}
+
+.skel-avatar {
+  width: 24px;
+  height: 24px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: linear-gradient(90deg, var(--color-surface) 25%, var(--color-border) 50%, var(--color-surface) 75%);
+  background-size: 200% 100%;
+  animation: shimmer 1.6s infinite ease-in-out;
+}
+
+.skel-name {
+  width: 80px;
+  height: 12px;
+}
+
+@keyframes shimmer {
+  0%   { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
 }
 
 .empty-state {

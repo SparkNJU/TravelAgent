@@ -13,19 +13,39 @@
 
     <div class="hero-copy">
       
-      <h1>GO EVERYWHERE YOU WANT</h1>
+      <h1>Your Travel NeverMind</h1>
+      <h1>TravelMind Here</h1>
       
       <form class="plan-search" @submit.prevent="submitCustomPlan" aria-label="AI 旅行计划输入">
-        <SvgIcon class="search-icon" name="search" :size="18" />
+        <SvgIcon class="search-icon" name="send" :size="18" />
         <input
           v-model="customQuery"
           type="text"
           placeholder="东京 5 天，美食、购物和城市漫游"
         />
-        <button class="search-submit" type="submit">
-          生成
-          <SvgIcon name="sparkles" :size="15" />
-        </button>
+        <div class="search-submit-wrap">
+          <Transition name="swap-up" mode="out-in">
+            <button
+              v-if="showAiButton"
+              key="ai"
+              class="search-submit ai-btn"
+              type="submit"
+            >
+              <SvgIcon name="sparkles" :size="15" />
+              AI生成
+            </button>
+            <button
+              v-else
+              key="note"
+              class="search-submit note-btn"
+              type="button"
+              @click="goDiscover"
+            >
+              <SvgIcon name="search" :size="15" />
+              搜索笔记
+            </button>
+          </Transition>
+        </div>
       </form>
 
       <div class="hero-actions">
@@ -110,7 +130,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, onMounted, ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import * as THREE from 'three'
 import SvgIcon from './SvgIcon.vue'
 import { cities } from '../data/travelData'
@@ -121,8 +141,11 @@ const mountRef = ref(null)
 const labelStates = ref([])
 const selectedCity = ref(cities[0])
 const hoveredCityId = ref('')
+const router = useRouter()
 const customQuery = ref('')
 const planPopoverOpen = ref(false)
+const showAiButton = ref(true)
+let swapTimer = null
 const raycaster = new THREE.Raycaster()
 const pointer = new THREE.Vector2()
 
@@ -262,11 +285,11 @@ function createOutlineTexture(geoJson = null) {
   }
 
   if (geoJson?.features?.length) {
-    drawGeo('rgba(255, 36, 66, 0.32)', 4.2)
-    drawGeo('rgba(255, 36, 66, 0.98)', 1.25)
+    drawGeo('rgba(255, 95, 115, 0.28)', 4.2)
+    drawGeo('rgba(255, 95, 115, 0.85)', 1.25)
   } else {
-    drawFallback('rgba(255, 36, 66, 0.28)', 7)
-    drawFallback('rgba(255, 36, 66, 0.94)', 2.5)
+    drawFallback('rgba(255, 95, 115, 0.24)', 7)
+    drawFallback('rgba(255, 95, 115, 0.8)', 2.5)
   }
 
   const texture = new THREE.CanvasTexture(canvas)
@@ -283,7 +306,7 @@ function createRimShell(radius) {
       depthWrite: false,
       side: THREE.FrontSide,
       uniforms: {
-        rimColor: { value: new THREE.Color('#ff2442') },
+        rimColor: { value: new THREE.Color('#ff8fa0') },
       },
       vertexShader: `
         varying vec3 vNormal;
@@ -302,7 +325,7 @@ function createRimShell(radius) {
         void main() {
           float fresnel = 1.0 - max(dot(normalize(vNormal), normalize(vViewPosition)), 0.0);
           float rim = smoothstep(0.42, 0.98, fresnel);
-          gl_FragColor = vec4(rimColor, rim * 0.72);
+          gl_FragColor = vec4(rimColor, rim * 0.58);
         }
       `,
     }),
@@ -355,11 +378,11 @@ function createHotspot(city) {
 
   const halo = new THREE.Mesh(
     new THREE.SphereGeometry(0.09, 18, 18),
-    new THREE.MeshBasicMaterial({ color: '#ff2442', transparent: true, opacity: 0.18, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ color: '#ff7a8d', transparent: true, opacity: 0.16, depthWrite: false }),
   )
   const dot = new THREE.Mesh(
     new THREE.SphereGeometry(0.043, 18, 18),
-    new THREE.MeshBasicMaterial({ color: '#ff2442', transparent: true, opacity: 1, depthWrite: false }),
+    new THREE.MeshBasicMaterial({ color: '#ff5f73', transparent: true, opacity: 1, depthWrite: false }),
   )
   halo.userData.cityId = city.id
   dot.userData.cityId = city.id
@@ -387,7 +410,7 @@ function updateHotspotDepth() {
     hotspot.scale.setScalar(isActive ? 1.48 : 1)
     hotspot.children.forEach((child, index) => {
       child.material.opacity = index === 0 ? opacity * (isActive ? 0.32 : 0.18) : opacity
-      child.material.color.set(isActive ? '#d90f2f' : '#ff2442')
+      child.material.color.set(isActive ? '#ff2442' : '#ff7a8d')
     })
 
     const projected = worldPosition.clone().project(camera)
@@ -454,7 +477,7 @@ function buildScene() {
   })
 
   scene.add(new THREE.AmbientLight('#ffffff', 1.36))
-  const redLight = new THREE.PointLight('#ff2442', 5.5, 8)
+  const redLight = new THREE.PointLight('#ffb3bf', 4.2, 8)
   redLight.position.set(-2.8, -1.1, 2.8)
   scene.add(redLight)
 
@@ -574,11 +597,18 @@ function submitCustomPlan() {
   emit('start-plan', query)
 }
 
+function goDiscover() {
+  const query = customQuery.value.trim()
+  router.push({ path: '/discover', query: query ? { q: query } : {} })
+}
+
 onMounted(() => {
+  swapTimer = setInterval(() => { showAiButton.value = !showAiButton.value }, 10000)
   nextTick(buildScene)
 })
 
 onBeforeUnmount(() => {
+  if (swapTimer) clearInterval(swapTimer)
   cancelAnimationFrame(animationId)
   window.removeEventListener('resize', handleResize)
   renderer?.domElement?.removeEventListener('pointerdown', handlePointerDown)
@@ -812,6 +842,13 @@ onBeforeUnmount(() => {
   color: rgba(133, 31, 48, 0.48);
 }
 
+.search-submit-wrap {
+  position: relative;
+  overflow: hidden;
+  height: 38px;
+  min-width: 80px;
+}
+
 .search-submit {
   display: inline-flex;
   align-items: center;
@@ -821,11 +858,40 @@ onBeforeUnmount(() => {
   min-width: 80px;
   padding: 0 16px;
   border-radius: 999px;
-  background: #ff2442;
-  color: #ffffff;
+  border: none;
   font-size: 13px;
   font-weight: 900;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+/* AI生成：红底白字 */
+.search-submit.ai-btn {
+  background: #ff2442;
+  color: #ffffff;
   box-shadow: 0 12px 28px rgba(255, 36, 66, 0.28);
+}
+
+/* 搜索笔记：白底红字 */
+.search-submit.note-btn {
+  background: #ffffff;
+  color: #ff2442;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
+  border: 1.5px solid rgba(255, 36, 66, 0.18);
+}
+
+/* ── Swap-up transition ── */
+.swap-up-enter-active,
+.swap-up-leave-active {
+  transition: opacity 0.28s ease, transform 0.28s ease;
+}
+.swap-up-enter-from {
+  opacity: 0;
+  transform: translateY(16px);
+}
+.swap-up-leave-to {
+  opacity: 0;
+  transform: translateY(-16px);
 }
 
 .hero-actions {
@@ -907,12 +973,12 @@ onBeforeUnmount(() => {
   border: 1px solid rgba(255, 36, 66, 0.38);
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.96);
-  color: #ff2442;
+  color: #ff5f73;
   font-family: var(--font-family);
   font-size: 12px;
   font-weight: 900;
   white-space: nowrap;
-  box-shadow: 0 10px 26px rgba(255, 36, 66, 0.16);
+  box-shadow: 0 10px 26px rgba(255, 95, 115, 0.14);
   opacity: 0;
   pointer-events: none;
   transform: translate(12px, -50%) scale(0.96);
@@ -926,7 +992,7 @@ onBeforeUnmount(() => {
 }
 
 .globe-label.active {
-  background: #ff2442;
+  background: #ff5f73;
   color: #ffffff;
 }
 
@@ -1176,6 +1242,10 @@ onBeforeUnmount(() => {
     height: 48px;
   }
 
+  .search-submit-wrap {
+    min-width: 68px;
+  }
+
   .search-submit {
     min-width: 68px;
     padding: 0 12px;
@@ -1222,6 +1292,10 @@ onBeforeUnmount(() => {
 
   .plan-search input {
     font-size: 13px;
+  }
+
+  .search-submit-wrap {
+    min-width: 48px;
   }
 
   .search-submit {

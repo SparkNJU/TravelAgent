@@ -22,7 +22,7 @@
           <div class="overview-rank">#{{ index + 1 }}</div>
           <div class="overview-model">
             <span class="model-logo" :style="{ color: item.meta?.accent || '#ff2442' }">
-              {{ modelMark(item) }}
+              <img v-if="getModelLogo(item)" :src="getModelLogo(item)" class="model-logo-img" :alt="item.model" /><span v-else class="model-logo-fallback">{{ item.model?.charAt(0) }}</span>
             </span>
             <div>
               <strong>{{ item.model }}</strong>
@@ -36,11 +36,11 @@
         </article>
 
         <article class="overview-card summary-card">
-          <div class="summary-title">Arena Summary</div>
+          <div class="summary-title">竞技场总览</div>
           <div class="summary-metrics">
-            <span><strong>{{ entries.length }}</strong> models</span>
-            <span><strong>{{ formatCount(totalVotes) }}</strong> votes</span>
-            <span><strong>{{ medianScore }}</strong> median</span>
+            <span><strong>{{ entries.length }}</strong>模型数</span>
+            <span><strong>{{ formatCount(totalVotes) }}</strong>投票数</span>
+            <span><strong>{{ medianScore }}</strong>中位数</span>
           </div>
         </article>
       </header>
@@ -48,8 +48,7 @@
       <section v-if="viewMode === 'compact'" class="compact-matrix">
         <div class="matrix-header">
           <div>
-            <h2>Compact View</h2>
-            <p>像 Arena 一样用横向指标快速比较模型，不改变当前接口数据。</p>
+            <h2>概览</h2>
           </div>
           <span>{{ metricLabel }}</span>
         </div>
@@ -66,7 +65,7 @@
                 <td>
                   <div class="matrix-model">
                     <span class="model-logo" :style="{ color: item.meta?.accent || '#ff2442' }">
-                      {{ modelMark(item) }}
+                      <img v-if="getModelLogo(item)" :src="getModelLogo(item)" class="model-logo-img" :alt="item.model" /><span v-else class="model-logo-fallback">{{ item.model?.charAt(0) }}</span>
                     </span>
                     <span>{{ item.model }}</span>
                   </div>
@@ -87,8 +86,7 @@
       <section v-if="viewMode === 'pareto'" class="pareto-view">
         <div class="matrix-header pareto-header">
           <div>
-            <h2>Pareto Frontier</h2>
-            <p>横轴是成本，纵轴是 {{ metricLabel }}。越靠左越省，越靠上越强。红色轨迹是 Pareto 前沿。</p>
+            <h2>Pareto 曲线图</h2>
           </div>
           <span>Pareto</span>
         </div>
@@ -141,7 +139,8 @@
                 :style="pointStyle(point)"
                 :title="paretoTooltip(point)"
               >
-                <span class="pareto-dot"></span>
+                <img v-if="getModelLogo(point.item)" :src="getModelLogo(point.item)" class="pareto-logo-img" :alt="point.model" />
+                <span v-else class="pareto-dot"></span>
                 <span v-if="point.frontier || point.rank <= 8" class="pareto-label">
                   {{ shortModelName(point.label) }}
                 </span>
@@ -159,16 +158,14 @@
           <aside class="pareto-side">
             <div class="pareto-summary-card">
               <div class="summary-title">Pareto Optimal Models</div>
-              <p>只保留没有被更低成本且更高分数的模型完全压住的点。</p>
               <div class="frontier-list">
                 <button
                   v-for="item in frontierEntries.slice(0, 5)"
                   :key="`frontier-${rankBy}-${item.model}`"
                   class="frontier-item"
                 >
-                  <span class="model-logo frontier-logo" :style="{ color: item.item.meta?.accent || '#ff2442' }">
-                    {{ modelMark(item.item) }}
-                  </span>
+                  <img v-if="getModelLogo(item.item)" :src="getModelLogo(item.item)" class="model-logo-img" :alt="item.item.model" />
+                  <span v-else class="model-logo-fallback">{{ item.item.model?.charAt(0) }}</span>
                   <div>
                     <strong>{{ shortModelName(item.label) }}</strong>
                     <small>{{ formatMetricValue(item, metricKey) }} · {{ formatCostValue(item.cost) }}</small>
@@ -192,8 +189,7 @@
 
       <div class="ranking-head">
         <div>
-          <h2>Model Rankings</h2>
-          <p>Ranked by {{ metricLabel }}. Preliminary models stay visible but are marked.</p>
+          <h2>模型排行</h2>
         </div>
         <span>Models</span>
       </div>
@@ -202,14 +198,14 @@
         <table class="board-table">
           <thead>
             <tr>
-              <th class="rank-col">Rank</th>
-              <th class="spread-col">Rank Spread</th>
-              <th>Model</th>
-              <th class="number-col">Score</th>
-              <th class="number-col">Win Rate</th>
-              <th class="number-col">Votes</th>
-              <th class="number-col">Price $/M</th>
-              <th class="number-col">Context</th>
+              <th class="rank-col">排名</th>
+              <th class="spread-col">排名置信区间</th>
+              <th>模型</th>
+              <th class="number-col">分数</th>
+              <th class="number-col">胜率</th>
+              <th class="number-col">票数</th>
+              <th class="number-col">价格 $/M</th>
+              <th class="number-col">上下文窗口</th>
             </tr>
           </thead>
           <tbody>
@@ -223,7 +219,7 @@
               <td>
                 <div class="model-cell">
                   <span class="model-logo" :style="{ color: item.meta?.accent || '#ff2442' }">
-                    {{ modelMark(item) }}
+                    <img v-if="getModelLogo(item)" :src="getModelLogo(item)" class="model-logo-img" :alt="item.model" /><span v-else class="model-logo-fallback">{{ item.model?.charAt(0) }}</span>
                   </span>
                   <div>
                     <strong>{{ item.model }}</strong>
@@ -253,7 +249,7 @@
           </div>
           <div class="model-cell">
             <span class="model-logo" :style="{ color: item.meta?.accent || '#ff2442' }">
-              {{ modelMark(item) }}
+              <img v-if="getModelLogo(item)" :src="getModelLogo(item)" class="model-logo-img" :alt="item.model" /><span v-else class="model-logo-fallback">{{ item.model?.charAt(0) }}</span>
             </span>
             <div>
               <strong>{{ item.model }}</strong>
@@ -275,10 +271,8 @@
           <div class="elo-panel">
             <div class="matrix-header">
               <div>
-                <h2>Elo Ranking</h2>
-                <p>Bradley-Terry 模型分数，按 Arena 投票结果估算。条块反映相对强度、票数和置信区间。</p>
+                <h2>Elo 排行</h2>
               </div>
-              <span>Score</span>
             </div>
 
             <div v-if="!eloEntries.length" class="board-state">
@@ -296,12 +290,14 @@
                 </div>
                 <div class="elo-bar-wrap">
                   <div class="elo-bar-label">
-                    <span
-                      class="elo-dot"
-                      :style="{ background: item.meta?.accent || '#ff2442' }"
-                    ></span>
-                    <strong>{{ shortPairwiseName(item.model) }}</strong>
-                    <small>{{ item.meta?.vendor || '' }}</small>
+                    <span class="elo-logo">
+                      <img v-if="getModelLogo(item)" :src="getModelLogo(item)" class="elo-logo-img" :alt="item.model" />
+                      <span v-else class="elo-logo-fallback" :style="{ background: item.meta?.accent || '#ff2442' }">{{ item.model?.charAt(0) }}</span>
+                    </span>
+                    <div class="elo-name-col" :title="item.model">
+                      <strong>{{ item.model }}</strong>
+                      <small>{{ item.meta?.vendor || '' }}</small>
+                    </div>
                   </div>
                   <div class="elo-bar-track">
                     <div
@@ -325,10 +321,8 @@
           <div class="pairwise-panel">
             <div class="matrix-header pairwise-header">
               <div>
-                <h2>对战矩阵 · Head-to-Head</h2>
-                <p>每一格表示行模型对列模型的胜率。数据来源：所有竞技场投票记录。</p>
+                <h2>对战矩阵</h2>
               </div>
-              <span class="pairwise-badge">{{ pairwiseData?.totalVotes || 0 }} votes</span>
             </div>
 
             <div v-if="pairwiseLoading" class="board-state pairwise-loading">
@@ -353,14 +347,22 @@
                       class="pw-col-header"
                       :title="model"
                     >
-                      <span class="pw-model-label">{{ shortPairwiseName(model) }}</span>
+                      <div class="pw-header-cell">
+                        <img v-if="logoForModel(model)" :src="logoForModel(model)" class="pw-logo-img" :alt="model" />
+                        <span v-else class="pw-logo-dot" :style="{ background: getModelMeta(model).accent }"></span>
+                        <span class="pw-model-label">{{ shortPairwiseName(model) }}</span>
+                      </div>
                     </th>
                   </tr>
                 </thead>
                 <tbody>
                   <tr v-for="rowModel in pairwiseModels" :key="`pw-row-${rowModel}`">
                     <th class="pw-row-header" :title="rowModel">
-                      <span class="pw-model-label">{{ shortPairwiseName(rowModel) }}</span>
+                      <div class="pw-header-cell row">
+                        <img v-if="logoForModel(rowModel)" :src="logoForModel(rowModel)" class="pw-logo-img" :alt="rowModel" />
+                        <span v-else class="pw-logo-dot" :style="{ background: getModelMeta(rowModel).accent }"></span>
+                        <span class="pw-model-label">{{ shortPairwiseName(rowModel) }}</span>
+                      </div>
                     </th>
                     <td
                       v-for="colModel in pairwiseModels"
@@ -397,6 +399,7 @@
 <script setup>
 import { computed } from 'vue'
 import SvgIcon from './SvgIcon.vue'
+import { getModelLogo, getVendorLogo, getModelMeta, POINT_PALETTE } from '../utils/modelMeta'
 
 const props = defineProps({
   entries: { type: Array, default: () => [] },
@@ -412,17 +415,15 @@ const props = defineProps({
 defineEmits(['refresh'])
 
 const matrixColumns = [
-  { key: 'score', label: 'Overall' },
-  { key: 'winRate', label: 'Win Rate' },
-  { key: 'matches', label: 'Votes' },
-  { key: 'confidenceScore', label: 'Confidence' },
-  { key: 'costEfficiency', label: 'Cost Eff.' },
-  { key: 'contextScore', label: 'Context' },
+  { key: 'score', label: '总览' },
+  { key: 'winRate', label: '胜率' },
+  { key: 'matches', label: '投票' },
+  { key: 'confidenceScore', label: '置信度' },
+  { key: 'costEfficiency', label: '成本效益' },
+  { key: 'contextScore', label: '上下文' },
 ]
 
 const topEntries = computed(() => props.entries.slice(0, 3))
-
-const pointPalette = ['#ff2442', '#2563eb', '#f59e0b', '#14b8a6', '#8b5cf6', '#64748b']
 
 const paretoXAxisLabel = computed(() => 'Price / 1M tokens')
 const paretoYAxisLabel = computed(() => `${props.metricLabel} value`)
@@ -643,7 +644,7 @@ function pointStyle(point) {
 }
 
 function pointColor(item, index) {
-  return item?.meta?.accent || pointPalette[index % pointPalette.length]
+  return item?.meta?.accent || POINT_PALETTE[index % POINT_PALETTE.length]
 }
 
 function shortModelName(label) {
@@ -694,15 +695,6 @@ function stabilityClass(item) {
   return 'low'
 }
 
-function modelMark(item) {
-  const vendor = String(item.meta?.vendor || item.model || '').toLowerCase()
-  if (vendor.includes('alibaba')) return 'Q'
-  if (vendor.includes('deepseek')) return 'D'
-  if (vendor.includes('moonshot')) return 'K'
-  if (vendor.includes('minimax')) return 'M'
-  if (vendor.includes('zhipu')) return 'G'
-  return 'AI'
-}
 
 // ── Elo Ranking Chart ───────────────────────
 
@@ -730,18 +722,26 @@ const pairwiseMatrix = computed(() => {
   return props.pairwiseData?.matrix || {}
 })
 
+function logoForModel(modelName) {
+  const meta = getModelMeta(modelName)
+  return getVendorLogo(meta.vendor)
+}
+
 function shortPairwiseName(model) {
   const text = String(model || '')
-  // Abbreviate known long model names
+  // Abbreviate known long model names — keep informative but compact
   const map = {
-    'deepseek-v4-flash': 'DS-v4',
-    'kimi-k2.6': 'Kimi',
-    'MiniMax-M2.5': 'MMax',
-    'qwen3.6-plus': 'Qwen',
-    'glm-5.1': 'GLM',
+    'deepseek-v4-flash': 'DS Flash',
+    'deepseek-chat': 'DS Chat',
+    'deepseek-reasoner': 'DS Reason',
+    'kimi-k2.6': 'Kimi K2.6',
+    'MiniMax-M2.5': 'MiniMax',
+    'qwen3.6-plus': 'Qwen Plus',
+    'glm-5.1': 'GLM 5.1',
   }
   if (map[text]) return map[text]
-  return text.length > 10 ? text.slice(0, 9) + '…' : text
+  // Generic fallback: keep first 12 chars, append … if truncated
+  return text.length > 12 ? text.slice(0, 11) + '…' : text
 }
 
 function getCell(row, col) {
@@ -869,6 +869,28 @@ function formatPairwiseCount(row, col) {
   font-weight: 800;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.model-logo-img {
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.model-logo-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  font-size: 12px;
+  font-weight: 800;
+  color: inherit;
+  background: rgba(255, 36, 66, 0.12);
+  flex-shrink: 0;
 }
 
 .model-logo {
@@ -1164,6 +1186,15 @@ function formatPairwiseCount(row, col) {
   border: 0;
   background: transparent;
   transform: translate(-50%, -50%);
+}
+
+.pareto-logo-img {
+  display: block;
+  width: 22px;
+  height: 22px;
+  border-radius: 4px;
+  object-fit: contain;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.12);
 }
 
 .pareto-dot {
@@ -1797,7 +1828,7 @@ function formatPairwiseCount(row, col) {
     grid-template-columns: 1fr auto;
   }
 
-  .elo-bar-label small,
+  .elo-name-col small,
   .elo-bar-track {
     display: none;
   }
@@ -1850,8 +1881,8 @@ function formatPairwiseCount(row, col) {
 
 .elo-chart {
   display: grid;
-  gap: 10px;
-  margin-top: 14px;
+  gap: 6px;
+  margin-top: 10px;
   overflow-y: auto;
   flex: 1;
   min-height: 0;
@@ -1860,8 +1891,8 @@ function formatPairwiseCount(row, col) {
 .elo-row {
   display: flex;
   align-items: stretch;
-  gap: 6px;
-  min-height: 46px;
+  gap: 4px;
+  min-height: 38px;
 }
 
 .elo-rank {
@@ -1882,11 +1913,11 @@ function formatPairwiseCount(row, col) {
   flex: 1;
   min-width: 0;
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(0, 2fr) auto;
+  grid-template-columns: minmax(0, 1.5fr) minmax(0, 1.8fr) auto;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
   padding: 4px 8px;
-  border-radius: 10px;
+  border-radius: 8px;
   background: var(--color-card);
   border: 1px solid #f1f1f1;
   transition: background 0.14s ease, border-color 0.14s ease;
@@ -1904,25 +1935,56 @@ function formatPairwiseCount(row, col) {
   min-width: 0;
 }
 
-.elo-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 2px;
+.elo-logo {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
   flex-shrink: 0;
+  border-radius: 3px;
+  overflow: hidden;
 }
 
-.elo-bar-label strong {
+.elo-logo-img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.elo-logo-fallback {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 800;
+  color: #fff;
+}
+
+.elo-name-col {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+}
+
+.elo-name-col strong {
+  display: block;
   color: var(--color-title);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 950;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.elo-bar-label small {
+.elo-name-col small {
+  display: block;
+  margin-top: 1px;
   color: var(--color-hint);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 800;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -1975,7 +2037,7 @@ function formatPairwiseCount(row, col) {
 }
 
 .pairwise-header {
-  padding-bottom: 10px;
+  /* 与 .matrix-header 的 padding-bottom: 18px 保持一致，不再覆盖 */
 }
 
 .pairwise-badge {
@@ -2002,6 +2064,7 @@ function formatPairwiseCount(row, col) {
 }
 
 .pairwise-scroll {
+  margin-top: 10px;
   padding: 0 18px 18px;
 }
 
@@ -2015,8 +2078,8 @@ function formatPairwiseCount(row, col) {
 }
 
 .pairwise-corner {
-  width: 70px;
-  padding: 6px 6px;
+  width: 60px;
+  padding: 4px 4px;
   text-align: right;
   vertical-align: bottom;
   border-bottom: 1px solid var(--color-border);
@@ -2024,17 +2087,18 @@ function formatPairwiseCount(row, col) {
 
 .corner-label {
   color: var(--color-hint);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
 }
 
 .pw-col-header,
 .pw-row-header {
-  padding: 6px 4px;
+  padding: 5px 6px;
   border-bottom: 1px solid var(--color-border);
   background: #fffafa;
   text-align: center;
   white-space: nowrap;
+  min-width: 64px;
 }
 
 .pw-row-header {
@@ -2042,16 +2106,42 @@ function formatPairwiseCount(row, col) {
   border-bottom: 0;
   border-right: 1px solid var(--color-border);
   background: #fffafa;
+  min-width: 74px;
+}
+
+.pw-header-cell {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.pw-header-cell.row {
+  justify-content: flex-end;
+}
+
+.pw-logo-img {
+  width: 14px;
+  height: 14px;
+  border-radius: 2px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
+.pw-logo-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 2px;
+  flex-shrink: 0;
 }
 
 .pw-model-label {
   color: var(--color-title);
-  font-size: 11px;
+  font-size: 10px;
   font-weight: 900;
 }
 
 .pairwise-table td {
-  padding: 6px 4px;
+  padding: 5px 4px;
   border: 1px solid #f1f1f1;
   text-align: center;
   vertical-align: middle;
@@ -2065,7 +2155,7 @@ function formatPairwiseCount(row, col) {
 
 .pw-diagonal {
   color: var(--color-muted);
-  font-size: 15px;
+  font-size: 12px;
   font-weight: 900;
 }
 
@@ -2104,7 +2194,7 @@ function formatPairwiseCount(row, col) {
 .pw-pct {
   display: block;
   color: var(--color-title);
-  font-size: 13px;
+  font-size: 12px;
   font-weight: 950;
   line-height: 1.2;
 }
@@ -2117,7 +2207,7 @@ function formatPairwiseCount(row, col) {
   display: block;
   margin-top: 1px;
   color: var(--color-hint);
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 800;
   line-height: 1;
 }
@@ -2185,6 +2275,14 @@ function formatPairwiseCount(row, col) {
 :root[data-theme="dark"] .pw-col-header,
 :root[data-theme="dark"] .pw-row-header {
   background: var(--color-card-muted);
+}
+
+:root[data-theme="dark"] .elo-logo-fallback {
+  color: var(--color-title);
+}
+
+:root[data-theme="dark"] .elo-logo {
+  background: transparent;
 }
 
 :root[data-theme="dark"] .pw-self {

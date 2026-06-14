@@ -6,9 +6,27 @@
       </div>
     </header>
 
-    <div class="settings-container">
+    <!-- Tab Switcher -->
+    <nav class="tab-bar" aria-label="设置分类">
+      <button
+        :class="['tab-btn', { active: activeTab === 'skills' }]"
+        @click="activeTab = 'skills'"
+      >
+        <SvgIcon name="wrench" :size="18" />
+        <span>智能技能</span>
+      </button>
+      <button
+        :class="['tab-btn', { active: activeTab === 'memory' }]"
+        @click="activeTab = 'memory'"
+      >
+        <SvgIcon name="brain" :size="18" />
+        <span>偏好记忆</span>
+      </button>
+    </nav>
+
+    <div :class="['settings-container', activeTab === 'skills' ? 'show-left' : 'show-right']">
       <!-- Left Column: Skill Studio -->
-      <div class="settings-column">
+      <div v-if="activeTab === 'skills'" class="settings-column">
         <div class="pane-card">
           <div class="pane-header">
             <h2 class="pane-title">
@@ -17,10 +35,6 @@
               </span>
               智能技能工坊
             </h2>
-            <button class="action-btn skill-btn" @click="openSkillModal">
-              <SvgIcon name="plus" :size="14" />
-              新建自定义技能
-            </button>
           </div>
 
           <div v-if="loadingSkills" class="loading-state">
@@ -28,138 +42,151 @@
             <span>正在同步技能库数据...</span>
           </div>
 
-          <div v-else class="pane-content">
-            <!-- If both lists are empty, show a single clean empty placeholder -->
-            <div v-if="systemSkills.length === 0 && customSkills.length === 0" class="sub-section stretch-section">
-              <h3 class="sub-title">我的专属智能技能</h3>
-              <div class="empty-placeholder" @click="openSkillModal">
-                <div class="empty-icon">
-                  <SvgIcon name="plus-circle" :size="24" />
+          <div v-else class="pane-content skill-split">
+            <!-- ===== LEFT: 已有技能（元技能 + 系统内置） ===== -->
+            <div class="skill-list-side">
+              <div v-if="!creatorSkill && systemSkills.length === 0" class="sub-section stretch-section">
+                <h3 class="sub-title">系统内置技能</h3>
+                <div class="empty-placeholder">
+                  <div class="empty-icon">
+                    <SvgIcon name="sparkles" :size="24" />
+                  </div>
+                  <h5>暂无系统内置技能</h5>
+                  <p>系统技能将在初始化后自动加载。</p>
                 </div>
-                <h5>创建专属智能技能</h5>
-                <p>点击此处添加您的个性化规划法则，使 Agent 具有针对您的特化领域知识。</p>
               </div>
+
+              <template v-else>
+                <!-- Meta Controller Skill -->
+                <div v-if="creatorSkill" class="sub-section meta-section">
+                  <h3 class="sub-title">元智能技能</h3>
+                  <div class="meta-skill-banner">
+                    <div class="meta-banner-left">
+                      <div class="meta-icon-wrap">
+                        <SvgIcon name="wrench" :size="18" />
+                      </div>
+                      <div class="meta-info">
+                        <div class="meta-header-row">
+                          <h4>{{ creatorSkill.title }}</h4>
+                        </div>
+                        <p class="item-desc"><strong>激活条件：</strong>{{ formatDescription(creatorSkill.description) }}</p>
+                      </div>
+                    </div>
+                    <div class="meta-banner-right">
+                      <button class="text-link-btn" @click="viewSkill(creatorSkill)">查看指令手册</button>
+                      <label class="switch">
+                        <input type="checkbox" :checked="creatorSkill.isEnabled" @change="toggleSkill(creatorSkill)" :disabled="updatingSkill === creatorSkill.id" />
+                        <span class="slider round"></span>
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- System Skills -->
+                <div v-if="systemSkills.length > 0" class="sub-section">
+                  <h3 class="sub-title">系统内置技能</h3>
+                  <div class="list-grid">
+                    <div v-for="skill in systemSkills" :key="skill.id" class="tool-item skill-item system-item" :class="{ disabled: !skill.isEnabled }">
+                      <div class="item-header">
+                        <span class="tool-icon skill-icon"><SvgIcon name="sparkles" :size="16" /></span>
+                        <div class="item-meta"><h4>{{ skill.title }}</h4></div>
+                        <label class="switch">
+                          <input type="checkbox" :checked="skill.isEnabled" @change="toggleSkill(skill)" :disabled="updatingSkill === skill.id" />
+                          <span class="slider round"></span>
+                        </label>
+                      </div>
+                      <p class="item-desc"><strong>激活条件：</strong>{{ formatDescription(skill.description) }}</p>
+                      <div class="item-footer">
+                        <span class="badge">通用推荐</span>
+                        <button class="text-link-btn" @click="viewSkill(skill)">查看指令手册</button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </template>
             </div>
 
-            <template v-else>
-              <!-- Meta Controller Skill -->
-              <div v-if="creatorSkill" class="sub-section meta-section">
-                <h3 class="sub-title">元智能技能</h3>
-                <div class="meta-skill-banner">
-                  <div class="meta-banner-left">
-                    <div class="meta-icon-wrap">
-                      <SvgIcon name="wrench" :size="18" />
-                    </div>
-                    <div class="meta-info">
-                      <div class="meta-header-row">
-                        <h4>{{ creatorSkill.title }}</h4>
-                      </div>
-                      <p class="item-desc"><strong>激活条件：</strong>{{ formatDescription(creatorSkill.description) }}</p>
-                    </div>
-                  </div>
-                  <div class="meta-banner-right">
-                    <button class="text-link-btn" @click="viewSkill(creatorSkill)">查看指令手册</button>
-                    <label class="switch">
-                      <input 
-                        type="checkbox" 
-                        :checked="creatorSkill.isEnabled" 
-                        @change="toggleSkill(creatorSkill)"
-                        :disabled="updatingSkill === creatorSkill.id"
-                      />
-                      <span class="slider round"></span>
-                    </label>
-                  </div>
-                </div>
-              </div>
-
-              <!-- System Skills -->
-              <div v-if="systemSkills.length > 0" class="sub-section">
-                <h3 class="sub-title">系统内置技能</h3>
-                <div class="list-grid">
-                  <div 
-                    v-for="skill in systemSkills" 
-                    :key="skill.id" 
-                    class="tool-item skill-item system-item"
-                    :class="{ disabled: !skill.isEnabled }"
-                  >
-                    <div class="item-header">
-                      <span class="tool-icon skill-icon">
-                        <SvgIcon name="sparkles" :size="16" />
-                      </span>
-                      <div class="item-meta">
-                        <h4>{{ skill.title }}</h4>
-                      </div>
-                      <label class="switch">
-                        <input 
-                          type="checkbox" 
-                          :checked="skill.isEnabled" 
-                          @change="toggleSkill(skill)"
-                          :disabled="updatingSkill === skill.id"
-                        />
-                        <span class="slider round"></span>
-                      </label>
-                    </div>
-                    <p class="item-desc"><strong>激活条件：</strong>{{ formatDescription(skill.description) }}</p>
-                    <div class="item-footer">
-                      <span class="badge">通用推荐</span>
-                      <button class="text-link-btn" @click="viewSkill(skill)">查看指令手册</button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Custom Skills -->
+            <!-- ===== RIGHT: 自定义技能 + 编辑面板 ===== -->
+            <div class="skill-editor-side">
+              <!-- 自定义技能列表 -->
               <div class="sub-section" :class="{ 'stretch-section': customSkills.length === 0 }">
-                <h3 class="sub-title">我的自定义技能</h3>
-                <div v-if="customSkills.length === 0" class="empty-placeholder" @click="openSkillModal">
-                  <div class="empty-icon">
-                    <SvgIcon name="plus-circle" :size="24" />
-                  </div>
+                <div class="custom-head">
+                  <h3 class="sub-title">我的自定义技能</h3>
+                  <button class="action-btn skill-btn" @click="openSkillEditor()">
+                    <SvgIcon name="plus" :size="14" />
+                    新建
+                  </button>
+                </div>
+                <div v-if="customSkills.length === 0 && !skillEditorActive" class="empty-placeholder" @click="openSkillEditor()">
+                  <div class="empty-icon"><SvgIcon name="plus-circle" :size="24" /></div>
                   <h5>创建专属规划套路</h5>
-                  <p>点击此处添加您的个性化规划法则，使 Agent 具有针对您的特化领域知识。</p>
+                  <p>点击此处添加你的个性化规划法则</p>
                 </div>
                 <div v-else class="list-grid">
-                  <div 
-                    v-for="skill in customSkills" 
-                    :key="skill.id" 
-                    class="tool-item skill-item custom-item"
-                    :class="{ disabled: !skill.isEnabled }"
-                  >
+                  <div v-for="skill in customSkills" :key="skill.id" class="tool-item skill-item custom-item" :class="{ disabled: !skill.isEnabled, editing: editingSkillId === skill.id }">
                     <div class="item-header">
-                      <span class="tool-icon skill-icon custom">
-                        <SvgIcon name="wrench" :size="16" />
-                      </span>
-                      <div class="item-meta">
-                        <h4>{{ skill.title }}</h4>
-                      </div>
+                      <span class="tool-icon skill-icon custom"><SvgIcon name="wrench" :size="16" /></span>
+                      <div class="item-meta"><h4>{{ skill.title }}</h4></div>
                       <label class="switch">
-                        <input 
-                          type="checkbox" 
-                          :checked="skill.isEnabled" 
-                          @change="toggleSkill(skill)"
-                          :disabled="updatingSkill === skill.id"
-                        />
+                        <input type="checkbox" :checked="skill.isEnabled" @change="toggleSkill(skill)" :disabled="updatingSkill === skill.id" />
                         <span class="slider round"></span>
                       </label>
                     </div>
                     <p class="item-desc"><strong>激活条件：</strong>{{ formatDescription(skill.description) }}</p>
                     <div class="item-footer">
-                      <button class="delete-btn" @click="confirmDeleteSkill(skill)">
-                        <SvgIcon name="trash" :size="12" />
-                        删除
-                      </button>
+                      <button class="delete-btn" @click="confirmDeleteSkill(skill)"><SvgIcon name="trash" :size="12" /> 删除</button>
                       <button class="text-link-btn" @click="editSkill(skill)">编辑技能</button>
                     </div>
                   </div>
                 </div>
               </div>
-            </template>
+
+              <!-- 编辑面板（在列表下方） -->
+              <div v-if="skillEditorActive" class="editor-panel">
+                <div class="editor-panel-head">
+                  <h3>{{ isEditSkill ? '编辑自定义技能' : '新建自定义技能' }}</h3>
+                  <button class="editor-cancel-btn" type="button" @click="cancelSkillEdit">取消</button>
+                </div>
+
+                <form class="editor-form" @submit.prevent="saveSkill">
+                  <div class="form-row">
+                    <div class="form-group flex-1">
+                      <label>技能名称 (中文)</label>
+                      <input v-model="skillForm.title" class="form-input" placeholder="例如：蜜月浪漫顾问" required />
+                    </div>
+                    <div class="form-group flex-1">
+                      <label>唯一英文标识</label>
+                      <input v-model="skillForm.name" class="form-input" placeholder="如: honeymoon-specialist" :disabled="isEditSkill" required />
+                      <span class="hint">用于系统唯一标识，创建后不可更改，仅限小写英文与连字符</span>
+                    </div>
+                  </div>
+
+                  <div class="form-group">
+                    <label>激活条件</label>
+                    <textarea v-model="skillForm.description" class="form-textarea desc-textarea" placeholder="极度关键！告知 Agent 应该在什么对话场景下激活此技能。例如：用户提到度蜜月、情侣游、求婚或浪漫旅游。" required></textarea>
+                  </div>
+
+                  <div class="form-group">
+                    <label>技能指令手册</label>
+                    <textarea v-model="skillForm.instructions" class="form-textarea code-textarea" placeholder="# 浪漫度蜜月专家规划准则\n1. 必须优先推荐海景/江景房并在备注中要求蜜月布置...\n2. 每日傍晚留出看日落的浪漫专属时间...\n3. 推荐富有情调的景观露台或米其林餐厅用餐..." required></textarea>
+                    <span class="hint">输入具体的 Prompt 规划准则，支持 Markdown 格式。激活技能时将动态注入 AI 上下文。</span>
+                  </div>
+
+                  <footer class="editor-footer">
+                    <button type="submit" class="submit-btn" :disabled="savingSkill">
+                      <span v-if="savingSkill">正在保存...</span>
+                      <span v-else>{{ isEditSkill ? '确认修改' : '确认保存' }}</span>
+                    </button>
+                  </footer>
+                </form>
+              </div>
+            </div>
           </div>
         </div>
       </div>
 
       <!-- Right Column: Memory Space -->
-      <div class="settings-column">
+      <div v-if="activeTab === 'memory'" class="settings-column">
         <div class="pane-card">
           <div class="pane-header">
             <h2 class="pane-title">
@@ -225,72 +252,6 @@
             </div>
           </div>
         </div>
-      </div>
-    </div>
-
-    <!-- Skill Create/Edit Modal -->
-    <div v-if="skillModalVisible" class="modal-backdrop" @click.self="closeSkillModal">
-      <div class="settings-modal-content">
-        <header class="modal-header">
-          <h2>{{ isEditSkill ? '编辑自定义技能' : '新建自定义技能' }}</h2>
-          <button class="close-btn" @click="closeSkillModal">
-            <SvgIcon name="close" :size="16" />
-          </button>
-        </header>
-
-        <form class="modal-form" @submit.prevent="saveSkill">
-          <div class="form-row">
-            <div class="form-group flex-1">
-              <label>技能名称 (中文)</label>
-              <input 
-                v-model="skillForm.title" 
-                class="form-input" 
-                placeholder="例如：蜜月浪漫顾问" 
-                required 
-              />
-            </div>
-            <div class="form-group flex-1">
-              <label>唯一英文标识</label>
-              <input 
-                v-model="skillForm.name" 
-                class="form-input" 
-                placeholder="如: honeymoon-specialist" 
-                :disabled="isEditSkill"
-                required 
-              />
-              <span class="hint">用于系统唯一标识，创建后不可更改，仅限小写英文与连字符</span>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label>激活条件</label>
-            <textarea 
-              v-model="skillForm.description" 
-              class="form-textarea desc-textarea" 
-              placeholder="极度关键！告知 Agent 应该在什么对话场景下激活此技能。例如：用户提到度蜜月、情侣游、求婚或浪漫旅游。"
-              required
-            ></textarea>
-          </div>
-
-          <div class="form-group">
-            <label>技能指令手册</label>
-            <textarea 
-              v-model="skillForm.instructions" 
-              class="form-textarea code-textarea" 
-              placeholder="# 浪漫度蜜月专家规划准则\n1. 必须优先推荐海景/江景房并在备注中要求蜜月布置...\n2. 每日傍晚留出看日落的浪漫专属时间...\n3. 推荐富有情调的景观露台或米其林餐厅用餐..."
-              required
-            ></textarea>
-            <span class="hint">输入具体的 Prompt 规划准则，支持 Markdown 格式。激活技能时将动态注入 AI 上下文。</span>
-          </div>
-
-          <footer class="modal-footer">
-            <button type="button" class="cancel-btn" @click="closeSkillModal">取消</button>
-            <button type="submit" class="submit-btn" :disabled="savingSkill">
-              <span v-if="savingSkill">正在保存...</span>
-              <span v-else>确认保存</span>
-            </button>
-          </footer>
-        </form>
       </div>
     </div>
 
@@ -361,6 +322,9 @@ import { useAuth } from '../composables/useAuth'
 
 const { userId, isLoggedIn } = useAuth()
 const currentUserId = computed(() => Number(userId.value) || null)
+
+const activeTab = ref('skills')
+
 const formatDescription = (desc) => {
   if (!desc) return ''
   let cleaned = desc.trim()
@@ -387,8 +351,9 @@ const savingMemory = ref(false)
 const creatorSkill = ref(null)
 const systemSkills = ref([])
 const customSkills = ref([])
-const skillModalVisible = ref(false)
+const skillEditorActive = ref(false)
 const isEditSkill = ref(false)
+const editingSkillId = ref(null)
 const skillViewModalVisible = ref(false)
 const selectedSkill = ref(null)
 
@@ -481,30 +446,39 @@ const toggleSkill = async (skill) => {
   updatingSkill.value = null
 }
 
-const openSkillModal = () => {
+const openSkillEditor = () => {
   isEditSkill.value = false
+  editingSkillId.value = null
   skillForm.id = null
   skillForm.name = ''
   skillForm.title = ''
   skillForm.description = ''
   skillForm.instructions = ''
   skillForm.isEnabled = true
-  skillModalVisible.value = true
+  skillEditorActive.value = true
 }
 
-const closeSkillModal = () => {
-  skillModalVisible.value = false
+const cancelSkillEdit = () => {
+  skillEditorActive.value = false
+  editingSkillId.value = null
+  isEditSkill.value = false
+  skillForm.id = null
+  skillForm.name = ''
+  skillForm.title = ''
+  skillForm.description = ''
+  skillForm.instructions = ''
 }
 
 const editSkill = (skill) => {
   isEditSkill.value = true
+  editingSkillId.value = skill.id
   skillForm.id = skill.id
   skillForm.name = skill.name
   skillForm.title = skill.title
   skillForm.description = skill.description
   skillForm.instructions = skill.instructions
   skillForm.isEnabled = skill.isEnabled
-  skillModalVisible.value = true
+  skillEditorActive.value = true
 }
 
 const viewSkill = (skill) => {
@@ -562,7 +536,7 @@ const saveSkill = async () => {
 
     const data = await res.json()
     if (data.code === 200) {
-      skillModalVisible.value = false
+      cancelSkillEdit()
       await loadSkills()
     } else {
       alert("保存技能失败: " + data.message)
@@ -733,7 +707,47 @@ const formatDate = (dateString) => {
   line-height: 1.6;
 }
 
-/* Container Layout */
+/* ── Tab Switcher ── */
+
+.tab-bar {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 28px;
+  padding: 4px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 14px;
+  width: fit-content;
+}
+
+.tab-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 20px;
+  border: none;
+  border-radius: 11px;
+  background: transparent;
+  color: var(--color-secondary);
+  font-size: 14px;
+  font-weight: 700;
+  font-family: var(--font-family);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.tab-btn:hover {
+  color: var(--color-title);
+  background: var(--color-card-hover);
+}
+
+.tab-btn.active {
+  background: var(--color-soft-red);
+  color: var(--color-red);
+  box-shadow: 0 1px 3px rgba(255, 36, 66, 0.12);
+}
+
+/* ── Container Layout ── */
 .settings-container {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -745,6 +759,12 @@ const formatDate = (dateString) => {
   display: flex;
   flex-direction: column;
   height: 100%;
+}
+
+/* When only one column is visible, let it fill the full width */
+.settings-container.show-left,
+.settings-container.show-right {
+  grid-template-columns: 1fr;
 }
 
 @media (max-width: 1100px) {
@@ -845,6 +865,117 @@ const formatDate = (dateString) => {
   flex-direction: column;
   gap: 30px;
   flex: 1;
+}
+
+/* ── Skill two-column split ── */
+
+.skill-split {
+  display: grid !important;
+  grid-template-columns: minmax(300px, 1fr) minmax(440px, 1.5fr);
+  gap: 0;
+  padding: 0;
+}
+
+.skill-list-side {
+  padding: 24px;
+  overflow-y: auto;
+  max-height: calc(100vh - 200px);
+  border-right: 1px solid var(--color-border);
+}
+
+.skill-editor-side {
+  padding: 24px;
+  overflow-y: auto;
+  max-height: calc(100vh - 200px);
+  background: var(--color-surface);
+}
+
+/* Editor panel */
+.editor-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-top: 28px;
+  padding-top: 24px;
+  border-top: 1px solid var(--color-border);
+}
+
+.editor-panel-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.editor-panel-head h3 {
+  font-size: 15px;
+  font-weight: 800;
+  color: var(--color-title);
+  margin: 0;
+}
+
+.editor-cancel-btn {
+  font-size: 12.5px;
+  color: var(--color-secondary);
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  padding: 5px 12px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  font-family: var(--font-family);
+}
+
+.editor-cancel-btn:hover {
+  color: var(--color-red);
+  border-color: rgba(255, 36, 66, 0.3);
+}
+
+.editor-form {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.editor-footer {
+  display: flex;
+  justify-content: flex-end;
+  padding-top: 8px;
+  border-top: 1px solid var(--color-border);
+}
+
+/* Custom skills header row */
+.custom-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.custom-head .sub-title {
+  margin-bottom: 0;
+}
+
+/* Highlight the custom skill item being edited */
+.tool-item.custom-item.editing {
+  border-color: var(--color-red);
+  background: var(--color-soft-red);
+}
+
+/* Responsive: stack on narrow screens */
+@media (max-width: 960px) {
+  .skill-split {
+    grid-template-columns: 1fr;
+  }
+
+  .skill-list-side {
+    border-right: none;
+    border-bottom: 1px solid var(--color-border);
+    max-height: none;
+  }
+
+  .skill-editor-side {
+    max-height: none;
+  }
 }
 
 .sub-section {

@@ -7,16 +7,16 @@
         </button>
         <div class="section-title">
           <SvgIcon name="eye" :size="16" />
-          <span>View as</span>
+          <span>视图模式</span>
         </div>
         <div class="view-toggle">
           <button :class="{ active: viewMode === 'overview' }" @click="viewMode = 'overview'">
             <SvgIcon name="menu" :size="14" />
-            Overview
+            总览
           </button>
           <button :class="{ active: viewMode === 'compact' }" @click="viewMode = 'compact'">
             <SvgIcon name="eye" :size="14" />
-            Compact
+            概览
           </button>
           <button :class="{ active: viewMode === 'pareto' }" @click="viewMode = 'pareto'">
             <SvgIcon name="refresh" :size="14" />
@@ -29,10 +29,10 @@
         <div class="section-title">
           <SvgIcon name="trophy" :size="16" />
           <span>指标筛选</span>
-          <small>{{ metricOptions.length }}</small>
+          <small>{{ METRIC_OPTIONS.length }}</small>
         </div>
         <button
-          v-for="metric in metricOptions"
+          v-for="metric in METRIC_OPTIONS"
           :key="metric.id"
           :class="['metric-option', { active: activeMetric === metric.id }]"
           @click="activeMetric = metric.id"
@@ -40,7 +40,6 @@
           <span class="metric-icon">{{ metric.icon }}</span>
           <span>
             <strong>{{ metric.label }}</strong>
-            <small>{{ metric.caption }}</small>
           </span>
           <SvgIcon v-if="activeMetric === metric.id" name="check" :size="15" />
         </button>
@@ -57,6 +56,7 @@
           :class="['filter-option', { active: vendorFilter === vendor.value }]"
           @click="vendorFilter = vendor.value"
         >
+          <img v-if="getVendorLogo(vendor.label)" :src="getVendorLogo(vendor.label)" class="vendor-logo-img" :alt="vendor.label" />
           <span>{{ vendor.label }}</span>
           <small>{{ vendor.count }}</small>
         </button>
@@ -80,31 +80,22 @@
         <div>
           <div class="title-line">
             <h1>模型排行榜</h1>
-            <span>{{ activeMetricMeta.icon }} {{ activeMetricMeta.label }}</span>
           </div>
           <div class="meta-row">
             <span><SvgIcon name="calendar" :size="15" /> {{ todayLabel }}</span>
-            <span><SvgIcon name="check" :size="15" /> {{ totalMatches }} votes</span>
-            <span><SvgIcon name="brain" :size="15" /> {{ enrichedEntries.length }} models</span>
+            <span><SvgIcon name="check" :size="15" /> {{ totalMatches }} 总票数</span>
+            <span><SvgIcon name="brain" :size="15" /> {{ enrichedEntries.length }} 模型数</span>
           </div>
         </div>
-        <button class="vote-btn" @click="goVote">Start Voting</button>
+        <button class="vote-btn" @click="goVote">开始投票</button>
       </header>
 
       <section class="arena-tools">
         <button class="plain-tool" @click="filtersCollapsed = !filtersCollapsed">
           <SvgIcon :name="filtersCollapsed ? 'chevron-right' : 'arrow-left'" :size="15" />
-          {{ filtersCollapsed ? 'Show Filters' : 'Hide Filters' }}
+          {{ filtersCollapsed ? '展开边栏' : '隐藏边栏' }}
         </button>
         <div class="tool-spacer"></div>
-        <div class="rank-switch" aria-label="Rank by">
-          <span>Rank by</span>
-          <button :class="{ active: rankBy === 'models' }" @click="rankBy = 'models'">Models</button>
-        </div>
-        <label class="search-tool">
-          <SvgIcon name="search" :size="16" />
-          <input v-model="searchText" placeholder="Search" />
-        </label>
         <button class="icon-tool" :disabled="loading" title="刷新排行" @click="loadLeaderboard">
           <SvgIcon name="refresh" :size="16" />
         </button>
@@ -130,6 +121,7 @@ import { computed, onMounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import SvgIcon from '../components/SvgIcon.vue'
 import ModelLeaderboardPanel from '../components/ModelLeaderboardPanel.vue'
+import { getVendorLogo, getModelMeta, MODEL_META, METRIC_OPTIONS } from '../utils/modelMeta'
 
 const router = useRouter()
 const entries = ref([])
@@ -144,22 +136,6 @@ const viewMode = ref('overview')
 const rankBy = ref('models')
 const filtersCollapsed = ref(typeof window !== 'undefined' && window.matchMedia('(max-width: 680px)').matches)
 
-const metricOptions = [
-  { id: 'overall', icon: '🏆', label: 'Overall', caption: '综合 Arena 分数', sortKey: 'score' },
-  { id: 'winRate', icon: '🎯', label: 'Win Rate', caption: '胜率优先', sortKey: 'winRate' },
-  { id: 'votes', icon: '🗳️', label: 'Votes', caption: '投票样本量', sortKey: 'matches' },
-  { id: 'confidence', icon: '✅', label: 'Confidence', caption: '稳定可信度', sortKey: 'confidenceScore' },
-  { id: 'cost', icon: '💰', label: 'Cost Efficiency', caption: '单位成本表现', sortKey: 'costEfficiency' },
-  { id: 'context', icon: '🧠', label: 'Context', caption: '上下文能力', sortKey: 'contextScore' },
-]
-
-const modelMeta = {
-  'deepseek-v4-flash': { vendor: 'DeepSeek', family: 'DeepSeek', accent: '#ff2442', price: '$0.20 / $0.80', context: '128K', priceValue: 0.8, contextScore: 128 },
-  'kimi-k2.6': { vendor: 'Moonshot AI', family: 'Kimi', accent: '#111827', price: '$0.60 / $2.00', context: '128K', priceValue: 2, contextScore: 128 },
-  'MiniMax-M2.5': { vendor: 'MiniMax', family: 'MiniMax', accent: '#d97706', price: '$0.30 / $1.20', context: '1M', priceValue: 1.2, contextScore: 1000 },
-  'qwen3.6-plus': { vendor: 'Alibaba Cloud', family: 'Qwen', accent: '#ff2442', price: '$0.40 / $1.20', context: '1M', priceValue: 1.2, contextScore: 1000 },
-  'glm-5.1': { vendor: 'Zhipu AI', family: 'GLM', accent: '#b91c1c', price: '$0.50 / $1.50', context: '128K', priceValue: 1.5, contextScore: 128 },
-}
 
 const todayLabel = new Intl.DateTimeFormat('zh-CN', {
   month: 'long',
@@ -167,15 +143,6 @@ const todayLabel = new Intl.DateTimeFormat('zh-CN', {
   year: 'numeric',
 }).format(new Date())
 
-function getMeta(model) {
-  if (modelMeta[model]) return modelMeta[model]
-  if (/qwen/i.test(model)) return modelMeta['qwen3.6-plus']
-  if (/deepseek/i.test(model)) return modelMeta['deepseek-v4-flash']
-  if (/kimi/i.test(model)) return modelMeta['kimi-k2.6']
-  if (/minimax/i.test(model)) return modelMeta['MiniMax-M2.5']
-  if (/glm/i.test(model)) return modelMeta['glm-5.1']
-  return { vendor: 'Unknown', family: 'Arena Model', accent: '#6b7280', price: 'N/A', context: 'N/A', priceValue: 5, contextScore: 0 }
-}
 
 const loadLeaderboard = async () => {
   loading.value = true
@@ -212,7 +179,7 @@ onMounted(() => {
   loadPairwise()
 })
 
-const activeMetricMeta = computed(() => metricOptions.find(item => item.id === activeMetric.value) || metricOptions[0])
+const activeMetricMeta = computed(() => METRIC_OPTIONS.find(item => item.id === activeMetric.value) || METRIC_OPTIONS[0])
 
 const enrichedEntries = computed(() => entries.value.map((item) => {
   const matches = Number(item.matches || 0)
@@ -222,7 +189,7 @@ const enrichedEntries = computed(() => entries.value.map((item) => {
   const resolved = wins + losses + ties
   const winRate = resolved ? ((wins + ties * 0.5) / resolved) * 100 : 0
   const confidenceScore = matches >= 10 ? 100 : matches >= 3 ? 64 : matches > 0 ? 32 : 12
-  const meta = getMeta(item.model)
+  const meta = getModelMeta(item.model)
   const score = Number(item.score || 0)
   return {
     ...item,
@@ -251,7 +218,7 @@ const vendorFilterOptions = computed(() => {
     vendors.set(item.meta.vendor, (vendors.get(item.meta.vendor) || 0) + 1)
   })
   return [
-    { value: 'all', label: 'All providers', count: enrichedEntries.value.length },
+    { value: 'all', label: '所有模型厂商', count: enrichedEntries.value.length },
     ...Array.from(vendors.entries()).sort((a, b) => a[0].localeCompare(b[0])).map(([label, count]) => ({
       value: label,
       label,
@@ -401,6 +368,14 @@ function goVote() {
   box-shadow: 0 1px 4px rgba(31, 31, 31, 0.08);
 }
 
+.vendor-logo-img {
+  width: 18px;
+  height: 18px;
+  border-radius: 3px;
+  object-fit: contain;
+  flex-shrink: 0;
+}
+
 .metric-option,
 .filter-option {
   display: flex;
@@ -432,25 +407,34 @@ function goVote() {
   text-align: center;
 }
 
-.metric-option strong,
-.filter-option span {
+.metric-option strong {
   display: block;
   color: inherit;
   font-size: 13px;
   font-weight: 900;
 }
 
-.metric-option small,
-.filter-option small {
+.metric-option small {
   display: block;
   margin-top: 2px;
   color: var(--color-hint);
   font-size: 11px;
 }
 
-.filter-option {
-  justify-content: space-between;
+.filter-option span {
+  flex: 1;
+  color: inherit;
+  font-size: 13px;
+  font-weight: 900;
 }
+
+.filter-option small {
+  flex-shrink: 0;
+  margin-left: auto;
+  color: var(--color-hint);
+  font-size: 11px;
+}
+
 
 .arena-content {
   min-width: 0;
@@ -544,7 +528,7 @@ function goVote() {
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-height: 36px;
+  min-height: 35px;
   border: 0;
   background: transparent;
   color: var(--color-body);
@@ -587,27 +571,6 @@ function goVote() {
   color: var(--color-red);
 }
 
-.search-tool {
-  display: inline-flex;
-  align-items: center;
-  gap: 8px;
-  height: 36px;
-  width: 210px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 10px;
-  background: var(--color-card);
-  color: var(--color-hint);
-}
-
-.search-tool input {
-  min-width: 0;
-  width: 100%;
-  border: 0;
-  outline: 0;
-  color: var(--color-title);
-  background: transparent;
-}
 
 .icon-tool {
   width: 36px;

@@ -9,9 +9,6 @@
         </p>
       </div>
       <div class="monitor-hero-actions">
-        <span class="live-pill" :class="currentRun?.status === 'RUNNING' ? 'is-live' : 'is-static'">
-          {{ currentRun?.status === 'RUNNING' ? '运行中' : statusLabel(currentRun?.status) || '空闲' }}
-        </span>
         <RouterLink :to="`/runs/${runId}`" class="ghost monitor-link">返回运行详情</RouterLink>
         <button type="button" class="ghost" @click="reload">刷新</button>
       </div>

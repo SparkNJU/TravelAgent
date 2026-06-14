@@ -169,6 +169,14 @@
       <polyline points="6 9 12 15 18 9" />
     </template>
 
+    <template v-else-if="name === 'chevron-up'">
+      <polyline points="18 15 12 9 6 15" />
+    </template>
+
+    <template v-else-if="name === 'chevron-left'">
+      <polyline points="15 18 12 12 15 6" />
+    </template>
+
     <template v-else-if="name === 'chevron-right'">
       <polyline points="9 18 15 12 9 6" />
     </template>
@@ -177,6 +185,13 @@
       <line x1="3" y1="12" x2="21" y2="12" />
       <line x1="3" y1="6" x2="21" y2="6" />
       <line x1="3" y1="18" x2="21" y2="18" />
+    </template>
+
+    <template v-else-if="name === 'globe'">
+      <circle cx="12" cy="12" r="10" />
+      <ellipse cx="12" cy="12" rx="4" ry="10" />
+      <line x1="2" y1="12" x2="22" y2="12" />
+      <line x1="12" y1="2" x2="12" y2="22" />
     </template>
 
     <template v-else-if="name === 'trash'">
