@@ -1,18 +1,24 @@
 <template>
   <div class="discover-page">
     <main class="discover-main">
-      <!-- 搜索栏 -->
-      <div class="search-bar">
-        <SvgIcon name="search" :size="18" />
-        <input
-          v-model="searchQuery"
-          type="search"
-          placeholder="搜索目的地、标签或笔记标题..."
-          @input="handleSearch"
-        />
-        <button v-if="searchQuery" class="search-clear" @click="resetFilters" title="清除搜索">
-          <SvgIcon name="close" :size="14" />
+      <!-- 顶部操作区 -->
+      <div class="discover-header">
+        <button class="publish-chip" @click="requireAuth(() => showPublishModal = true)">
+          <SvgIcon name="plus" :size="14" />
+          发布笔记
         </button>
+        <div class="search-bar">
+          <SvgIcon name="search" :size="18" />
+          <input
+            v-model="searchQuery"
+            type="search"
+            placeholder="搜索目的地、标签或笔记标题..."
+            @input="handleSearch"
+          />
+          <button v-if="searchQuery" class="search-clear" @click="resetFilters" title="清除搜索">
+            <SvgIcon name="close" :size="14" />
+          </button>
+        </div>
       </div>
 
       <section class="channel-row" aria-label="旅行频道">
@@ -23,10 +29,6 @@
           @click="activeChannel = channel.id"
         >
           {{ channel.name }}
-        </button>
-        <button class="publish-chip" @click="requireAuth(() => showPublishModal = true)">
-          <SvgIcon name="plus" :size="14" />
-          发布笔记
         </button>
       </section>
 
@@ -456,12 +458,22 @@ onMounted(() => {
   overflow-x: hidden;
 }
 
+.discover-header {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  max-width: 1440px;
+  margin: 0 auto 16px;
+  width: 100%;
+}
+
 .search-bar {
   display: flex;
   align-items: center;
   gap: 10px;
-  max-width: 680px;
-  margin: 0 auto 16px;
+  flex: 1;
+  max-width: 550px;
+  margin: 0;
   padding: 0 16px;
   height: 48px;
   border: 1px solid var(--color-border);
@@ -539,8 +551,7 @@ onMounted(() => {
   font-family: var(--font-family);
 }
 
-.channel-chip,
-.publish-chip {
+.channel-chip {
   flex-shrink: 0;
   height: 34px;
   padding: 0 15px;
@@ -562,10 +573,27 @@ onMounted(() => {
 .publish-chip {
   display: inline-flex;
   align-items: center;
-  gap: 5px;
-  margin-left: auto;
-  border-color: rgba(255, 36, 66, 0.22);
+  gap: 6px;
+  flex-shrink: 0;
+  height: 48px;
+  padding: 0 24px;
+  border: 1px solid rgba(255, 36, 66, 0.22);
+  border-radius: 999px;
+  background: var(--color-card);
   color: var(--color-red);
+  font-size: 15px;
+  font-weight: 850;
+  box-shadow: 0 4px 18px rgba(31, 31, 31, 0.05);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.publish-chip:hover {
+  background: var(--color-red);
+  color: #ffffff;
+  border-color: var(--color-red);
+  box-shadow: 0 8px 18px rgba(255, 36, 66, 0.24);
+  transform: translateY(-1px);
 }
 
 .note-grid {
@@ -1146,6 +1174,16 @@ onMounted(() => {
 @media (max-width: 560px) {
   .discover-main {
     padding: 10px 16px 42px;
+  }
+
+  .discover-header {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 10px;
+  }
+
+  .search-bar {
+    max-width: 100%;
   }
 
   .channel-row,

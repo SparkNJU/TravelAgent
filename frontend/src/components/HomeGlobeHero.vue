@@ -1,5 +1,5 @@
 <template>
-  <section class="home-hero">
+  <section class="home-hero" @click="handlePageClick">
     <div class="starfield" aria-hidden="true">
       <span class="stars stars-a"></span>
       <span class="stars stars-b"></span>
@@ -13,8 +13,7 @@
 
     <div class="hero-copy">
       
-      <h1>Your Travel NeverMind</h1>
-      <h1>TravelMind Here</h1>
+      <h1>Travel Mindful.</h1>
       
       <form class="plan-search" @submit.prevent="submitCustomPlan" aria-label="AI 旅行计划输入">
         <SvgIcon class="search-icon" name="send" :size="18" />
@@ -24,40 +23,15 @@
           placeholder="东京 5 天，美食、购物和城市漫游"
         />
         <div class="search-submit-wrap">
-          <Transition name="swap-up" mode="out-in">
-            <button
-              v-if="showAiButton"
-              key="ai"
-              class="search-submit ai-btn"
-              type="submit"
-            >
-              <SvgIcon name="sparkles" :size="15" />
-              AI生成
-            </button>
-            <button
-              v-else
-              key="note"
-              class="search-submit note-btn"
-              type="button"
-              @click="goDiscover"
-            >
-              <SvgIcon name="search" :size="15" />
-              搜索笔记
-            </button>
-          </Transition>
+          <button
+            class="search-submit ai-btn"
+            type="submit"
+          >
+            <SvgIcon name="sparkles" :size="15" />
+            AI生成
+          </button>
         </div>
       </form>
-
-      <div class="hero-actions">
-        <button class="hero-primary" @click="startAgentPlan">
-          <SvgIcon name="sparkles" :size="17" />
-          Agent规划
-        </button>
-        <button class="hero-secondary" @click="$emit('open-explore')">
-          <SvgIcon name="globe" :size="17" />
-          探索发现
-        </button>
-      </div>
     </div>
 
     <div class="globe-stage">
@@ -75,6 +49,12 @@
       >
         {{ label.name }}
       </button>
+    </div>
+
+
+
+    <div class="enter-app-tip">
+      * 点击任意空白处进入主页 ➔
     </div>
 
     <aside v-if="planPopoverOpen" class="city-popover" aria-label="城市推荐方案">
@@ -144,8 +124,6 @@ const hoveredCityId = ref('')
 const router = useRouter()
 const customQuery = ref('')
 const planPopoverOpen = ref(false)
-const showAiButton = ref(true)
-let swapTimer = null
 const raycaster = new THREE.Raycaster()
 const pointer = new THREE.Vector2()
 
@@ -597,18 +575,23 @@ function submitCustomPlan() {
   emit('start-plan', query)
 }
 
-function goDiscover() {
-  const query = customQuery.value.trim()
-  router.push({ path: '/discover', query: query ? { q: query } : {} })
+function handlePageClick(event) {
+  if (
+    event.target.closest('.plan-search') ||
+    event.target.closest('.globe-label') ||
+    event.target.closest('.city-popover') ||
+    event.target.closest('.hero-brand')
+  ) {
+    return
+  }
+  router.push('/discover')
 }
 
 onMounted(() => {
-  swapTimer = setInterval(() => { showAiButton.value = !showAiButton.value }, 10000)
   nextTick(buildScene)
 })
 
 onBeforeUnmount(() => {
-  if (swapTimer) clearInterval(swapTimer)
   cancelAnimationFrame(animationId)
   window.removeEventListener('resize', handleResize)
   renderer?.domElement?.removeEventListener('pointerdown', handlePointerDown)
@@ -623,11 +606,13 @@ onBeforeUnmount(() => {
 </script>
 
 <style scoped>
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500&display=swap');
+
 .home-hero {
   position: relative;
   isolation: isolate;
   display: grid;
-  grid-template-rows: auto minmax(420px, 1fr);
+  grid-template-rows: auto minmax(420px, 1fr) auto;
   justify-items: center;
   min-height: 100vh;
   padding: clamp(72px, 8vh, 100px) clamp(18px, 3.5vw, 48px) clamp(20px, 3vh, 32px);
@@ -757,7 +742,7 @@ onBeforeUnmount(() => {
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.9);
   color: #ff2442;
-  font-family: Georgia, 'Times New Roman', serif;
+  font-family: 'Times New Roman', Times, serif;
   font-size: 17px;
   font-weight: 800;
   text-decoration: none;
@@ -793,25 +778,28 @@ onBeforeUnmount(() => {
   max-width: min(1140px, calc(100vw - 60px));
   margin: 0;
   color: #ff2442;
-  font-family: Georgia, 'Times New Roman', 'Noto Serif SC', serif;
-  font-size: clamp(38px, 5.5vw, 76px);
-  font-weight: 950;
-  line-height: 0.98;
-  text-shadow: 0 16px 42px rgba(255, 36, 66, 0.16);
+  font-family: 'Times New Roman', Times, serif;
+  font-size: clamp(36px, 4.5vw, 68px);
+  font-weight: bold;
+  line-height: 1.05;
+  text-shadow: 0 8px 24px rgba(255, 36, 66, 0.08);
 }
 
 .hero-subtitle {
   max-width: 680px;
-  margin: 0;
-  color: rgba(133, 31, 48, 0.78);
-  font-size: 16px;
-  line-height: 1.75;
+  margin: 8px 0 0;
+  color: #ff2442;
+  font-family: 'FangSong', 'STFangsong', 'Adobe Fangsong Std', 'Playfair Display', 'Noto Serif SC', 'Songti SC', 'STSong', Georgia, serif;
+  font-size: clamp(20px, 2.8vw, 36px);
+  font-weight: bold;
+  line-height: 1.15;
+  text-shadow: 0 16px 42px rgba(255, 36, 66, 0.16);
 }
 
 .plan-search {
   display: flex;
   align-items: center;
-  width: min(660px, calc(100vw - 56px));
+  width: min(520px, calc(100vw - 56px));
   height: 52px;
   margin-top: 16px;
   padding: 0 8px 0 20px;
@@ -844,7 +832,6 @@ onBeforeUnmount(() => {
 
 .search-submit-wrap {
   position: relative;
-  overflow: hidden;
   height: 38px;
   min-width: 80px;
 }
@@ -872,27 +859,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 12px 28px rgba(255, 36, 66, 0.28);
 }
 
-/* 搜索笔记：白底红字 */
-.search-submit.note-btn {
-  background: #ffffff;
-  color: #ff2442;
-  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.08);
-  border: 1.5px solid rgba(255, 36, 66, 0.18);
-}
-
-/* ── Swap-up transition ── */
-.swap-up-enter-active,
-.swap-up-leave-active {
-  transition: opacity 0.28s ease, transform 0.28s ease;
-}
-.swap-up-enter-from {
-  opacity: 0;
-  transform: translateY(16px);
-}
-.swap-up-leave-to {
-  opacity: 0;
-  transform: translateY(-16px);
-}
+/* CSS transitions cleaned up */
 
 .hero-actions {
   display: flex;
@@ -925,12 +892,7 @@ onBeforeUnmount(() => {
   box-shadow: 0 16px 36px rgba(255, 36, 66, 0.28);
 }
 
-.hero-secondary {
-  border: 1px solid rgba(255, 36, 66, 0.36);
-  background: #ffffff;
-  color: #ff2442;
-  box-shadow: 0 14px 32px rgba(255, 36, 66, 0.12);
-}
+/* hero-secondary cleaned up */
 
 .globe-stage {
   position: relative;
@@ -1359,4 +1321,25 @@ onBeforeUnmount(() => {
     transform: scale(1.04);
   }
 }
+
+
+.enter-app-tip {
+  margin-top: 16px;
+  margin-bottom: 12px;
+  z-index: 5;
+  font-size: 15px;
+  font-weight: 600;
+  font-family: 'Outfit', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+  color: rgba(255, 36, 66, 0.68);
+  letter-spacing: 0.05em;
+  pointer-events: none;
+  animation: fade-breathe 2.5s ease-in-out infinite;
+  user-select: none;
+}
+
+@keyframes fade-breathe {
+  0%, 100% { opacity: 0.6; }
+  50% { opacity: 1; }
+}
+
 </style>

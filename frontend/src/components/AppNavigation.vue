@@ -30,7 +30,7 @@
         :class="{ active: isActive('/plan/workbench') || isActive('/plan-workbench') }"
       >
         <SvgIcon name="map-pin" :size="22" />
-        <span>规划工作台</span>
+        <span>工作台</span>
       </router-link>
 
       <router-link
@@ -40,6 +40,15 @@
       >
         <SvgIcon name="trophy" :size="22" />
         <span>模型排行</span>
+      </router-link>
+
+      <router-link
+        to="/settings"
+        class="sidebar-link"
+        :class="{ active: isActive('/settings') }"
+      >
+        <SvgIcon name="settings" :size="22" />
+        <span>模型个性化</span>
       </router-link>
     </nav>
 
@@ -58,11 +67,6 @@
       <button class="theme-row" :title="themeTitle" @click="toggleTheme">
         <SvgIcon :name="theme === 'light' ? 'moon' : 'sun'" :size="20" />
         <span>{{ theme === 'light' ? '深色模式' : '浅色模式' }}</span>
-      </button>
-
-      <button class="sidebar-action" :class="{ active: isActive('/settings') }" @click="goSettings">
-        <SvgIcon name="settings" :size="20" />
-        <span>设置</span>
       </button>
 
       <button class="sidebar-action danger" @click="handleLogout">
@@ -130,10 +134,6 @@ function goProfile() {
     return
   }
   router.push('/profile')
-}
-
-function goSettings() {
-  router.push('/settings')
 }
 
 function handleLogout() {
