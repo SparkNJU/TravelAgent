@@ -362,7 +362,7 @@
 </template>
 
 <script setup>
-import { ref, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
+import { ref, reactive, computed, nextTick, watch, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useSSE } from '../composables/useSSE'
 import { useConversation } from '../composables/useConversation'
@@ -401,15 +401,43 @@ const {
 } = useAgentTools()
 
 const sidebarCollapsed = ref(false)
-const loading = ref(false)
 const messagesRef = ref(null)
-const activeController = ref(null)
 const selectedMode = ref('agent')
-const selectedModel = ref('qwen3.6-plus')
+const selectedModel = ref('qwen3.7-plus')
 const arenaMode = ref(false)
-const pendingAskUser = ref(null)
-const activeSuggestions = ref([])
 const navigatingToWorkbench = ref(false)
+
+// Per-conversation stream state: convId -> { loading, controller, pendingAskUser, activeSuggestions }
+const streamStates = reactive(new Map())
+
+function getStreamState(convId) {
+  if (!streamStates.has(convId)) {
+    streamStates.set(convId, {
+      loading: false,
+      controller: null,
+      pendingAskUser: null,
+      activeSuggestions: [],
+    })
+  }
+  return streamStates.get(convId)
+}
+
+// Template-facing computed refs (backward-compatible with existing template bindings)
+const currentStreamState = computed(() => {
+  const convId = activeConversation.value?.id
+  if (!convId) return { loading: false, controller: null, pendingAskUser: null, activeSuggestions: [] }
+  return getStreamState(convId)
+})
+const loading = computed(() => currentStreamState.value.loading)
+const activeController = computed(() => currentStreamState.value.controller)
+const pendingAskUser = computed({
+  get: () => currentStreamState.value.pendingAskUser,
+  set: (v) => { currentStreamState.value.pendingAskUser = v },
+})
+const activeSuggestions = computed({
+  get: () => currentStreamState.value.activeSuggestions,
+  set: (v) => { currentStreamState.value.activeSuggestions = v },
+})
 const workbenchParsing = ref(false)
 const workbenchPlanId = ref(null)
 const workbenchError = ref('')
@@ -467,10 +495,9 @@ const modeLabelMap = {
 }
 
 const modelLabelMap = {
-  'deepseek-chat': 'DeepSeek V4 Pro',
-  'deepseek-reasoner': 'DeepSeek Reasoner',
-  'qwen3.6-plus': 'Qwen 3.6 Plus',
+  'qwen3.7-plus': 'Qwen 3.7 Plus',
   'deepseek-v4-flash': 'DeepSeek V4 Flash',
+  'deepseek-v4-pro': 'DeepSeek V4 Pro',
   'kimi-k2.6': 'Kimi K2.6',
   'MiniMax-M2.5': 'MiniMax M2.5',
   'glm-5.1': 'GLM 5.1',
@@ -923,12 +950,25 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
     generatePlanFirst = false
   }
 
-  addMessage({ role: 'user', content: query })
-  addMessage({ role: 'assistant', content: '', events: [], planContent: '' })
+  // Snapshot target conversation at stream creation time
+  const targetConv = activeConversation.value
+  if (!targetConv) return
+  const targetConvId = targetConv.id
 
-  loading.value = true
-  pendingAskUser.value = null
-  activeSuggestions.value = []
+  // Add messages directly to the target conversation (not via addMessage which writes to activeConversation)
+  targetConv.messages.push({ role: 'user', content: query })
+  targetConv.messages.push({ role: 'assistant', content: '', events: [], planContent: '' })
+  if (targetConv.messages.length === 2 && targetConv.messages[0].role === 'user') {
+    targetConv.title = query.slice(0, 40) || '新对话'
+  }
+  targetConv.updatedAt = Date.now()
+  persist()
+
+  // Per-conversation stream state
+  const state = getStreamState(targetConvId)
+  state.loading = true
+  state.pendingAskUser = null
+  state.activeSuggestions = []
   scrollToBottom()
 
   const formData = new FormData()
@@ -939,87 +979,119 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
   formData.append('model', selectedModel.value)
   formData.append('webSearchEnabled', String(webSearchEnabled.value))
   formData.append('knowledgeSearchEnabled', String(knowledgeSearchEnabled.value))
-  // If a plan was already generated, start fresh (don't carry old context)
-  const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
-  const relevantHistory = activeConversation.value.result ? [] : historyRaw.slice(-10)
+  const historyRaw = targetConv.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
+  const relevantHistory = targetConv.result ? [] : historyRaw.slice(-10)
   const historyToSent = relevantHistory.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
   formData.append('chatHistoryJson', JSON.stringify(historyToSent))
 
   if (forceCompress.value) { formData.append('forceCompress', 'true'); forceCompress.value = false }
   if (file) formData.append('file', file)
 
-  const agentMsg = () => activeConversation.value?.messages.at(-1)
+  // Snapshot the target message reference (not a closure over activeConversation)
+  const targetMsg = targetConv.messages.at(-1)
 
-  activeController.value = streamPost(
+  const controller = streamPost(
     '/api/assistant/chat/stream',
     formData,
     (event) => {
-      const msg = agentMsg()
-      if (!msg) return
+      if (!targetMsg) return
       if (event.type === 'token_status') {
         tokenStatus.value = {
           ...(tokenStatus.value || {}),
           ...(event.metadata || {}),
         }
-        activeConversation.value.messages = [...activeConversation.value.messages]
+        targetConv.messages = [...targetConv.messages]
         return
       }
       if (event.type === 'answer') {
-        msg.answer = (msg.answer || '') + event.content
+        targetMsg.answer = (targetMsg.answer || '') + event.content
       } else if (event.type === 'plan') {
-        if (!msg.planContent) msg.planContent = ''
-        msg.planContent += event.content
+        if (!targetMsg.planContent) targetMsg.planContent = ''
+        targetMsg.planContent += event.content
       } else if (event.type === 'done') {
         return
       } else if (event.type === 'ask_user') {
-        pendingAskUser.value = {
+        state.pendingAskUser = {
           message: event.content,
           questions: event.metadata?.questions || [],
         }
-        msg.events.push({ type: 'ask_user', content: event.content, metadata: event.metadata })
+        targetMsg.events.push({ type: 'ask_user', content: event.content, metadata: event.metadata })
       } else if (event.type === 'suggestions') {
-        activeSuggestions.value = event.metadata?.questions || []
+        state.activeSuggestions = event.metadata?.questions || []
       } else if (event.type === 'action' && event.metadata?.tool === 'finish') {
-        msg._planFinished = true
-        msg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
+        targetMsg._planFinished = true
+        targetMsg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
       } else if (['thought', 'action', 'observation', 'reflection'].includes(event.type)) {
-        msg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
+        targetMsg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
       } else if (event.type === 'error') {
-        msg.events.push({ type: 'observation', content: `Error: ${event.content}`, metadata: {} })
+        targetMsg.events.push({ type: 'observation', content: `Error: ${event.content}`, metadata: {} })
       }
       scrollToBottom()
-      activeConversation.value.messages = [...activeConversation.value.messages]
+      targetConv.messages = [...targetConv.messages]
     },
-    finishStream,
+    () => finishStreamFor(targetConvId),
     (err) => {
-      loading.value = false
-      activeController.value = null
+      state.loading = false
+      state.controller = null
+      streamStates.delete(targetConvId)
       console.error('SSE error:', err)
-      addMessage({ role: 'assistant', content: `请求失败: ${err.message}`, events: [] })
+      // Add error message directly to the target conversation
+      targetConv.messages.push({ role: 'assistant', content: `请求失败: ${err.message}`, events: [] })
+      persist()
     },
   )
+
+  state.controller = controller
 }
 
-async function finishStream() {
-  activeController.value = null
-  const msg = activeConversation.value?.messages.at(-1)
+async function finishStreamFor(targetConvId) {
+  const state = streamStates.get(targetConvId)
+  if (state) {
+    state.controller = null
+  }
+
+  // Find the target conversation from the conversations list
+  const conv = conversations.value.find(c => c.id === targetConvId)
+  if (!conv) {
+    if (state) state.loading = false
+    streamStates.delete(targetConvId)
+    return
+  }
+
+  const msg = conv.messages.at(-1)
   if (msg?.answer) {
     try {
       const parsed = JSON.parse(msg.answer)
       if (parsed.destination || parsed.markdown) {
-        setResult(parsed)
+        conv.result = parsed
+        conv.updatedAt = Date.now()
       }
     } catch {
-      // Only show workbench button when finish tool was called (actual travel plan)
       if (msg._planFinished) {
-        setResult({ markdown: msg.answer, source: 'markdown' })
+        conv.result = { markdown: msg.answer, source: 'markdown' }
+        conv.updatedAt = Date.now()
       }
     }
   }
-  // Sync first, then show button — so backendId is ready on click
-  await syncActiveToBackend()
-  persist()
-  loading.value = false
+  // Sync the target conversation (may not be the active one)
+  // Use syncActiveToBackend(conv) + saveConversations instead of persist()
+  // to avoid syncing the wrong (active) conversation
+  await syncActiveToBackend(conv)
+  // persist() would also call syncActiveToBackend() for the active conversation,
+  // so just save to localStorage directly
+  try {
+    localStorage.setItem('travel_conversations', JSON.stringify(conversations.value))
+  } catch {}
+  if (state) {
+    state.loading = false
+  }
+  streamStates.delete(targetConvId)
+}
+
+// Legacy wrapper for template / other callers that don't have a convId
+async function finishStream() {
+  const convId = activeConversation.value?.id
+  if (convId) await finishStreamFor(convId)
 }
 
 function handleSend({ query, file }) {
@@ -1046,8 +1118,13 @@ function handleSuggestionSelect(question) {
 }
 
 async function handleAutoSend({ query, file }) {
-  addMessage({ role: 'user', content: query })
-  addMessage({
+  // Snapshot target conversation
+  const targetConv = activeConversation.value
+  if (!targetConv) return
+  const targetConvId = targetConv.id
+
+  targetConv.messages.push({ role: 'user', content: query })
+  targetConv.messages.push({
     role: 'assistant',
     content: '',
     events: [],
@@ -1063,8 +1140,14 @@ async function handleAutoSend({ query, file }) {
       doneFlags: { A: false, B: false },
     },
   })
+  if (targetConv.messages.length === 2 && targetConv.messages[0].role === 'user') {
+    targetConv.title = query.slice(0, 40) || '新对话'
+  }
+  targetConv.updatedAt = Date.now()
+  persist()
 
-  loading.value = true
+  const state = getStreamState(targetConvId)
+  state.loading = true
   scrollToBottom()
 
   const formData = new FormData()
@@ -1072,74 +1155,82 @@ async function handleAutoSend({ query, file }) {
   formData.append('userId', localStorage.getItem('userId') || '1')
   formData.append('webSearchEnabled', String(webSearchEnabled.value))
   formData.append('knowledgeSearchEnabled', String(knowledgeSearchEnabled.value))
-  const historyRaw = activeConversation.value.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
-  const relevantHistory = activeConversation.value.result ? [] : historyRaw.slice(-10)
+  const historyRaw = targetConv.messages.slice(0, -2).filter(m => m.role === 'user' || m.role === 'assistant')
+  const relevantHistory = targetConv.result ? [] : historyRaw.slice(-10)
   const historyToSent = relevantHistory.map(m => ({ role: m.role, content: m.content || m.answer || '' }))
   formData.append('chatHistoryJson', JSON.stringify(historyToSent))
 
   if (forceCompress.value) { formData.append('forceCompress', 'true'); forceCompress.value = false }
   if (file) formData.append('file', file)
 
-  const arenaMsg = () => activeConversation.value?.messages.at(-1)
-  const msg = arenaMsg()
-  if (msg?.arena) {
-    msg.arena.stages = createInitialArenaStages(query)
-    activeConversation.value.messages = [...activeConversation.value.messages]
+  // Snapshot the arena message reference
+  const arenaMsg = targetConv.messages.at(-1)
+  if (arenaMsg?.arena) {
+    arenaMsg.arena.stages = createInitialArenaStages(query)
+    targetConv.messages = [...targetConv.messages]
   }
 
-  activeController.value = streamPost(
+  const controller = streamPost(
     '/api/arena/auto/stream',
     formData,
     (event) => {
-      const current = arenaMsg()
-      handleArenaStreamEvent(current, event)
+      handleArenaStreamEvent(arenaMsg, event)
     },
     () => {
-      const current = arenaMsg()
-      if (current?.arena?.loading) {
-        current.arena.loading = false
-        updateArenaStage(current, 'merge', {
+      if (arenaMsg?.arena?.loading) {
+        arenaMsg.arena.loading = false
+        updateArenaStage(arenaMsg, 'merge', {
           status: 'done',
           detail: '流式连接结束，已停止接收新事件。',
         })
-        activeConversation.value.messages = [...activeConversation.value.messages]
+        targetConv.messages = [...targetConv.messages]
       }
-      loading.value = false
-      activeController.value = null
+      state.loading = false
+      state.controller = null
+      streamStates.delete(targetConvId)
       persist()
     },
     (err) => {
-      const current = arenaMsg()
-      if (current?.arena) {
-        current.arena.loading = false
-        current.content = `Auto对比失败: ${err.message}`
-        updateArenaStage(current, 'reasoning', {
+      if (arenaMsg?.arena) {
+        arenaMsg.arena.loading = false
+        arenaMsg.content = `Auto对比失败: ${err.message}`
+        updateArenaStage(arenaMsg, 'reasoning', {
           status: 'error',
           time: timeTag(),
           detail: `流式事件处理失败：${err.message}`,
         })
-        updateArenaStage(current, 'merge', {
+        updateArenaStage(arenaMsg, 'merge', {
           status: 'error',
           time: timeTag(),
           detail: '对比流程中断。',
         })
-        activeConversation.value.messages = [...activeConversation.value.messages]
+        targetConv.messages = [...targetConv.messages]
       }
-      loading.value = false
-      activeController.value = null
+      state.loading = false
+      state.controller = null
+      streamStates.delete(targetConvId)
       persist()
     },
   )
+
+  state.controller = controller
 }
 
 function stopActiveRequest() {
-  if (!loading.value || !activeController.value) return
-  activeController.value.abort()
-  activeController.value = null
-  loading.value = false
+  const convId = activeConversation.value?.id
+  if (!convId) return
+  const state = streamStates.get(convId)
+  if (!state?.loading || !state?.controller) return
 
-  const conv = activeConversation.value
-  if (!conv) return
+  state.controller.abort()
+  state.controller = null
+  state.loading = false
+
+  const conv = conversations.value.find(c => c.id === convId)
+  if (!conv) {
+    streamStates.delete(convId)
+    return
+  }
   const last = [...conv.messages].reverse().find(m => m.role === 'assistant')
   if (last?.arena) {
     last.arena.loading = false
@@ -1159,6 +1250,7 @@ function stopActiveRequest() {
     last.events.push({ type: 'observation', content: '已停止', metadata: {} })
   }
   conv.messages = [...conv.messages]
+  streamStates.delete(convId)
   persist()
 }
 

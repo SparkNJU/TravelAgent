@@ -23,8 +23,8 @@ function persist() {
   syncActiveToBackend()
 }
 
-async function syncActiveToBackend() {
-  const conv = activeConversation.value
+async function syncActiveToBackend(targetConv) {
+  const conv = targetConv || activeConversation.value
   if (!conv) return
   const userId = Number(localStorage.getItem('userId')) || 1
 
