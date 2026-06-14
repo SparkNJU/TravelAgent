@@ -186,12 +186,21 @@ class ReActAgent:
                 body = res.json()
                 memory_obj = body.get("data", {}).get("memory")
                 if memory_obj and isinstance(memory_obj, dict):
-                    memory_json_str = memory_obj.get("memoryJson") or "[]"
+                    memory_json_str = memory_obj.get("memoryJson") or "{}"
                     active_memories_desc = "\n\nYou have access to the user's personal preferences and profile details (Personal Memories). You MUST strictly respect and satisfy all of these conditions during travel planning without asking the user about them:\nUser Personal Preferences/Memories:\n"
                     try:
-                        cards = json.loads(memory_json_str) if isinstance(memory_json_str, str) else memory_json_str
-                        if isinstance(cards, list):
-                            for card in cards:
+                        parsed = json.loads(memory_json_str) if isinstance(memory_json_str, str) else memory_json_str
+                        # New format: {"disabledKeys": [], "cards": [{content, category, isEnabled}]}
+                        if isinstance(parsed, dict) and "cards" in parsed:
+                            for card in parsed.get("cards", []):
+                                if isinstance(card, dict):
+                                    content = card.get("content", "")
+                                    enabled = card.get("isEnabled", True)
+                                    if content and enabled:
+                                        active_memories_desc += f"- {content}\n"
+                        # Old format: plain array of cards
+                        elif isinstance(parsed, list):
+                            for card in parsed:
                                 if isinstance(card, dict):
                                     content = card.get("content", "")
                                     enabled = card.get("isEnabled", True)

@@ -9,58 +9,6 @@ from config import config
 from .llm_service import LLMService
 
 
-_MEMORY_SCHEMA = {
-    "name": "agent_memory_extraction",
-    "strict": True,
-    "schema": {
-        "type": "object",
-        "properties": {
-            "user_facts": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "key": {"type": "string"},
-                        "value": {"type": "string"},
-                        "evidence": {"type": "string"},
-                        "confidence": {"type": "number"},
-                    },
-                    "required": ["key", "value", "evidence", "confidence"],
-                    "additionalProperties": False,
-                },
-            },
-            "conversation_summary": {"type": "string"},
-            "public_knowledge": {
-                "type": "array",
-                "items": {
-                    "type": "object",
-                    "properties": {
-                        "knowledgeKey": {"type": "string"},
-                        "knowledgeTitle": {"type": "string"},
-                        "knowledgeContent": {"type": "string"},
-                        "knowledgeScope": {"type": "string"},
-                        "confidenceScore": {"type": "number"},
-                        "evidence": {"type": "string"},
-                    },
-                    "required": [
-                        "knowledgeKey",
-                        "knowledgeTitle",
-                        "knowledgeContent",
-                        "knowledgeScope",
-                        "confidenceScore",
-                        "evidence",
-                    ],
-                    "additionalProperties": False,
-                },
-            },
-            "memory_markdown": {"type": "string"},
-        },
-        "required": ["user_facts", "conversation_summary", "public_knowledge", "memory_markdown"],
-        "additionalProperties": False,
-    },
-}
-
-
 @dataclass
 class MemoryExtractionResult:
     user_facts: list[dict]
@@ -99,43 +47,38 @@ class MemoryService:
         context_text = self._build_context(query, answer, chat_history, user_name)
         prompt = (
             "你是旅行助手的记忆抽取器。你的任务是从一次对话中抽取长期记忆。\n"
-            "必须输出严格合法 JSON。禁止输出任何解释文本。\n\n"
-            
-            "禁止输出 markdown、解释、自然语言。\n"
-            "禁止把 user_facts 写成字符串数组。\n"
-            "user_facts 每一项必须是对象。\n\n"
+            "你只能输出 JSON，不要输出任何解释或其他文字。\n\n"
 
-            "正确示例：\n"
+            "输出的 JSON 必须使用以下格式：\n"
             "{\n"
-            '  "user_facts":[\n'
-            "    {\n"
-            '      "key":"user_name",\n'
-            '      "value":"小米",\n'
-            '      "evidence":"用户说我叫小米",\n'
-            '      "confidence":0.95\n'
-            "    }\n"
+            '  "user_facts": [\n'
+            "    {\"key\": \"user_name\", \"value\": \"小米\", \"evidence\": \"用户说我叫小米\", \"confidence\": 0.95},\n"
+            "    {\"key\": \"age\", \"value\": \"25\", \"evidence\": \"用户说今年25岁\", \"confidence\": 0.9}\n"
             "  ],\n"
-            '  "conversation_summary":"...",\n'
-            '  "public_knowledge":[],\n'
-            '  "memory_markdown":"..."\n'
+            '  "conversation_summary": "用户介绍了自己的基本信息和旅行偏好",\n'
+            '  "public_knowledge": [],\n'
+            '  "memory_markdown": "# AGENT.md\\n...（可直接写入 AGENT.md 的 Markdown）"\n'
             "}\n\n"
 
-            "错误示例：\n"
-            '["用户姓名为小米"]\n'
-            "↑ 禁止这种格式。\n\n"
+            "要求：\n"
+            "1. user_facts 的每一项必须是对象，包含 key、value、evidence、confidence 四个字段。\n"
+            "2. 禁止把 user_facts 写成字符串数组。\n"
+            "3. user_facts 为空时就写 []，不要编造。\n\n"
 
             "抽取原则：\n"
-            "1. 只保留稳定且可复用的事实，例如用户名字、默认同行人数、常问目的地、偏好、禁忌。\n"
+            "1. 只保留稳定且可复用的事实，例如用户名字、年龄、默认同行人数、常问目的地、偏好、禁忌。\n"
             "2. 对话摘要要简洁，突出本轮对话的核心意图与结论。\n"
             "3. 公共知识只能写入对其他用户也有复用价值的旅行知识。\n"
             "4. 如果没有新事实，不要编造；user_facts 可以为空数组。\n"
             "5. memory_markdown 必须是可直接写入 AGENT.md 的 Markdown。\n\n"
             f"对话上下文：\n{context_text[:6000]}"
         )
-        result = self._llm.chat_json([
-            {"role": "system", "content": "你是一个严格的 JSON 记忆抽取器。"},
+        raw = self._llm.chat([
+            {"role": "system", "content": "你是一个严格的 JSON 记忆抽取器。你只能输出 JSON。不要输出任何其他文字。"},
             {"role": "user", "content": prompt},
-        ], _MEMORY_SCHEMA)
+        ])
+
+        result = self._parse_json_response(raw)
 
         normalized_facts = self._normalize_user_facts(result.get("user_facts", []))
 
@@ -145,6 +88,27 @@ class MemoryService:
             public_knowledge=result.get("public_knowledge", []),
             memory_markdown=result.get("memory_markdown", ""),
         )
+
+    def _parse_json_response(self, raw: str) -> dict:
+        """Try to parse JSON from LLM response, with fallback regex."""
+        if not raw or not raw.strip():
+            return {"user_facts": [], "conversation_summary": "", "public_knowledge": [], "memory_markdown": ""}
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                return parsed
+        except Exception:
+            pass
+        import re
+        match = re.search(r"\{.*\}", raw, re.S)
+        if match:
+            try:
+                parsed = json.loads(match.group())
+                if isinstance(parsed, dict):
+                    return parsed
+            except Exception:
+                pass
+        return {"user_facts": [], "conversation_summary": "", "public_knowledge": [], "memory_markdown": ""}
 
     def sync(
         self,

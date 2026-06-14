@@ -2,14 +2,15 @@ package org.example.backend.service;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import jakarta.annotation.PostConstruct;
-import org.example.backend.entity.AgentMemory;
 import org.example.backend.entity.AgentMemoryChangeLog;
 import org.example.backend.entity.AgentPublicKnowledge;
 import org.example.backend.entity.User;
 import org.example.backend.entity.UserAgentMemory;
 import org.example.backend.dto.AgentMemorySyncRequest;
-import org.example.backend.repository.*;
+import org.example.backend.repository.AgentPublicKnowledgeRepository;
+import org.example.backend.repository.AgentMemoryChangeLogRepository;
+import org.example.backend.repository.UserAgentMemoryRepository;
+import org.example.backend.repository.UserRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,19 +18,46 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.math.BigDecimal;
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
+import java.util.*;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 @Service
 public class AgentMemoryService {
 
     private static final Logger log = LoggerFactory.getLogger(AgentMemoryService.class);
 
-    @Autowired
-    private AgentMemoryRepository memoryRepository;
+    private static final Map<String, String> CATEGORY_MAP = new LinkedHashMap<>();
+    static {
+        CATEGORY_MAP.put("user_name", "个人信息");
+        CATEGORY_MAP.put("username", "个人信息");
+        CATEGORY_MAP.put("age", "个人信息");
+        CATEGORY_MAP.put("gender", "个人信息");
+        CATEGORY_MAP.put("phone", "个人信息");
+        CATEGORY_MAP.put("email", "个人信息");
+        CATEGORY_MAP.put("occupation", "个人信息");
+
+        CATEGORY_MAP.put("travel_style", "旅游偏好");
+        CATEGORY_MAP.put("budget", "旅游偏好");
+        CATEGORY_MAP.put("travel_party_size", "旅游偏好");
+        CATEGORY_MAP.put("destination", "旅游偏好");
+        CATEGORY_MAP.put("departure_city", "旅游偏好");
+        CATEGORY_MAP.put("accommodation_preference", "旅游偏好");
+        CATEGORY_MAP.put("transport_preference", "旅游偏好");
+        CATEGORY_MAP.put("pace_preference", "旅游偏好");
+        CATEGORY_MAP.put("travel_frequency", "旅游偏好");
+
+        CATEGORY_MAP.put("food_allergy", "口味偏好");
+        CATEGORY_MAP.put("dietary_restriction", "口味偏好");
+        CATEGORY_MAP.put("cuisine_preference", "口味偏好");
+        CATEGORY_MAP.put("favorite_food", "口味偏好");
+        CATEGORY_MAP.put("dislike_food", "口味偏好");
+        CATEGORY_MAP.put("spice_tolerance", "口味偏好");
+    }
+
+    private static final String DEFAULT_CATEGORY = "其他";
+
+    private static final List<String> CATEGORY_ORDER = List.of("个人信息", "旅游偏好", "口味偏好", "其他");
 
     @Autowired
     private UserRepository userRepository;
@@ -46,87 +74,7 @@ public class AgentMemoryService {
     private final ObjectMapper objectMapper = new ObjectMapper();
 
     // ==========================================
-    // Local CRUD methods for Settings View UI
-    // ==========================================
-
-    @PostConstruct
-    public void seedMemories() {
-        try {
-            log.info("Checking and seeding default user memories...");
-            // Seed for standard user with ID 1
-            Long userId = 1L;
-            List<AgentMemory> existing = memoryRepository.findAllByUserId(userId);
-            if (existing.isEmpty()) {
-                memoryRepository.save(new AgentMemory("偏爱深度游和慢节奏，每天规划的景点不要超过3个", true, userId));
-                memoryRepository.save(new AgentMemory("对海鲜过敏，在推荐美食时请避免推荐海鲜餐馆", true, userId));
-                memoryRepository.save(new AgentMemory("出行预算偏向经济型，住宿优先考虑舒适型民宿或3星级酒店", true, userId));
-                log.info("Seeded default memories for user 1");
-            }
-        } catch (Exception e) {
-            log.error("Failed to seed default user memories", e);
-        }
-    }
-
-    public List<AgentMemory> getAllMemoriesForUser(Long userId) {
-        return memoryRepository.findAllByUserId(userId);
-    }
-
-    public List<AgentMemory> getActiveMemoriesForUser(Long userId) {
-        return memoryRepository.findActiveByUserId(userId);
-    }
-
-    public Optional<AgentMemory> getMemoryById(Long id) {
-        return memoryRepository.findById(id);
-    }
-
-    public AgentMemory saveMemory(AgentMemory memory, Long userId) {
-        memory.setUserId(userId);
-        return memoryRepository.save(memory);
-    }
-
-    public AgentMemory updateMemory(Long id, AgentMemory updatedData, Long userId) {
-        AgentMemory existing = memoryRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("该记忆不存在"));
-
-        if (!existing.getUserId().equals(userId)) {
-            throw new RuntimeException("无权修改他人的个性化记忆");
-        }
-
-        if (updatedData.getContent() != null) {
-            existing.setContent(updatedData.getContent());
-        }
-        if (updatedData.getIsEnabled() != null) {
-            existing.setIsEnabled(updatedData.getIsEnabled());
-        }
-
-        return memoryRepository.save(existing);
-    }
-
-    public void deleteMemory(Long id, Long userId) {
-        AgentMemory existing = memoryRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("该记忆不存在"));
-
-        if (!existing.getUserId().equals(userId)) {
-            throw new RuntimeException("无权删除他人的个性化记忆");
-        }
-
-        memoryRepository.delete(existing);
-    }
-
-    public AgentMemory toggleMemoryStatus(Long id, Boolean isEnabled, Long userId) {
-        AgentMemory existing = memoryRepository.findById(id)
-                .orElseThrow(() -> new RuntimeException("该记忆不存在"));
-
-        if (!existing.getUserId().equals(userId)) {
-            throw new RuntimeException("无权修改他人的个性化记忆状态");
-        }
-
-        existing.setIsEnabled(isEnabled);
-        return memoryRepository.save(existing);
-    }
-
-    // ==========================================
-    // Remote automated memory sync methods
+    // Memory sync (used by both Agent and Frontend)
     // ==========================================
 
     @Transactional
@@ -140,64 +88,36 @@ public class AgentMemoryService {
             ? user.getUsername()
             : "guest-" + userId;
 
-        JsonNode newFactsNode = readJsonNode(request.getUserFactsJson());
-        String normalizedFacts = newFactsNode != null ? newFactsNode.toString() : null;
-        boolean hasAnyMemoryPayload = hasAnyMemoryPayload(request, normalizedFacts);
+        boolean isAgentSync = request.getTriggerQuery() != null && !request.getTriggerQuery().isBlank()
+            || request.getConversationSummary() != null && !request.getConversationSummary().isBlank()
+            || request.getSourceConversationId() != null;
 
         Optional<UserAgentMemory> existingMemoryOpt = userAgentMemoryRepository.findByUserId(userId);
         UserAgentMemory memory = existingMemoryOpt.orElse(null);
         boolean memoryChanged = false;
 
-        String existingFacts = memory != null ? normalizeJson(memory.getMemoryJson()) : null;
-        boolean factsChanged = normalizedFacts != null && !normalizedFacts.isBlank()
-                && (existingFacts == null || !existingFacts.equals(normalizedFacts));
-        boolean isAgentSync = request.getTriggerQuery() != null && !request.getTriggerQuery().isBlank()
-            || request.getConversationSummary() != null && !request.getConversationSummary().isBlank()
-            || request.getSourceConversationId() != null;
+        // ========== AGENT SYNC ==========
+        if (isAgentSync) {
+            JsonNode newFactsNode = readJsonNode(request.getUserFactsJson());
+            List<Map<String, Object>> newFacts = parseFactArray(
+                newFactsNode != null ? newFactsNode.toString() : null);
 
-        if (memory == null && hasAnyMemoryPayload) {
-            memory = new UserAgentMemory();
-            memory.setUserId(userId);
-        }
+            String existingMarkdown = memory != null ? memory.getMemoryMarkdown() : null;
+            List<Map<String, Object>> oldFacts = parseMarkdownToFacts(existingMarkdown);
+            Set<String> disabledKeys = parseDisabledKeys(memory != null ? memory.getMemoryJson() : null);
 
-        if (memory != null && isAgentSync) {
-            List<Map<String, Object>> newFacts = parseFactArray(normalizedFacts);
-            String currentMarkdown = memory.getMemoryMarkdown();
-            if (currentMarkdown == null) currentMarkdown = "";
-            StringBuilder mdBuilder = new StringBuilder(currentMarkdown);
-            if (!currentMarkdown.isBlank() && !currentMarkdown.endsWith("\n")) {
-                mdBuilder.append("\n");
+            List<Map<String, Object>> mergedFacts = mergeFactsByKey(oldFacts, newFacts);
+
+            String markdown = buildAgentMemoryMarkdown(username, mergedFacts, request.getConversationSummary());
+            if (memory == null) {
+                memory = new UserAgentMemory();
+                memory.setUserId(userId);
             }
-            boolean hasNewContent = false;
-            for (Map<String, Object> fact : newFacts) {
-                String value = (String) fact.get("value");
-                if (value == null || value.isBlank()) continue;
-                if (!currentMarkdown.contains(value)) {
-                    if (!hasNewContent) {
-                        mdBuilder.append("\n### 对话提取\n");
-                        hasNewContent = true;
-                    }
-                    mdBuilder.append("- ").append(value).append("\n");
-                }
-            }
-            if (hasNewContent || existingMemoryOpt.isEmpty()) {
-                memory.setMemoryMarkdown(mdBuilder.toString().trim());
-                memory.setSourceConversationId(request.getSourceConversationId());
-                memory.setSummarySource("conversation");
-                if (request.getModelVersion() != null && !request.getModelVersion().isBlank()) {
-                    memory.setMemoryVersion(request.getModelVersion());
-                }
-                userAgentMemoryRepository.save(memory);
-                memoryChanged = true;
-            }
-        } else if (memory != null && (factsChanged || existingMemoryOpt.isEmpty())) {
-            String frontendMarkdown = request.getMemoryMarkdown();
-            if (frontendMarkdown != null && !frontendMarkdown.isBlank()) {
-                memory.setMemoryMarkdown(frontendMarkdown);
-            } else {
-                memory.setMemoryMarkdown(buildMemoryMarkdown(username, request));
-            }
-            memory.setMemoryJson(normalizedFacts != null && !normalizedFacts.isBlank() ? normalizedFacts : existingFacts);
+            memory.setMemoryMarkdown(markdown);
+
+            String cacheJson = buildMemoryJsonCache(mergedFacts, disabledKeys);
+            memory.setMemoryJson(cacheJson);
+
             memory.setSourceConversationId(request.getSourceConversationId());
             memory.setSummarySource("conversation");
             if (request.getModelVersion() != null && !request.getModelVersion().isBlank()) {
@@ -205,6 +125,33 @@ public class AgentMemoryService {
             }
             userAgentMemoryRepository.save(memory);
             memoryChanged = true;
+
+        // ========== FRONTEND SYNC ==========
+        } else {
+            String frontendMarkdown = request.getMemoryMarkdown();
+            if (frontendMarkdown != null && !frontendMarkdown.isBlank()) {
+                if (memory == null) {
+                    memory = new UserAgentMemory();
+                    memory.setUserId(userId);
+                }
+
+                memory.setMemoryMarkdown(frontendMarkdown);
+
+                Set<String> disabledKeys;
+                if (request.getDisabledKeys() != null) {
+                    disabledKeys = new HashSet<>(request.getDisabledKeys());
+                } else {
+                    disabledKeys = parseDisabledKeys(memory.getMemoryJson());
+                }
+
+                List<Map<String, Object>> facts = parseMarkdownToFacts(frontendMarkdown);
+                memory.setMemoryJson(buildMemoryJsonCache(facts, disabledKeys));
+
+                memory.setSourceConversationId(request.getSourceConversationId());
+                memory.setSummarySource("conversation");
+                userAgentMemoryRepository.save(memory);
+                memoryChanged = true;
+            }
         }
 
         int knowledgeCount = upsertPublicKnowledge(request);
@@ -213,7 +160,7 @@ public class AgentMemoryService {
             agentMemoryChangeLogRepository.save(buildChangeLog(
                     userId,
                     "user",
-                    memory.getId() != null ? "user_agent_memory" : "user_agent_memory",
+                    "user_agent_memory",
                     request,
                     existingMemoryOpt.map(UserAgentMemory::getMemoryJson).orElse(null),
                     memory.getMemoryJson()
@@ -247,6 +194,192 @@ public class AgentMemoryService {
         result.put("memory", memory);
         return result;
     }
+
+    
+    private List<Map<String, Object>> parseMarkdownToFacts(String markdown) {
+        List<Map<String, Object>> facts = new ArrayList<>();
+        if (markdown == null || markdown.isBlank()) return facts;
+
+        String[] sections = markdown.split("(?m)^## ");
+        for (String section : sections) {
+            section = section.trim();
+            if (section.isEmpty()) continue;
+
+            String[] lines = section.split("\n");
+            String category = lines[0].trim();
+
+
+            if (category.equals("用户") || category.equals("对话摘要")
+                || category.equals("可复用公共知识") || category.startsWith("#")) {
+                continue;
+            }
+
+            for (int i = 1; i < lines.length; i++) {
+                String line = lines[i].trim();
+                if (line.isEmpty() || line.startsWith("#")) continue;
+
+                // key: value pairs with optional evidence
+                Pattern pairPattern = Pattern.compile("^-\\s*(.+?)\\s*:\\s*(.+?)(?:（证据:\\s*(.+?)）)?$");
+                Matcher pairMatcher = pairPattern.matcher(line);
+                if (pairMatcher.find()) {
+                    String key = pairMatcher.group(1).trim();
+                    String value = pairMatcher.group(2).trim();
+                    String evidence = pairMatcher.group(3) != null ? pairMatcher.group(3).trim() : "";
+                    Map<String, Object> fact = new HashMap<>();
+                    fact.put("key", key);
+                    fact.put("value", value);
+                    fact.put("evidence", evidence);
+                    fact.put("confidence", 0.8);
+                    fact.put("category", category);
+                    facts.add(fact);
+                    continue;
+                }
+
+                // value-only lines 
+                Pattern valueOnlyPattern = Pattern.compile("^-\\s*(.+)$");
+                Matcher valueOnlyMatcher = valueOnlyPattern.matcher(line);
+                if (valueOnlyMatcher.find()) {
+                    String value = valueOnlyMatcher.group(1).trim();
+                    if (!value.equals("暂无")) {
+                        Map<String, Object> fact = new HashMap<>();
+                        fact.put("key", "");
+                        fact.put("value", value);
+                        fact.put("evidence", "");
+                        fact.put("confidence", 0.8);
+                        fact.put("category", category);
+                        facts.add(fact);
+                    }
+                }
+            }
+        }
+        return facts;
+    }
+
+    private String buildAgentMemoryMarkdown(
+            String username,
+            List<Map<String, Object>> facts,
+            String conversationSummary) {
+        List<String> lines = new ArrayList<>();
+        lines.add("# AGENT.md");
+        lines.add("");
+
+        lines.add("## 用户");
+        lines.add("- username: " + (username != null ? username : "未知"));
+        lines.add("");
+
+        Map<String, List<Map<String, Object>>> grouped = new LinkedHashMap<>();
+        for (String cat : CATEGORY_ORDER) {
+            grouped.put(cat, new ArrayList<>());
+        }
+        for (Map<String, Object> fact : facts) {
+            String key = (String) fact.getOrDefault("key", "");
+            String storedCategory = (String) fact.getOrDefault("category", "");
+            String category = storedCategory.isBlank() ? getCategory(key) : storedCategory;
+            grouped.computeIfAbsent(category, k -> new ArrayList<>()).add(fact);
+        }
+
+        boolean hasAnyFact = false;
+        for (String category : CATEGORY_ORDER) {
+            List<Map<String, Object>> catFacts = grouped.getOrDefault(category, Collections.emptyList());
+            if (catFacts.isEmpty()) continue;
+            hasAnyFact = true;
+            lines.add("## " + category);
+            for (Map<String, Object> fact : catFacts) {
+                String key = (String) fact.getOrDefault("key", "");
+                String value = (String) fact.getOrDefault("value", "");
+                String evidence = (String) fact.getOrDefault("evidence", "");
+                if (key.isBlank()) {
+                    lines.add("- " + value);
+                } else {
+                    lines.add("- " + key + ": " + value
+                            + (evidence.isBlank() ? "" : "（证据: " + evidence + "）"));
+                }
+            }
+            lines.add("");
+        }
+
+        if (!hasAnyFact) {
+            lines.add("## 个人信息");
+            lines.add("- 暂无");
+            lines.add("");
+        }
+
+        lines.add("## 对话摘要");
+        lines.add(conversationSummary != null && !conversationSummary.isBlank()
+                ? conversationSummary : "暂无");
+
+        return String.join("\n", lines);
+    }
+
+    private String buildMemoryJsonCache(List<Map<String, Object>> facts, Set<String> disabledKeys) {
+        try {
+            Map<String, Object> cache = new LinkedHashMap<>();
+            cache.put("disabledKeys", disabledKeys != null ? new ArrayList<>(disabledKeys) : new ArrayList<>());
+
+            List<Map<String, Object>> cards = new ArrayList<>();
+            long id = 1;
+            for (Map<String, Object> fact : facts) {
+                String key = (String) fact.getOrDefault("key", "");
+                String value = (String) fact.getOrDefault("value", "");
+                String storedCategory = (String) fact.getOrDefault("category", "");
+                String category = storedCategory.isBlank() ? getCategory(key) : storedCategory;
+                String content = key.isBlank() ? value : (key + ": " + value);
+                boolean isEnabled = disabledKeys == null || !disabledKeys.contains(key);
+
+                Map<String, Object> card = new LinkedHashMap<>();
+                card.put("id", id++);
+                card.put("key", key);
+                card.put("content", content);
+                card.put("category", category);
+                card.put("isEnabled", isEnabled);
+                cards.add(card);
+            }
+            cache.put("cards", cards);
+            return objectMapper.writeValueAsString(cache);
+        } catch (Exception e) {
+            log.warn("Failed to build memoryJson cache: {}", e.getMessage());
+            return "{\"disabledKeys\":[],\"cards\":[]}";
+        }
+    }
+
+    /**
+     * Parse disabledKeys from existing memoryJson cache.
+     */
+    private Set<String> parseDisabledKeys(String memoryJson) {
+        Set<String> keys = new HashSet<>();
+        if (memoryJson == null || memoryJson.isBlank()) return keys;
+        try {
+            JsonNode root = objectMapper.readTree(memoryJson);
+            if (root.has("disabledKeys") && root.get("disabledKeys").isArray()) {
+                for (JsonNode item : root.get("disabledKeys")) {
+                    keys.add(item.asText());
+                }
+            }
+        } catch (Exception e) {
+            // ignore parse errors
+        }
+        return keys;
+    }
+
+    private String getCategory(String key) {
+        return CATEGORY_MAP.getOrDefault(key, DEFAULT_CATEGORY);
+    }
+
+    private List<Map<String, Object>> mergeFactsByKey(
+            List<Map<String, Object>> oldFacts,
+            List<Map<String, Object>> newFacts) {
+        Map<String, Map<String, Object>> factMap = new LinkedHashMap<>();
+        for (Map<String, Object> fact : oldFacts) {
+            String key = (String) fact.getOrDefault("key", "fact_" + factMap.size());
+            factMap.putIfAbsent(key, fact);
+        }
+        for (Map<String, Object> fact : newFacts) {
+            String key = (String) fact.getOrDefault("key", "fact_" + factMap.size());
+            factMap.put(key, fact); // new overwrites old
+        }
+        return new ArrayList<>(factMap.values());
+    }
+
 
     private int upsertPublicKnowledge(AgentMemorySyncRequest request) {
         JsonNode nodes = readJsonNode(request.getPublicKnowledgeJson());
@@ -308,44 +441,6 @@ public class AgentMemoryService {
         return log;
     }
 
-    private String buildMemoryMarkdown(String username, AgentMemorySyncRequest request) {
-        List<String> lines = new ArrayList<>();
-        lines.add("# AGENT.md");
-        lines.add("");
-        lines.add("## 用户");
-        lines.add("- username: " + username);
-        lines.add("");
-        lines.add("## 用户画像事实");
-        JsonNode facts = readJsonNode(request.getUserFactsJson());
-        if (facts != null && facts.isArray() && facts.size() > 0) {
-            for (JsonNode fact : facts) {
-                String key = text(fact, "key", "fact");
-                String value = text(fact, "value", "");
-                String evidence = text(fact, "evidence", "");
-                lines.add("- " + key + ": " + value + (evidence.isBlank() ? "" : "（证据: " + evidence + "）"));
-            }
-        } else {
-            lines.add("- 暂无");
-        }
-        lines.add("");
-        lines.add("## 对话摘要");
-        String summary = request.getConversationSummary();
-        lines.add(summary != null && !summary.isBlank() ? summary : "暂无");
-        lines.add("");
-        lines.add("## 可复用公共知识");
-        JsonNode publicKnowledge = readJsonNode(request.getPublicKnowledgeJson());
-        if (publicKnowledge != null && publicKnowledge.isArray() && publicKnowledge.size() > 0) {
-            for (JsonNode item : publicKnowledge) {
-                String title = text(item, "knowledgeTitle", text(item, "knowledgeKey", "知识"));
-                String content = text(item, "knowledgeContent", "");
-                lines.add("- " + title + ": " + content);
-            }
-        } else {
-            lines.add("- 暂无");
-        }
-        return String.join("\n", lines);
-    }
-
     private JsonNode readJsonNode(String raw) {
         if (raw == null || raw.isBlank()) {
             return null;
@@ -355,48 +450,6 @@ public class AgentMemoryService {
         } catch (Exception e) {
             return null;
         }
-    }
-
-    private String normalizeJson(String raw) {
-        JsonNode node = readJsonNode(raw);
-        return node != null ? node.toString() : null;
-    }
-
-    private boolean hasAnyMemoryPayload(AgentMemorySyncRequest request, String normalizedFacts) {
-        if (normalizedFacts != null && !normalizedFacts.isBlank()) {
-            return true;
-        }
-        if (request.getConversationSummary() != null && !request.getConversationSummary().isBlank()) {
-            return true;
-        }
-        if (request.getMemoryMarkdown() != null && !request.getMemoryMarkdown().isBlank()) {
-            return true;
-        }
-        JsonNode publicKnowledge = readJsonNode(request.getPublicKnowledgeJson());
-        return publicKnowledge != null && publicKnowledge.isArray() && publicKnowledge.size() > 0;
-    }
-
-    private List<Map<String, Object>> parseCardArray(String json) {
-        List<Map<String, Object>> cards = new ArrayList<>();
-        if (json == null || json.isBlank()) return cards;
-        try {
-            JsonNode node = objectMapper.readTree(json);
-            if (node != null && node.isArray()) {
-                for (JsonNode item : node) {
-                    if (!item.has("content")) continue;
-                    Map<String, Object> card = new HashMap<>();
-                    card.put("id", item.has("id") ? item.get("id").asLong() : System.currentTimeMillis());
-                    card.put("content", item.get("content").asText());
-                    card.put("isEnabled", item.has("isEnabled") ? item.get("isEnabled").asBoolean() : true);
-                    card.put("createdAt", item.has("createdAt") ? item.get("createdAt").asText() : java.time.LocalDateTime.now().toString());
-                    card.put("updatedAt", item.has("updatedAt") ? item.get("updatedAt").asText() : java.time.LocalDateTime.now().toString());
-                    cards.add(card);
-                }
-            }
-        } catch (Exception e) {
-            log.warn("Failed to parse card array: {}", e.getMessage());
-        }
-        return cards;
     }
 
     private List<Map<String, Object>> parseFactArray(String json) {
@@ -419,53 +472,6 @@ public class AgentMemoryService {
             log.warn("Failed to parse fact array: {}", e.getMessage());
         }
         return facts;
-    }
-
-    private boolean mergeFactsIntoCardArray(List<Map<String, Object>> cards, List<Map<String, Object>> facts) {
-        boolean appended = false;
-        long baseId = System.currentTimeMillis();
-        int counter = 0;
-        for (Map<String, Object> fact : facts) {
-            String value = (String) fact.get("value");
-            if (value == null || value.isBlank()) continue;
-            boolean exists = false;
-            String valueNorm = value.replaceAll("\\s+", "").toLowerCase();
-            for (Map<String, Object> card : cards) {
-                String content = (String) card.get("content");
-                if (content == null) continue;
-                if (content.replaceAll("\\s+", "").toLowerCase().contains(valueNorm)
-                    || valueNorm.contains(content.replaceAll("\\s+", "").toLowerCase())) {
-                    exists = true;
-                    break;
-                }
-            }
-            if (!exists) {
-                Map<String, Object> newCard = new HashMap<>();
-                newCard.put("id", baseId + counter++);
-                newCard.put("content", value);
-                newCard.put("isEnabled", true);
-                newCard.put("createdAt", java.time.LocalDateTime.now().toString());
-                newCard.put("updatedAt", java.time.LocalDateTime.now().toString());
-                cards.add(newCard);
-                appended = true;
-            }
-        }
-        return appended || facts.isEmpty();
-    }
-
-    private String buildUserPreferenceMarkdown(List<Map<String, Object>> cards) {
-        List<String> lines = new ArrayList<>();
-        lines.add("# 用户偏好记忆");
-        lines.add("");
-        for (Map<String, Object> card : cards) {
-            boolean enabled = card.get("isEnabled") instanceof Boolean
-                ? (Boolean) card.get("isEnabled") : true;
-            String content = (String) card.get("content");
-            if (content != null && !content.isBlank()) {
-                lines.add((enabled ? "- " : "- ~~") + content + (enabled ? "" : "~~"));
-            }
-        }
-        return String.join("\n", lines);
     }
 
     private String text(JsonNode node, String fieldName, String defaultValue) {

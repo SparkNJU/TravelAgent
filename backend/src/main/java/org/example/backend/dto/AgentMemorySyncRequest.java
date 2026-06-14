@@ -1,5 +1,7 @@
 package org.example.backend.dto;
 
+import java.util.List;
+
 public class AgentMemorySyncRequest {
     private Long userId;
     private Long sourceConversationId;
@@ -11,6 +13,7 @@ public class AgentMemorySyncRequest {
     private String memoryMarkdown;
     private String conversationSummary;
     private String publicKnowledgeJson;
+    private List<String> disabledKeys;
 
     public Long getUserId() {
         return userId;
@@ -90,5 +93,13 @@ public class AgentMemorySyncRequest {
 
     public void setPublicKnowledgeJson(String publicKnowledgeJson) {
         this.publicKnowledgeJson = publicKnowledgeJson;
+    }
+
+    public List<String> getDisabledKeys() {
+        return disabledKeys;
+    }
+
+    public void setDisabledKeys(List<String> disabledKeys) {
+        this.disabledKeys = disabledKeys;
     }
 }

@@ -207,47 +207,54 @@
           </div>
 
           <div v-else class="pane-content">
-            <div class="sub-section" :class="{ 'stretch-section': memories.length === 0 }">
-              <h3 class="sub-title">我的个人特征与偏好习惯</h3>
-              <div v-if="memories.length === 0" class="empty-placeholder" @click="openMemoryModal()">
+            <!-- Memories grouped by category -->
+            <div v-for="cat in CATEGORY_OPTIONS" :key="cat">
+              <div v-if="getMemoriesByCategory(cat).length > 0" class="sub-section memory-category-section">
+                <h3 class="category-title">{{ cat }}</h3>
+                <div class="list-grid flex-list">
+                  <div
+                    v-for="mem in getMemoriesByCategory(cat)"
+                    :key="mem.id"
+                    class="tool-item memory-item"
+                    :class="{ disabled: !mem.isEnabled }"
+                  >
+                    <div class="memory-card-content">
+                      <div class="memory-main">
+                        <span class="memory-key" v-if="parseMemoryContent(mem.content).key">{{ parseMemoryContent(mem.content).key }}</span>
+                        <p class="memory-value">{{ parseMemoryContent(mem.content).value }}</p>
+                        <span class="memory-time">保存于 {{ formatDate(mem.createdAt || mem.updatedAt) }}</span>
+                      </div>
+
+                      <div class="memory-actions">
+                        <label class="switch small">
+                          <input
+                            type="checkbox"
+                            :checked="mem.isEnabled"
+                            @change="toggleMemory(mem)"
+                            :disabled="updatingMemory === mem.id"
+                          />
+                          <span class="slider round"></span>
+                        </label>
+                        <button class="icon-action-btn edit" title="编辑" @click="openMemoryModal(mem)">
+                          <SvgIcon name="edit" :size="14" />
+                        </button>
+                        <button class="icon-action-btn delete" title="删除" @click="confirmDeleteMemory(mem)">
+                          <SvgIcon name="trash" :size="14" />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+            <!-- Empty state when no memories at all -->
+            <div v-if="memories.length === 0" class="sub-section stretch-section">
+              <div class="empty-placeholder" @click="openMemoryModal()">
                 <div class="empty-icon">
                   <SvgIcon name="brain" :size="24" color="#457b9d" />
                 </div>
                 <h5>让 Agent 更懂您</h5>
                 <p>在此输入您的个人喜好、忌口、预算倾向或住宿要求，Agent 在生成规划时将默默遵循。</p>
-              </div>
-              <div v-else class="list-grid flex-list">
-                <div 
-                  v-for="mem in memories" 
-                  :key="mem.id" 
-                  class="tool-item memory-item"
-                  :class="{ disabled: !mem.isEnabled }"
-                >
-                  <div class="memory-card-content">
-                    <div class="memory-main">
-                      <p class="memory-text">{{ mem.content }}</p>
-                      <span class="memory-time">保存于 {{ formatDate(mem.createdAt || mem.updatedAt) }}</span>
-                    </div>
-                    
-                    <div class="memory-actions">
-                      <label class="switch small">
-                        <input 
-                          type="checkbox" 
-                          :checked="mem.isEnabled" 
-                          @change="toggleMemory(mem)"
-                          :disabled="updatingMemory === mem.id"
-                        />
-                        <span class="slider round"></span>
-                      </label>
-                      <button class="icon-action-btn edit" title="编辑" @click="openMemoryModal(mem)">
-                        <SvgIcon name="edit" :size="14" />
-                      </button>
-                      <button class="icon-action-btn delete" title="删除" @click="confirmDeleteMemory(mem)">
-                        <SvgIcon name="trash" :size="14" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
               </div>
             </div>
           </div>
@@ -292,14 +299,25 @@
 
         <form class="modal-form" @submit.prevent="saveMemory">
           <div class="form-group">
+            <label>分类</label>
+            <div class="category-tabs">
+              <button
+                v-for="cat in CATEGORY_OPTIONS"
+                :key="cat"
+                type="button"
+                class="category-tab"
+                :class="{ active: memoryForm.category === cat }"
+                @click="memoryForm.category = cat"
+              >{{ cat }}</button>
+            </div>
+          </div>
+          <div class="form-group">
             <label>偏好记忆内容</label>
-            <textarea 
-              v-model="memoryForm.content" 
-              class="form-textarea desc-textarea memory-textarea" 
-              placeholder="请输入您的习惯偏好、出行习惯或身体状态。例如：“对海鲜严重过敏，在规划食物时避开海鲜餐厅” 或 “喜欢早起看日出，每天的行程可以安排得早一些”"
+            <textarea
+              v-model="memoryForm.content"
+              class="form-textarea desc-textarea memory-textarea"
               required
             ></textarea>
-            <span class="hint">输入您个人的事实，这会固化为 Agent 的前置记忆，并在每一次规划时隐式遵循。</span>
           </div>
 
           <footer class="modal-footer">
@@ -319,6 +337,7 @@
 import { ref, reactive, computed, onMounted } from 'vue'
 import SvgIcon from '../components/SvgIcon.vue'
 import { useAuth } from '../composables/useAuth'
+import { parseMemoryMarkdown, buildMemoryMarkdown, sectionsToCards, cardsToSections, parseMemoryContent } from '../utils/markdownParser.js'
 
 const { userId, isLoggedIn } = useAuth()
 const currentUserId = computed(() => Number(userId.value) || null)
@@ -368,12 +387,17 @@ const skillForm = reactive({
 
 // Memories Data
 const memories = ref([])
+const disabledKeys = ref(new Set())
 const memoryModalVisible = ref(false)
 const isEditMemory = ref(false)
 
+const CATEGORY_OPTIONS = ['个人信息', '旅游偏好', '口味偏好', '其他']
+
 const memoryForm = reactive({
   id: null,
+  category: '个人信息',
   content: '',
+  key: '',
   isEnabled: true
 })
 
@@ -403,16 +427,21 @@ const loadMemories = async () => {
     const data = await res.json()
     if (data.code === 200) {
       const memory = data.data?.memory
+      const markdown = memory?.memoryMarkdown || ''
+      const sections = parseMemoryMarkdown(markdown)
+
+      let disabled = new Set()
       if (memory?.memoryJson) {
         try {
           const parsed = JSON.parse(memory.memoryJson)
-          memories.value = Array.isArray(parsed) ? parsed : []
-        } catch {
-          memories.value = []
-        }
-      } else {
-        memories.value = []
+          if (parsed.disabledKeys) {
+            disabled = new Set(parsed.disabledKeys)
+          }
+        } catch {}
       }
+      disabledKeys.value = disabled
+
+      memories.value = sectionsToCards(sections, disabled)
     }
   } catch (e) {
     console.error("加载偏好记忆失败:", e)
@@ -550,19 +579,44 @@ const saveSkill = async () => {
 // ------------------- MEMORY ACTIONS -------------------
 
 const syncMemoriesToLongTermMemory = async () => {
-  const userFactsJson = JSON.stringify(memories.value)
-  const memoryMarkdown = memories.value
-    .filter(m => m.isEnabled)
-    .map(m => `- ${m.content}`)
-    .join('\n')
+  const categoryOrder = CATEGORY_OPTIONS
+  const groups = {}
+  for (const cat of categoryOrder) groups[cat] = []
+  for (const m of memories.value) {
+    if (!m.isEnabled) continue
+    const cat = m.category || '其他'
+    if (!groups[cat]) groups[cat] = []
+    const colonIdx = m.content.indexOf(':')
+    const key = colonIdx > 0 ? m.content.substring(0, colonIdx).trim() : ''
+    const value = colonIdx > 0 ? m.content.substring(colonIdx + 1).trim() : m.content.trim()
+    groups[cat].push({ key, value, evidence: '' })
+  }
+
+  const sections = []
+  for (const cat of categoryOrder) {
+    if (groups[cat] && groups[cat].length > 0) {
+      sections.push({ title: cat, items: groups[cat] })
+    }
+  }
+
+  const username = currentUserId.value ? 'user-' + currentUserId.value : 'guest'
+  const markdown = buildMemoryMarkdown(username, sections, '')
+  const keys = []
+  for (const m of memories.value) {
+    if (!m.isEnabled) {
+      const colonIdx = m.content.indexOf(':')
+      const key = colonIdx > 0 ? m.content.substring(0, colonIdx).trim() : ''
+      keys.push(key)
+    }
+  }
 
   const res = await fetch('/api/agent/memory/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId: currentUserId.value,
-      userFactsJson,
-      memoryMarkdown: memoryMarkdown ? `# 用户偏好记忆\n\n${memoryMarkdown}` : ''
+      memoryMarkdown: markdown,
+      disabledKeys: keys
     })
   })
   const data = await res.json()
@@ -590,11 +644,13 @@ const openMemoryModal = (mem = null) => {
     isEditMemory.value = true
     memoryForm.id = mem.id
     memoryForm.content = mem.content
+    memoryForm.category = mem.category || '其他'
     memoryForm.isEnabled = mem.isEnabled
   } else {
     isEditMemory.value = false
     memoryForm.id = null
     memoryForm.content = ''
+    memoryForm.category = '个人信息'
     memoryForm.isEnabled = true
   }
   memoryModalVisible.value = true
@@ -626,13 +682,18 @@ const saveMemory = async () => {
         memories.value[idx] = {
           ...memories.value[idx],
           content: memoryForm.content,
+          category: memoryForm.category,
           isEnabled: memoryForm.isEnabled
         }
       }
     } else {
+      const colonIdx = memoryForm.content.indexOf(':')
+      const key = colonIdx > 0 ? memoryForm.content.substring(0, colonIdx).trim() : ''
       const newCard = {
         id: Date.now(),
+        key,
         content: memoryForm.content,
+        category: memoryForm.category,
         isEnabled: memoryForm.isEnabled,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -646,6 +707,11 @@ const saveMemory = async () => {
     console.error("保存记忆失败:", e)
   }
   savingMemory.value = false
+}
+
+// Helper: Get memories filtered by category
+const getMemoriesByCategory = (category) => {
+  return memories.value.filter(m => (m.category || '其他') === category)
 }
 
 // Helper: Format Dates
@@ -1267,17 +1333,73 @@ input:checked + .slider:before {
   gap: 6px;
 }
 
-.memory-text {
-  font-size: 13px;
+.memory-key {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-hint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  line-height: 1;
+}
+
+.memory-value {
+  font-size: 14px;
+  font-weight: 600;
   color: var(--color-title);
-  line-height: 1.5;
+  line-height: 1.4;
   margin: 0;
-  font-weight: 500;
 }
 
 .memory-time {
   font-size: 10.5px;
   color: var(--color-hint);
+}
+
+.memory-category-section {
+  margin-bottom: 24px;
+}
+
+.category-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--color-title);
+  margin: 0 0 12px;
+  padding-bottom: 8px;
+  border-bottom: 2px solid var(--color-border);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.category-tabs {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.category-tab {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-hint);
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.4;
+}
+
+.category-tab:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.category-tab.active {
+  color: var(--color-accent);
+  background: var(--color-accent-bg, rgba(69, 123, 157, 0.08));
+  border-color: var(--color-accent);
 }
 
 .memory-actions {

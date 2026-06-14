@@ -204,8 +204,21 @@
               </div>
               <form class="editor-form" @submit.prevent="saveMemory">
                 <label class="field">
+                  <span>分类</span>
+                  <div class="category-tabs">
+                    <button
+                      v-for="cat in CATEGORY_OPTIONS"
+                      :key="cat"
+                      type="button"
+                      class="category-tab"
+                      :class="{ active: memoryForm.category === cat }"
+                      @click="memoryForm.category = cat"
+                    >{{ cat }}</button>
+                  </div>
+                </label>
+                <label class="field">
                   <span>记忆内容</span>
-                  <textarea v-model="memoryForm.content" rows="7" placeholder="请输入长期偏好..." required />
+                  <textarea v-model="memoryForm.content" rows="3" required />
                 </label>
                 <label class="switch-row">
                   <input v-model="memoryForm.isEnabled" type="checkbox" />
@@ -229,7 +242,7 @@
                   <SvgIcon name="brain" :size="14" />
                 </div>
                 <div class="tool-meta">
-                  <strong>偏好记忆</strong>
+                  <strong>{{ memory.category || '偏好记忆' }}</strong>
                   <span>{{ formatDate(memory.createdAt || memory.updatedAt) }}</span>
                 </div>
                 <label class="toggle">
@@ -242,7 +255,10 @@
                   <span />
                 </label>
               </div>
-              <p class="tool-desc">{{ memory.content }}</p>
+              <div class="tool-desc">
+                <span class="memory-key-badge" v-if="parseMemoryContent(memory.content).key">{{ parseMemoryContent(memory.content).key }}</span>
+                <span class="memory-value-text">{{ parseMemoryContent(memory.content).value }}</span>
+              </div>
               <div class="tool-actions">
                 <button class="ghost-btn" type="button" @click="openMemoryEditor(memory)">编辑</button>
                 <button class="danger-btn" type="button" @click="removeMemory(memory)">删除</button>
@@ -265,6 +281,7 @@
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import SvgIcon from './SvgIcon.vue'
 import { useAgentTools } from '../composables/useAgentTools'
+import { parseMemoryMarkdown, buildMemoryMarkdown, sectionsToCards, parseMemoryContent } from '../utils/markdownParser.js'
 
 const formatDescription = (desc) => {
   if (!desc) return ''
@@ -318,8 +335,11 @@ const skillForm = reactive({
 const memoryForm = reactive({
   id: null,
   content: '',
+  category: '个人信息',
   isEnabled: true,
 })
+
+const CATEGORY_OPTIONS = ['个人信息', '旅游偏好', '口味偏好', '其他']
 
 const activeTab = computed(() => activeToolDrawer.value || 'skills')
 const drawerTitle = computed(() => (activeTab.value === 'skills' ? '技能管理' : '记忆管理'))
@@ -401,16 +421,20 @@ async function loadMemories() {
   try {
     const data = await fetchJson(`/api/agent/memory/${currentUserId.value}`)
     const memory = data?.memory
+    const markdown = memory?.memoryMarkdown || ''
+    const sections = parseMemoryMarkdown(markdown)
+
+    let disabled = new Set()
     if (memory?.memoryJson) {
       try {
         const parsed = JSON.parse(memory.memoryJson)
-        memories.value = Array.isArray(parsed) ? parsed : []
-      } catch {
-        memories.value = []
-      }
-    } else {
-      memories.value = []
+        if (parsed.disabledKeys) {
+          disabled = new Set(parsed.disabledKeys)
+        }
+      } catch {}
     }
+
+    memories.value = sectionsToCards(sections, disabled)
     updateMemoriesSummary(memories.value)
   } catch (error) {
     console.error('加载记忆失败:', error)
@@ -439,6 +463,7 @@ function openMemoryEditor(memory = null) {
   isEditingMemory.value = Boolean(memory)
   memoryForm.id = memory?.id ?? null
   memoryForm.content = memory?.content || ''
+  memoryForm.category = memory?.category || '个人信息'
   memoryForm.isEnabled = memory?.isEnabled ?? true
 }
 
@@ -503,19 +528,45 @@ async function removeSkill(skill) {
 }
 
 async function syncMemoriesToLongTermMemory() {
-  const userFactsJson = JSON.stringify(memories.value)
-  const memoryMarkdown = memories.value
-    .filter(m => m.isEnabled)
-    .map(m => `- ${m.content}`)
-    .join('\n')
+  const categoryOrder = CATEGORY_OPTIONS
+  const groups = {}
+  for (const cat of categoryOrder) groups[cat] = []
+  for (const m of memories.value) {
+    if (!m.isEnabled) continue
+    const cat = m.category || '其他'
+    if (!groups[cat]) groups[cat] = []
+    const colonIdx = m.content.indexOf(':')
+    const key = colonIdx > 0 ? m.content.substring(0, colonIdx).trim() : ''
+    const value = colonIdx > 0 ? m.content.substring(colonIdx + 1).trim() : m.content.trim()
+    groups[cat].push({ key, value, evidence: '' })
+  }
+
+  const sections = []
+  for (const cat of categoryOrder) {
+    if (groups[cat] && groups[cat].length > 0) {
+      sections.push({ title: cat, items: groups[cat] })
+    }
+  }
+
+  const username = currentUserId.value ? 'user-' + currentUserId.value : 'guest'
+  const markdown = buildMemoryMarkdown(username, sections, '')
+
+  const keys = []
+  for (const m of memories.value) {
+    if (!m.isEnabled) {
+      const colonIdx = m.content.indexOf(':')
+      const key = colonIdx > 0 ? m.content.substring(0, colonIdx).trim() : ''
+      keys.push(key)
+    }
+  }
 
   await fetchJson('/api/agent/memory/sync', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({
       userId: currentUserId.value,
-      userFactsJson,
-      memoryMarkdown: memoryMarkdown ? `# 用户偏好记忆\n\n${memoryMarkdown}` : ''
+      memoryMarkdown: markdown,
+      disabledKeys: keys
     })
   })
 }
@@ -545,13 +596,18 @@ async function saveMemory() {
         memories.value[idx] = {
           ...memories.value[idx],
           content: memoryForm.content,
+          category: memoryForm.category,
           isEnabled: memoryForm.isEnabled
         }
       }
     } else {
+      const colonIdx = memoryForm.content.indexOf(':')
+      const key = colonIdx > 0 ? memoryForm.content.substring(0, colonIdx).trim() : ''
       const newCard = {
         id: Date.now(),
+        key,
         content: memoryForm.content,
+        category: memoryForm.category,
         isEnabled: memoryForm.isEnabled,
         createdAt: new Date().toISOString(),
         updatedAt: new Date().toISOString()
@@ -958,6 +1014,36 @@ onMounted(() => {
   resize: vertical;
 }
 
+.category-tabs {
+  display: flex;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.category-tab {
+  padding: 5px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-hint);
+  background: transparent;
+  border: 1px solid var(--color-border);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  line-height: 1.4;
+}
+
+.category-tab:hover {
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+.category-tab.active {
+  color: var(--color-accent);
+  background: rgba(69, 123, 157, 0.08);
+  border-color: var(--color-accent);
+}
+
 .field input:focus,
 .field textarea:focus {
   border-color: rgba(255, 36, 66, 0.32);
@@ -1038,6 +1124,29 @@ onMounted(() => {
   line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+}
+
+.memory-key-badge {
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-hint);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 4px;
+  padding: 1px 6px;
+  line-height: 1.4;
+  vertical-align: middle;
+}
+
+.memory-value-text {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-title);
+  line-height: 1.5;
+  margin-left: 4px;
 }
 
 .detail-block {
