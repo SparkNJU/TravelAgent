@@ -425,11 +425,13 @@ class ReActAgent:
                     })
                 continue
 
-        yield self._emit(
-            "error",
-            "Maximum iterations reached without final answer.",
-            {"iterations": self._max_iterations},
-        )
+        # Reached max iterations — stop thinking, output what we have
+        messages.append({
+            "role": "system",
+            "content": "你已到达最大思考轮次。请不要再调用任何工具，直接根据已有信息输出完整的旅行规划。",
+        })
+        answer = self._llm.chat(messages, temperature=0.3)
+        yield self._emit("answer", (answer or "").strip() or "抱歉，生成过程中遇到问题，请尝试简化需求后重试。", {"step": self._max_iterations})
         yield self._emit("done", "", {})
 
     def _build_token_snapshot(self, messages: list[dict], usage: dict | None = None) -> dict:
