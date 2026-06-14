@@ -30,12 +30,30 @@
       <div class="bar-left">
         <button class="back-btn" @click="goBack">← 返回对话</button>
         <div class="title-section" v-if="plan">
-          <input
-            v-model="plan.title"
-            class="title-input"
-            placeholder="输入行程标题"
-            @change="triggerAutoSave"
-          />
+          <div class="plan-switcher" @click.stop="togglePlanDropdown">
+            <input
+              v-model="plan.title"
+              class="title-input"
+              :style="{ width: titleInputWidth }"
+              placeholder="输入行程标题"
+              @change="triggerAutoSave"
+              readonly
+            />
+            <span class="switcher-arrow" :class="{ open: planDropdownOpen }">▾</span>
+            <div v-if="planDropdownOpen" class="plan-dropdown" :style="planDropdownStyle">
+              <div
+                v-for="item in planList"
+                :key="item.planId"
+                class="plan-dropdown-item"
+                :class="{ active: item.planId === plan.planId }"
+                @click="switchPlan(item)"
+              >
+                <span class="dropdown-title">{{ item.title || '未命名行程' }}</span>
+                <span class="dropdown-meta">{{ item.destinationName }} · {{ item.days }}天</span>
+              </div>
+              <div v-if="!planList.length" class="plan-dropdown-empty">暂无规划记录</div>
+            </div>
+          </div>
           <span class="destination-badge">{{ planDestination }} · {{ plan.days }}天</span>
         </div>
       </div>
@@ -89,20 +107,19 @@
       <!-- Right editor panel -->
       <div v-show="selectedDay !== null" class="right-editor">
           <div class="editor-header">
-            <h3>第 {{ selectedDay }} 天</h3>
+            <div class="editor-header-nav">
+              <button class="day-nav-btn" :disabled="selectedDay <= 1" @click="selectDay(selectedDay - 1)" title="前一天">‹</button>
+              <h3>第 {{ selectedDay }} 天</h3>
+              <button class="day-nav-btn" :disabled="selectedDay >= plan.days" @click="selectDay(selectedDay + 1)" title="后一天">›</button>
+            </div>
             <div class="editor-header-actions">
+              <button v-if="plan.days > 1" class="icon-btn danger" @click="removeSelectedDay" title="删除本天">🗑</button>
               <button class="icon-btn" @click="addActivity(selectedDay)" title="添加活动">+</button>
               <button class="icon-btn close-btn" @click="closeEditor" title="关闭">✕</button>
             </div>
           </div>
 
           <div class="editor-body">
-            <!-- Remove day button -->
-            <div class="editor-day-actions" v-if="plan.days > 1">
-              <button class="text-btn danger" @click="removeSelectedDay">
-                🗑 删除本天所有行程
-              </button>
-            </div>
 
             <!-- Activity cards -->
             <div
@@ -110,7 +127,11 @@
               :key="act.id || idx"
               :ref="el => setActivityCardRef(act.id, el)"
               class="activity-edit-card"
-              :class="{ highlighted: isSameActivity(highlightedActivityId, act.id), picking: isSameActivity(pickingActivityId, act.id) }"
+              :class="{
+                highlighted: isSameActivity(highlightedActivityId, act.id),
+                picking: isSameActivity(pickingActivityId, act.id),
+                'drag-ghost': dragSourceId === act.id,
+              }"
             >
               <div class="card-header">
                 <span class="activity-index">{{ idx + 1 }}</span>
@@ -129,18 +150,11 @@
                   />
                 </div>
                 <div class="card-move-actions">
-                  <button
-                    class="mini-btn"
-                    :disabled="idx === 0"
-                    @click="moveActivity(act, -1)"
-                    title="上移"
-                  >▲</button>
-                  <button
-                    class="mini-btn"
-                    :disabled="idx === getActivitiesByDay(selectedDay).length - 1"
-                    @click="moveActivity(act, 1)"
-                    title="下移"
-                  >▼</button>
+                  <span
+                    class="drag-handle"
+                    @mousedown.stop.prevent="onDragStart($event, act, idx)"
+                    title="拖动排序"
+                  >☰</span>
                   <button class="mini-btn danger" @click="deleteActivity(act)" title="删除">✕</button>
                 </div>
               </div>
@@ -154,7 +168,7 @@
               ></textarea>
 
               <div class="card-footer">
-                <div class="field-group">
+                <div class="field-group tips-group">
                   <span class="field-label">💡</span>
                   <input
                     v-model="act.tips"
@@ -162,6 +176,15 @@
                     placeholder="小贴士/注意事项"
                     @input="triggerAutoSave"
                   />
+                  <button
+                    v-if="(act.tips || '').length > 15"
+                    class="tips-toggle"
+                    @click.stop="toggleTips(act.id)"
+                  >查看</button>
+                  <div v-if="isTipsExpanded(act.id)" class="tips-popup" @click.stop>
+                    <div class="tips-popup-content">{{ act.tips }}</div>
+                    <button class="tips-popup-close" @click="toggleTips(act.id)">✕</button>
+                  </div>
                 </div>
                 <div class="field-group">
                   <span class="field-label">¥</span>
@@ -181,7 +204,7 @@
                     v-if="!isSameActivity(pickingActivityId, act.id)"
                     class="pick-location-btn"
                     @click="startPicking(act.id)"
-                  >📍 重选位置</button>
+                  >重选位置</button>
                   <button
                     v-else
                     class="pick-location-btn cancel"
@@ -203,6 +226,20 @@
           </div>
         </div>
 
+        <!-- Drag ghost (follows mouse) -->
+        <div
+          v-if="dragSourceId && dragCardRect"
+          class="drag-ghost-float"
+          :style="{
+            left: dragPos.x + 'px',
+            top: dragPos.y + 'px',
+            width: dragCardRect.width + 'px',
+          }"
+        >
+          <span class="ghost-index">☰</span>
+          <span class="ghost-text">{{ getActivityById(dragSourceId)?.locationName || '拖动中...' }}</span>
+        </div>
+
       <!-- Placeholder when no day selected -->
       <div v-show="selectedDay === null" class="no-selection-hint">
         <span>👆 点击上方日轴或地图标记以编辑行程</span>
@@ -212,7 +249,7 @@
 </template>
 
 <script setup>
-import { ref, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import MapComponent from '../components/MapComponent.vue'
 
@@ -233,6 +270,18 @@ const activityCardRefs = new Map()
 // Picking mode state
 const pickingActivityId = ref(null)
 const pickingMode = computed(() => pickingActivityId.value !== null)
+
+// Tips expand state
+const expandedTips = ref(new Set())
+function isTipsExpanded(id) { return expandedTips.value.has(id) }
+function toggleTips(id) {
+  if (expandedTips.value.has(id)) expandedTips.value.delete(id)
+  else expandedTips.value.add(id)
+}
+
+// Plan switcher
+const planList = ref([])
+const planDropdownOpen = ref(false)
 
 // Auto-save state
 const syncState = ref('saved')
@@ -271,6 +320,11 @@ const mapItinerary = computed(() => {
 
 const planDestination = computed(() => plan.value?.destinationName || plan.value?.destination || '')
 
+const titleInputWidth = computed(() => {
+  const len = (plan.value?.title || '').length
+  return Math.min(Math.max(len * 20 + 40, 120), 500) + 'px'
+})
+
 // Helpers
 function stepStatus(step) {
   if (currentStep.value > step) return 'completed'
@@ -284,6 +338,39 @@ function queryValue(value) {
 
 function isSameActivity(a, b) {
   return a != null && b != null && String(a) === String(b)
+}
+
+// Plan switcher
+const planDropdownStyle = ref({})
+
+async function togglePlanDropdown() {
+  planDropdownOpen.value = !planDropdownOpen.value
+  if (planDropdownOpen.value) {
+    nextTick(() => {
+      const el = document.querySelector('.plan-switcher')
+      if (el) {
+        const rect = el.getBoundingClientRect()
+        planDropdownStyle.value = {
+          position: 'fixed',
+          top: (rect.bottom + 6) + 'px',
+          left: rect.left + 'px'
+        }
+      }
+    })
+    if (planList.value.length === 0) {
+      try {
+        const uid = localStorage.getItem('userId') || '1'
+        const res = await fetch(`/api/travel/plans/user/${uid}`)
+        const data = await res.json()
+        if (data.code === 200) planList.value = data.data || []
+      } catch {}
+    }
+  }
+}
+
+function switchPlan(item) {
+  planDropdownOpen.value = false
+  router.push({ name: 'planWorkbench', query: { planId: item.planId } })
 }
 
 function setActivityCardRef(id, el) {
@@ -307,6 +394,10 @@ async function focusActivityCard(id) {
 
 function getActivitiesByDay(day) {
   return activities.value.filter(a => a.dayNumber === day)
+}
+
+function getActivityById(id) {
+  return activities.value.find(a => a.id === id)
 }
 
 // Day selection
@@ -458,6 +549,89 @@ function moveActivity(act, direction) {
   }
 }
 
+// Drag and drop (mouse-based, fixed position follow)
+const dragSourceId = ref(null)
+const dragPos = ref({ x: 0, y: 0 })
+const dragCardRect = ref(null)
+let dragOffsetY = 0
+let dragDayNumber = 1
+let dropTargetIdx = -1
+
+function onDragStart(e, act, idx) {
+  dragSourceId.value = act.id
+  dragDayNumber = act.dayNumber
+  const cardEl = activityCardRefs.get(String(act.id))
+  if (cardEl) {
+    const rect = cardEl.getBoundingClientRect()
+    dragCardRect.value = { width: rect.width, height: rect.height }
+    dragOffsetY = e.clientY - rect.top
+    dragPos.value = { x: rect.left, y: rect.top }
+  }
+  document.addEventListener('mousemove', onDragMove)
+  document.addEventListener('mouseup', onDragEnd)
+}
+
+function onDragMove(e) {
+  if (!dragSourceId.value) return
+  dragPos.value = { x: dragPos.value.x, y: e.clientY - dragOffsetY }
+
+  // Find the closest card by midpoint distance, with edge detection
+  const dayActs = getActivitiesByDay(dragDayNumber)
+  const srcIdx = dayActs.findIndex(a => a.id === dragSourceId.value)
+  dropTargetIdx = -1
+  let minDist = Infinity
+
+  // Get first and last card bounds for edge detection
+  const firstEl = activityCardRefs.get(String(dayActs[0]?.id))
+  const lastEl = activityCardRefs.get(String(dayActs[dayActs.length - 1]?.id))
+
+  if (firstEl && e.clientY < firstEl.getBoundingClientRect().top) {
+    // Above first card → target is first
+    dropTargetIdx = 0
+  } else if (lastEl && e.clientY > lastEl.getBoundingClientRect().bottom) {
+    // Below last card → target is last
+    dropTargetIdx = dayActs.length - 1
+  } else {
+    // Find closest by midpoint
+    for (let i = 0; i < dayActs.length; i++) {
+      if (i === srcIdx) continue
+      const el = activityCardRefs.get(String(dayActs[i].id))
+      if (!el) continue
+      const rect = el.getBoundingClientRect()
+      const mid = rect.top + rect.height / 2
+      const dist = Math.abs(e.clientY - mid)
+      if (dist < minDist) {
+        minDist = dist
+        dropTargetIdx = i
+      }
+    }
+  }
+}
+
+function onDragEnd() {
+  document.removeEventListener('mousemove', onDragMove)
+  document.removeEventListener('mouseup', onDragEnd)
+
+  if (dragSourceId.value && dropTargetIdx >= 0) {
+    const dayActs = getActivitiesByDay(dragDayNumber)
+    const srcIdx = dayActs.findIndex(a => a.id === dragSourceId.value)
+    if (srcIdx !== -1 && srcIdx !== dropTargetIdx) {
+      const srcGlobal = activities.value.findIndex(a => a.id === dragSourceId.value)
+      const tgtGlobal = activities.value.findIndex(a => a.id === dayActs[dropTargetIdx].id)
+      if (srcGlobal !== -1 && tgtGlobal !== -1) {
+        const [removed] = activities.value.splice(srcGlobal, 1)
+        activities.value.splice(tgtGlobal, 0, removed)
+        triggerAutoSave()
+      }
+    }
+  }
+
+  dragSourceId.value = null
+  dragCardRect.value = null
+  dragPos.value = { x: 0, y: 0 }
+  dropTargetIdx = -1
+}
+
 // Geocode on location change
 async function handleLocationChange(act) {
   if (!act.locationName.trim()) return
@@ -548,6 +722,7 @@ async function initWorkspace() {
         plan.value = data.data
         activities.value = data.data.activities || []
         loading.value = false
+        if (activities.value.length > 0) selectedDay.value = 1
       } else {
         alert('无法加载该行程计划')
         goBack()
@@ -575,6 +750,7 @@ async function initWorkspace() {
           plan.value = data.data
           activities.value = data.data.activities || []
           loading.value = false
+          if (activities.value.length > 0) selectedDay.value = 1
           router.replace({
             name: 'planWorkbench',
             query: {
@@ -625,6 +801,7 @@ async function initWorkspace() {
         plan.value = latestPlan
         activities.value = latestPlan.activities || []
         loading.value = false
+        if (activities.value.length > 0) selectedDay.value = 1
       } else {
         alert('您当前还没有任何行程规划记录，请先到 AI规划 页面生成！')
         goBack()
@@ -635,13 +812,33 @@ async function initWorkspace() {
   }
 }
 
+watch(() => route.query.planId, (newPlanId) => {
+  if (newPlanId) {
+    loading.value = true
+    selectedDay.value = null
+    planDropdownOpen.value = false
+    initWorkspace()
+  }
+})
+
+function onGlobalClick(e) {
+  if (planDropdownOpen.value && !e.target.closest('.plan-switcher')) {
+    planDropdownOpen.value = false
+  }
+  if (!e.target.closest('.tips-group')) {
+    expandedTips.value.clear()
+  }
+}
+
 onMounted(() => {
   initWorkspace()
   window.addEventListener('keydown', onKeydown)
+  document.addEventListener('click', onGlobalClick)
 })
 
 onUnmounted(() => {
   window.removeEventListener('keydown', onKeydown)
+  document.removeEventListener('click', onGlobalClick)
 })
 </script>
 
@@ -681,8 +878,9 @@ onUnmounted(() => {
 .back-btn:hover { background: #e5e7eb; color: #1f2937; }
 .title-section { display: flex; align-items: center; gap: 10px; }
 .title-input {
-  background: transparent; border: none; font-size: 16px; font-weight: 700;
-  color: #1f2937; padding: 4px 8px; border-radius: 4px; width: 260px;
+  background: transparent; border: none; font-size: 20px; font-weight: 700;
+  color: #1f2937; padding: 6px 10px; border-radius: 6px;
+  min-width: 120px; max-width: 500px; width: auto;
   transition: background 0.2s;
 }
 .title-input:hover, .title-input:focus { background: #f3f4f6; outline: none; }
@@ -690,6 +888,38 @@ onUnmounted(() => {
   background: #fef3c7; color: #92400e; padding: 3px 10px;
   border-radius: 10px; font-size: 12px; font-weight: 600; white-space: nowrap;
 }
+
+/* === Plan Switcher === */
+.plan-switcher { position: relative; }
+.plan-switcher .title-input { cursor: pointer; padding-right: 24px; }
+.switcher-arrow {
+  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
+  font-size: 12px; color: #9ca3af; pointer-events: none;
+  transition: transform 0.2s;
+}
+.switcher-arrow.open { transform: translateY(-50%) rotate(180deg); }
+.plan-dropdown {
+  z-index: 9999;
+  min-width: 260px; max-height: 240px; overflow-y: auto;
+  background: white; border: 1px solid #e5e7eb; border-radius: 10px;
+  box-shadow: 0 8px 24px rgba(0,0,0,0.15);
+  animation: dropdownIn 0.15s ease-out;
+}
+@keyframes dropdownIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.plan-dropdown-item {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 12px; cursor: pointer; transition: background 0.15s;
+  border-bottom: 1px solid #f3f4f6;
+}
+.plan-dropdown-item:last-child { border-bottom: none; }
+.plan-dropdown-item:hover { background: #f9fafb; }
+.plan-dropdown-item.active { background: #eff6ff; }
+.dropdown-title { font-size: 13px; font-weight: 600; color: #1f2937; }
+.dropdown-meta { font-size: 11px; color: #9ca3af; }
+.plan-dropdown-empty { padding: 16px; text-align: center; color: #9ca3af; font-size: 14px; }
 
 /* === Sync Status === */
 .sync-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9ca3af; }
@@ -723,14 +953,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   gap: 6px;
-  padding: 6px 14px;
+  padding: 8px 16px;
   border-radius: 20px;
   border: 1px solid #e5e7eb;
   background: white;
   cursor: pointer;
   transition: all 0.2s;
   white-space: nowrap;
-  font-size: 13px;
+  font-size: 14px;
   color: #6b7280;
 }
 .axis-day-chip:hover { border-color: var(--chip-color, #a5b4fc); color: var(--chip-color, #4f46e5); }
@@ -744,9 +974,9 @@ onUnmounted(() => {
   width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0;
   border: 1.5px solid rgba(255,255,255,0.6);
 }
-.chip-num { font-weight: 700; font-size: 12px; }
-.chip-label { font-weight: 500; }
-.chip-count { font-size: 11px; color: #9ca3af; }
+.chip-num { font-weight: 700; font-size: 14px; }
+.chip-label { font-weight: 500; font-size: 14px; }
+.chip-count { font-size: 12px; color: #9ca3af; }
 .axis-add-btn {
   background: transparent; border: 1px dashed #d1d5db;
   color: #9ca3af; padding: 6px 14px; border-radius: 20px;
@@ -810,18 +1040,36 @@ onUnmounted(() => {
   border-bottom: 1px solid #e5e7eb;
   flex-shrink: 0;
 }
-.editor-header h3 {
-  margin: 0; font-size: 15px; font-weight: 700; color: #1f2937;
+.editor-header-nav {
+  display: flex;
+  align-items: center;
+  gap: 8px;
 }
-.editor-header-actions { display: flex; gap: 6px; }
-.icon-btn {
+.editor-header h3 {
+  margin: 0; font-size: 18px; font-weight: 700; color: #1f2937;
+  min-width: 80px;
+  text-align: center;
+}
+.day-nav-btn {
   width: 28px; height: 28px; border-radius: 6px;
   border: 1px solid #e5e7eb; background: white;
   cursor: pointer; display: flex; align-items: center;
-  justify-content: center; font-size: 16px; color: #6b7280;
+  justify-content: center; font-size: 18px; color: #6b7280;
+  font-weight: 700; transition: all 0.15s;
+}
+.day-nav-btn:hover:not(:disabled) { background: #f3f4f6; color: #1f2937; }
+.day-nav-btn:disabled { opacity: 0.3; cursor: default; }
+.editor-header-actions { display: flex; gap: 6px; }
+.icon-btn {
+  width: 32px; height: 32px; border-radius: 6px;
+  border: 1px solid #e5e7eb; background: white;
+  cursor: pointer; display: flex; align-items: center;
+  justify-content: center; font-size: 18px; color: #6b7280;
   transition: all 0.15s;
 }
 .icon-btn:hover { background: #f3f4f6; color: #1f2937; }
+.icon-btn.danger { color: #ef4444; }
+.icon-btn.danger:hover { background: #fee2e2; border-color: #fecaca; }
 .close-btn:hover { background: #fee2e2; color: #ef4444; border-color: #fecaca; }
 
 .editor-body {
@@ -865,6 +1113,20 @@ onUnmounted(() => {
   box-shadow: 0 0 0 3px rgba(255,36,66,0.15);
   animation: pickingGlow 1.2s ease-in-out infinite alternate;
 }
+.activity-edit-card.drag-ghost {
+  opacity: 0.3;
+  border-style: dashed;
+}
+.drag-ghost-float {
+  position: fixed; z-index: 9999; pointer-events: none;
+  display: flex; align-items: center; gap: 10px;
+  padding: 12px 14px; background: white;
+  border: 2px solid #6366f1; border-radius: 10px;
+  box-shadow: 0 12px 32px rgba(0,0,0,0.2);
+  opacity: 0.9; font-size: 14px;
+}
+.ghost-index { font-size: 16px; color: #6366f1; }
+.ghost-text { font-weight: 600; color: #1f2937; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 @keyframes pickingGlow {
   from { box-shadow: 0 0 0 3px rgba(255,36,66,0.15); }
   to { box-shadow: 0 0 0 6px rgba(255,36,66,0.08); }
@@ -876,24 +1138,31 @@ onUnmounted(() => {
   gap: 10px;
 }
 .activity-index {
-  width: 22px; height: 22px; border-radius: 50%;
+  width: 24px; height: 24px; border-radius: 50%;
   background: linear-gradient(135deg, #ff2442, #ff5f73);
   color: white; display: flex; align-items: center;
-  justify-content: center; font-size: 11px; font-weight: 700;
+  justify-content: center; font-size: 13px; font-weight: 700;
   flex-shrink: 0;
 }
 .card-header-inputs { flex: 1; display: flex; gap: 4px; min-width: 0; }
 .field-time {
-  width: 68px; flex-shrink: 0; border: none; background: white; padding: 6px 4px;
-  border-radius: 6px; font-size: 12px; font-weight: 600; color: #1f2937; text-align: center;
+  width: 100px; flex-shrink: 0; border: none; background: white; padding: 6px 4px;
+  border-radius: 6px; font-size: 14px; font-weight: 600; color: #1f2937; text-align: center;
 }
 .field-location {
   flex: 1; min-width: 0; border: none; background: white; padding: 6px 8px;
-  border-radius: 6px; font-size: 13px; font-weight: 600; color: #1f2937;
+  border-radius: 6px; font-size: 14px; font-weight: 600; color: #1f2937;
 }
 .field-time:focus, .field-location:focus { outline: none; box-shadow: 0 0 0 2px rgba(255,36,66,0.2); }
 
-.card-move-actions { display: flex; gap: 3px; }
+.card-move-actions { display: flex; gap: 3px; align-items: center; }
+.drag-handle {
+  cursor: grab; font-size: 16px; color: #9ca3af; padding: 2px 4px;
+  user-select: none; transition: color 0.15s;
+}
+.drag-handle:hover { color: #6b7280; }
+.drag-handle:active { cursor: grabbing; }
+.drag-handle.dragging { opacity: 0.5; }
 .mini-btn {
   width: 24px; height: 24px; border-radius: 4px;
   border: 1px solid #e5e7eb; background: white;
@@ -908,7 +1177,7 @@ onUnmounted(() => {
 
 .field-desc {
   width: 100%; border: 1px solid #e5e7eb; border-radius: 6px;
-  padding: 8px 10px; font-size: 12px; color: #4b5563;
+  padding: 8px 10px; font-size: 14px; color: #4b5563;
   background: white; resize: vertical; font-family: inherit;
 }
 .field-desc:focus { outline: none; border-color: #a5b4fc; }
@@ -921,19 +1190,44 @@ onUnmounted(() => {
   background: white; border-radius: 6px; padding: 4px 8px; flex: 1;
   min-width: 0; border: 1px solid #f3f4f6;
 }
-.field-label { font-size: 12px; color: #9ca3af; flex-shrink: 0; }
+.field-label { font-size: 13px; color: #9ca3af; flex-shrink: 0; }
 .field-tips, .field-cost {
-  background: transparent; border: none; font-size: 12px;
+  background: transparent; border: none; font-size: 13px;
   color: #6b7280; width: 100%; min-width: 0;
 }
 .field-tips:focus, .field-cost:focus { outline: none; }
+.tips-group { position: relative; }
+.tips-toggle {
+  flex-shrink: 0; background: none; border: none; color: #ff2442;
+  font-size: 11px; cursor: pointer; padding: 0 4px; font-weight: 500;
+}
+.tips-toggle:hover { text-decoration: underline; }
+.tips-popup {
+  position: absolute; top: calc(100% + 6px); left: 0; z-index: 100;
+  min-width: 200px; max-width: 280px; padding: 10px 12px;
+  background: #1f2937; color: #f9fafb; border-radius: 8px;
+  font-size: 13px; line-height: 1.6; white-space: normal;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.2);
+  animation: popupIn 0.15s ease-out;
+}
+@keyframes popupIn {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.tips-popup-content { word-break: break-all; }
+.tips-popup-close {
+  position: absolute; top: 4px; right: 6px;
+  background: none; border: none; color: #9ca3af; cursor: pointer;
+  font-size: 12px; padding: 2px;
+}
+.tips-popup-close:hover { color: white; }
 .coords-row {
   display: flex; align-items: center; gap: 8px; width: 100%;
 }
-.coords-readout { font-size: 10px; color: #9ca3af; white-space: nowrap; flex: 1; }
+.coords-readout { font-size: 11px; color: #9ca3af; white-space: nowrap; flex: 1; }
 .pick-location-btn {
   background: transparent; border: 1px solid #d1d5db; color: #ff2442;
-  padding: 2px 10px; border-radius: 10px; font-size: 11px; font-weight: 500;
+  padding: 3px 12px; border-radius: 10px; font-size: 12px; font-weight: 500;
   cursor: pointer; transition: all 0.15s; white-space: nowrap; flex-shrink: 0;
 }
 .pick-location-btn:hover { background: #fff1f3; border-color: #ff2442; }

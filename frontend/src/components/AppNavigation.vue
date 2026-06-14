@@ -25,7 +25,7 @@
       </router-link>
 
       <router-link
-        to="/plan/workbench"
+        :to="workbenchLink"
         class="sidebar-link"
         :class="{ active: isActive('/plan/workbench') || isActive('/plan-workbench') }"
       >
@@ -89,6 +89,26 @@ const { theme, toggleTheme } = useTheme()
 const isDiscoverActive = computed(() =>
   route.path === '/' || (route.path.startsWith('/discover') && route.query.publish !== '1'),
 )
+
+// Smart workbench link: pass planId if available so PlanWorkbenchView loads instantly
+const workbenchLink = computed(() => {
+  // If already on workbench, keep current query
+  if (route.path.startsWith('/plan/workbench') && route.query.planId) {
+    return { path: '/plan/workbench', query: route.query }
+  }
+  // Check localStorage for a conversation with a saved workbenchPlanId
+  try {
+    const raw = localStorage.getItem('travel_conversations')
+    if (raw) {
+      const convs = JSON.parse(raw)
+      const withPlan = convs.find(c => c.result?.workbenchPlanId)
+      if (withPlan) {
+        return { path: '/plan/workbench', query: { planId: withPlan.result.workbenchPlanId } }
+      }
+    }
+  } catch {}
+  return '/plan/workbench'
+})
 const displayName = computed(() => (isLoggedIn.value ? username.value || '旅行者' : '未登录'))
 const avatarLetter = computed(() => {
   const name = displayName.value || 'U'

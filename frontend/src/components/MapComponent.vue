@@ -567,7 +567,7 @@ onMounted(() => {
 
 .search-box {
   position: absolute;
-  top: 12px;
+  bottom: 12px;
   left: 12px;
   width: 400px;
   padding: 6px 10px;
