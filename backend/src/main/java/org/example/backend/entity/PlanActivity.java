@@ -12,7 +12,7 @@ public class PlanActivity {
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(name = "plan_id")
+    @Column(name = "plan_id", insertable = false, updatable = false)
     private Long planId;
 
     @Column(name = "day_number", nullable = false)

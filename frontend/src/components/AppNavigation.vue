@@ -24,10 +24,14 @@
         <span>AI规划</span>
       </router-link>
 
-      <button class="sidebar-link" :class="{ active: isPublishActive }" @click="openPublish">
-        <SvgIcon name="plus-circle" :size="22" />
-        <span>发布笔记</span>
-      </button>
+      <router-link
+        to="/plan/workbench"
+        class="sidebar-link"
+        :class="{ active: isActive('/plan/workbench') || isActive('/plan-workbench') }"
+      >
+        <SvgIcon name="map-pin" :size="22" />
+        <span>规划工作台</span>
+      </router-link>
 
       <router-link
         to="/leaderboard"
@@ -85,7 +89,6 @@ const { theme, toggleTheme } = useTheme()
 const isDiscoverActive = computed(() =>
   route.path === '/' || (route.path.startsWith('/discover') && route.query.publish !== '1'),
 )
-const isPublishActive = computed(() => route.path === '/discover' && route.query.publish === '1')
 const displayName = computed(() => (isLoggedIn.value ? username.value || '旅行者' : '未登录'))
 const avatarLetter = computed(() => {
   const name = displayName.value || 'U'
@@ -99,14 +102,6 @@ function isActive(path) {
 
 function goHome() {
   router.push('/')
-}
-
-function openPublish() {
-  if (!isLoggedIn.value) {
-    showLogin?.()
-    return
-  }
-  router.push({ path: '/discover', query: { publish: '1' } })
 }
 
 function goProfile() {

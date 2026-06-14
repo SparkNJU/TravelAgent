@@ -275,7 +275,6 @@ public class TravelPlanService {
                         plan.setTravelStyle(request.getTravelStyle());
                     }
                     if (request.getActivities() != null) {
-                        planActivityRepository.deleteByPlanId(planId);
                         plan.getActivities().clear();
                         for (PlanActivity act : request.getActivities()) {
                             act.setId(null);

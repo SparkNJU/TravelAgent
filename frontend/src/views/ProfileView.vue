@@ -64,6 +64,7 @@
               <div class="plan-actions">
                 <button class="action-btn" @click="viewPlanDetail(item.planId)">查看</button>
                 <button class="action-btn primary" @click="$router.push(`/plan/workbench?planId=${item.planId}`)">工作台</button>
+                <button class="action-btn danger" @click="deletePlan(item.planId)">删除</button>
               </div>
             </div>
           </div>
@@ -316,6 +317,24 @@ const closeDetailModal = () => {
   selectedPlan.value = null
 }
 
+const deletePlan = async (planId) => {
+  if (!confirm('确定要删除这份行程规划吗？')) return
+  try {
+    const uid = localStorage.getItem('userId') || '1'
+    const res = await fetch(`/api/travel/plan/${planId}?userId=${uid}`, {
+      method: 'DELETE'
+    })
+    const data = await res.json()
+    if (data.code === 200) {
+      plans.value = plans.value.filter(p => p.planId !== planId)
+    } else {
+      alert(data.message || '删除失败')
+    }
+  } catch (error) {
+    alert('删除失败，请稍后重试')
+  }
+}
+
 const formatItinerary = (itinerary) => {
   if (!itinerary) return '<p>暂无行程安排</p>'
   try {
@@ -547,6 +566,15 @@ onMounted(() => {
   background: var(--gradient-brand); border-color: transparent; color: white;
 }
 .plan-actions .action-btn.primary:hover { filter: brightness(1.1); }
+.plan-actions .action-btn.danger {
+  color: var(--color-red-light, #e63946);
+  border-color: rgba(230, 57, 70, 0.2);
+}
+.plan-actions .action-btn.danger:hover {
+  background: var(--color-red-light, #e63946);
+  color: white;
+  border-color: transparent;
+}
 
 /* 帖子网格 */
 .posts-grid {

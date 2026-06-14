@@ -32,8 +32,13 @@
       <!-- 地点列表面板 -->
       <div class="location-panel" :class="{ collapsed: panelCollapsed }">
         <div class="panel-header">
-          <h3>行程地点</h3>
-          <p class="location-count">共 {{ totalLocations }} 个地点</p>
+          <div class="header-left">
+            <h3>行程地点</h3>
+            <p class="location-count">共 {{ totalLocations }} 个地点</p>
+          </div>
+          <button class="expand-edit-btn" @click="$emit('expandEdit', selectedDay !== null ? null : (selectedLocation?.day || 1))">
+            {{ selectedDay !== null ? '收回编辑' : '展开编辑' }}
+          </button>
         </div>
 
         <div class="location-list">
@@ -83,7 +88,7 @@ const props = defineProps({
   pickingMode: { type: Boolean, default: false }
 })
 
-const emit = defineEmits(['mapClick'])
+const emit = defineEmits(['mapClick', 'expandEdit'])
 
 const mapElement = ref(null)
 const selectedIndex = ref(0)
@@ -748,6 +753,27 @@ onMounted(() => {
   border-bottom: 1px solid var(--color-border);
   background: var(--color-card);
   flex-shrink: 0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.expand-edit-btn {
+  background: var(--color-soft-red, #ffe4e6);
+  color: var(--color-red, #ff2442);
+  border: 1px solid rgba(255, 36, 66, 0.15);
+  padding: 6px 12px;
+  border-radius: 14px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.expand-edit-btn:hover {
+  background: var(--color-red, #ff2442);
+  color: white;
+  border-color: transparent;
 }
 
 .panel-header h3 {

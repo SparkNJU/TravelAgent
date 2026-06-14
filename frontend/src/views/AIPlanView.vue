@@ -130,11 +130,25 @@
 
           <StreamingIndicator v-if="loading" />
 
-          <!-- Enter Workbench Button -->
+          <!-- Workbench: parsing / ready / error -->
           <div v-if="activeConversation && activeConversation.result && !loading" class="workbench-trigger-wrapper">
-            <button class="workbench-trigger-btn" :disabled="navigatingToWorkbench" @click="goToWorkbench">
-              <span v-if="navigatingToWorkbench" class="btn-loading-spinner"></span>
-              {{ navigatingToWorkbench ? '正在同步会话...' : '进入可视化工作台 ➜' }}
+            <!-- Parsing in progress -->
+            <div v-if="workbenchParsing" class="workbench-parsing-indicator">
+              <StreamingIndicator />
+              <span class="parsing-text">正在构建可视化工作台…</span>
+            </div>
+            <!-- Parse complete — ready to enter -->
+            <button v-else-if="workbenchPlanId" class="workbench-trigger-btn ready" @click="enterWorkbench">
+              进入可视化工作台 ➜
+            </button>
+            <!-- Parse failed -->
+            <div v-else-if="workbenchError" class="workbench-error">
+              <span class="error-text">⚠ {{ workbenchError }}</span>
+              <button class="retry-btn" @click="retryWorkbench">重试</button>
+            </div>
+            <!-- Not started -->
+            <button v-else class="workbench-trigger-btn" @click="goToWorkbench">
+              进入可视化工作台 ➜
             </button>
           </div>
         </div>
@@ -367,6 +381,9 @@ const arenaMode = ref(false)
 const pendingAskUser = ref(null)
 const activeSuggestions = ref([])
 const navigatingToWorkbench = ref(false)
+const workbenchParsing = ref(false)
+const workbenchPlanId = ref(null)
+const workbenchError = ref('')
 const syncingKnowledgeTurns = ref(new Set())
 
 const COMPRESS_KEEP_LAST = 6
@@ -800,11 +817,21 @@ watch(activeId, () => {
   manualTraceOpen.value = {}
   turnMarkerPositions.value = {}
   syncJumpMarkers()
+  // Reset workbench parsing state on conversation switch
+  workbenchParsing.value = false
+  workbenchError.value = ''
+  // Restore workbenchPlanId from conversation result if available
+  const savedPlanId = activeConversation.value?.result?.workbenchPlanId
+  workbenchPlanId.value = savedPlanId || null
 })
 
 onMounted(() => {
   if (route.query.planId) loadSavedPlan(route.query.planId)
   loadFromBackend().then(() => {
+    // Restore workbenchPlanId from conversation result
+    const savedPlanId = activeConversation.value?.result?.workbenchPlanId
+    if (savedPlanId) workbenchPlanId.value = savedPlanId
+    scrollToBottom()
     if (route.query.auto === '1' && initialQuery.value) {
       if (!activeConversation.value || activeConversation.value.messages.length) {
         newConversation()
@@ -1123,14 +1150,58 @@ async function loadSavedPlan(planId) {
 async function goToWorkbench() {
   const conv = activeConversation.value
   if (!conv) return
-  navigatingToWorkbench.value = true
+
+  // If already parsed, go directly
+  if (workbenchPlanId.value) {
+    router.push({ name: 'planWorkbench', query: { planId: workbenchPlanId.value, c: conv.backendId } })
+    return
+  }
 
   if (!conv.backendId) {
-    navigatingToWorkbench.value = false
     alert('会话尚未同步，请稍候重试...')
     return
   }
-  router.push({ name: 'planWorkbench', query: { c: conv.backendId } })
+
+  // Start background parsing
+  workbenchParsing.value = true
+  workbenchError.value = ''
+
+  try {
+    const res = await fetch('/api/travel/plan/parse-and-save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ conversationId: conv.backendId })
+    })
+    const data = await res.json()
+
+    if (data.code === 200 && data.data) {
+      workbenchPlanId.value = data.data.planId
+      // Persist planId in conversation result so it survives component re-creation
+      const result = conv.result
+      if (result) {
+        setResult({ ...result, workbenchPlanId: data.data.planId })
+      }
+    } else {
+      workbenchError.value = data.message || '暂不支持解析该对话'
+    }
+  } catch (e) {
+    workbenchError.value = '解析失败：' + e.message
+  } finally {
+    workbenchParsing.value = false
+  }
+}
+
+function enterWorkbench() {
+  if (workbenchPlanId.value) {
+    const conv = activeConversation.value
+    router.push({ name: 'planWorkbench', query: { planId: workbenchPlanId.value, ...(conv?.backendId ? { c: conv.backendId } : {}) } })
+  }
+}
+
+function retryWorkbench() {
+  workbenchPlanId.value = null
+  workbenchError.value = ''
+  goToWorkbench()
 }
 
 function handleUpdateItinerary(updated) {
@@ -1596,6 +1667,64 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 }
 
 @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+.workbench-parsing-indicator {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 24px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 50px;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.parsing-text {
+  font-size: 13px;
+  color: var(--color-secondary);
+  font-weight: 500;
+}
+
+.workbench-trigger-btn.ready {
+  background: linear-gradient(135deg, #10b981, #059669);
+  box-shadow: 0 14px 30px rgba(16, 185, 129, 0.24);
+}
+
+.workbench-trigger-btn.ready:hover {
+  box-shadow: 0 18px 36px rgba(16, 185, 129, 0.3);
+}
+
+.workbench-error {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 20px;
+  background: var(--color-card);
+  border: 1px solid var(--color-border);
+  border-radius: 50px;
+  animation: slideUp 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.error-text {
+  font-size: 13px;
+  color: var(--color-hint);
+}
+
+.retry-btn {
+  padding: 6px 16px;
+  font-size: 12px;
+  font-weight: 600;
+  border: none;
+  border-radius: 20px;
+  background: var(--color-red-light);
+  color: white;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.retry-btn:hover {
+  background: var(--color-red);
+}
 
 @keyframes slideUp {
   from {

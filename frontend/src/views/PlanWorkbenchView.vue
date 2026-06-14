@@ -82,6 +82,7 @@
           :showLocationDetail="false"
           @mapClick="onMapClick"
           @markerClick="onMarkerClick"
+          @expandEdit="onExpandEdit"
         />
       </div>
 
@@ -376,6 +377,14 @@ function onMarkerClick(location) {
   focusActivityCard(act?.id || activityId)
 }
 
+function onExpandEdit(day) {
+  if (day === null) {
+    selectedDay.value = null
+  } else {
+    selectedDay.value = day || 1
+  }
+}
+
 function onKeydown(e) {
   if (e.key === 'Escape' && pickingActivityId.value) {
     cancelPicking()
@@ -583,7 +592,46 @@ async function initWorkspace() {
       goBack()
     }
   } else {
-    goBack()
+    // Check if there is an active conversation with a plan already generated
+    const localConvsRaw = localStorage.getItem('travel_conversations')
+    let latestBackendId = null
+    if (localConvsRaw) {
+      try {
+        const localConvs = JSON.parse(localConvsRaw)
+        const latest = localConvs.find(c => c.result && c.backendId)
+        if (latest) {
+          latestBackendId = latest.backendId
+        }
+      } catch (e) {}
+    }
+
+    if (latestBackendId) {
+      router.replace({ name: 'planWorkbench', query: { c: latestBackendId } })
+      initWorkspace()
+      return
+    }
+
+    // Try to fetch the latest plan of the user from the backend
+    try {
+      const uid = localStorage.getItem('userId') || '1'
+      const res = await fetch(`/api/travel/plans/user/${uid}`)
+      const data = await res.json()
+      if (data.code === 200 && data.data && data.data.length > 0) {
+        const latestPlan = data.data[0]
+        router.replace({
+          name: 'planWorkbench',
+          query: { planId: latestPlan.planId }
+        })
+        plan.value = latestPlan
+        activities.value = latestPlan.activities || []
+        loading.value = false
+      } else {
+        alert('您当前还没有任何行程规划记录，请先到 AI规划 页面生成！')
+        goBack()
+      }
+    } catch (e) {
+      goBack()
+    }
   }
 }
 
