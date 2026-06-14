@@ -30,16 +30,16 @@
       <div class="bar-left">
         <button class="back-btn" @click="goBack">← 返回对话</button>
         <div class="title-section" v-if="plan">
-          <div class="plan-switcher" @click.stop="togglePlanDropdown">
+          <div class="plan-switcher" @click.stop>
             <input
               v-model="plan.title"
               class="title-input"
               :style="{ width: titleInputWidth }"
               placeholder="输入行程标题"
-              @change="triggerAutoSave"
-              readonly
+              @change="onTitleChange"
+              @click.stop="togglePlanDropdown"
             />
-            <span class="switcher-arrow" :class="{ open: planDropdownOpen }">▾</span>
+            <span class="switcher-arrow" :class="{ open: planDropdownOpen }" @click.stop="togglePlanDropdown">☰</span>
             <div class="plan-dropdown" :class="{ visible: planDropdownOpen }">
               <div
                 v-for="item in planList"
@@ -52,9 +52,28 @@
                 <span class="dropdown-meta">{{ item.destinationName }} · {{ item.days }}天</span>
               </div>
               <div v-if="!planList.length" class="plan-dropdown-empty">暂无规划记录</div>
+              <div class="plan-dropdown-new" @click="createEmptyPlan(); planDropdownOpen = false">
+                + 新建规划
+              </div>
             </div>
           </div>
-          <span class="destination-badge">{{ planDestination }} · {{ plan.days }}天</span>
+          <div class="destination-edit">
+            <input
+              v-model="plan.destination"
+              class="destination-input"
+              placeholder="目的地"
+              @change="onDestinationChange"
+            />
+            <span class="destination-sep">·</span>
+            <input
+              type="number"
+              v-model.number="plan.days"
+              class="days-input"
+              min="1"
+              @change="onDaysChange"
+            />
+            <span class="destination-unit">天</span>
+          </div>
         </div>
       </div>
       <div class="bar-right">
@@ -282,6 +301,7 @@ function toggleTips(id) {
 // Plan switcher
 const planList = ref([])
 const planDropdownOpen = ref(false)
+const isNewPlan = ref(false)
 
 // Auto-save state
 const syncState = ref('saved')
@@ -322,7 +342,7 @@ const planDestination = computed(() => plan.value?.destinationName || plan.value
 
 const titleInputWidth = computed(() => {
   const len = (plan.value?.title || '').length
-  return Math.min(Math.max(len * 20 + 40, 120), 500) + 'px'
+  return Math.min(Math.max(len * 22 + 60, 200), 500) + 'px'
 })
 
 // Helpers
@@ -653,6 +673,10 @@ function triggerAutoSave() {
 
 async function performSave() {
   if (!plan.value) return
+  if (isNewPlan.value && !plan.value.planId) {
+    await saveNewPlan()
+    if (!plan.value.planId) return // save failed
+  }
   try {
       const payload = {
         title: plan.value.title,
@@ -714,12 +738,10 @@ async function initWorkspace() {
         loading.value = false
         if (activities.value.length > 0) selectedDay.value = 1
       } else {
-        alert('无法加载该行程计划')
-        goBack()
+        createEmptyPlan()
       }
     } catch (e) {
-      alert('加载行程出错，请检查网络')
-      goBack()
+      createEmptyPlan()
     }
   } else if (conversationId) {
     try {
@@ -793,12 +815,82 @@ async function initWorkspace() {
         loading.value = false
         if (activities.value.length > 0) selectedDay.value = 1
       } else {
-        alert('您当前还没有任何行程规划记录，请先到 AI规划 页面生成！')
-        goBack()
+        // No plans found — create an empty plan for the user to build from scratch
+        createEmptyPlan()
       }
     } catch (e) {
-      goBack()
+      createEmptyPlan()
     }
+  }
+}
+
+function createEmptyPlan() {
+  plan.value = {
+    planId: null,
+    title: '未命名行程',
+    destination: '',
+    days: 1,
+    estimatedBudget: 0,
+    activities: [],
+    highlights: []
+  }
+  activities.value = []
+  selectedDay.value = 1
+  loading.value = false
+  isNewPlan.value = true
+}
+
+function onTitleChange() {
+  if (isNewPlan.value) {
+    saveNewPlan()
+  } else {
+    triggerAutoSave()
+  }
+}
+
+function onDestinationChange() {
+  if (isNewPlan.value) {
+    saveNewPlan()
+  } else {
+    triggerAutoSave()
+  }
+}
+
+function onDaysChange() {
+  if (plan.value) {
+    if (plan.value.days < 1) plan.value.days = 1
+    if (isNewPlan.value) {
+      saveNewPlan()
+    } else {
+      triggerAutoSave()
+    }
+  }
+}
+
+async function saveNewPlan() {
+  if (!plan.value) return
+  const uid = Number(localStorage.getItem('userId')) || 1
+  try {
+    const res = await fetch('/api/travel/plan/save', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        userId: uid,
+        title: plan.value.title || '未命名行程',
+        destination: plan.value.destination || '未定',
+        days: plan.value.days || 1,
+        budget: plan.value.estimatedBudget || 0
+      })
+    })
+    const data = await res.json()
+    if (data.code === 200 && data.data) {
+      plan.value.planId = data.data.planId
+      isNewPlan.value = false
+      router.replace({ name: 'planWorkbench', query: { planId: data.data.planId } })
+      triggerAutoSave()
+    }
+  } catch (e) {
+    console.error('创建规划失败:', e)
   }
 }
 
@@ -881,13 +973,36 @@ onUnmounted(() => {
 
 /* === Plan Switcher === */
 .plan-switcher { position: relative; }
-.plan-switcher .title-input { cursor: pointer; padding-right: 24px; }
+.plan-switcher .title-input { cursor: pointer; padding-right: 36px; }
 .switcher-arrow {
-  position: absolute; right: 8px; top: 50%; transform: translateY(-50%);
-  font-size: 12px; color: #9ca3af; pointer-events: none;
-  transition: transform 0.2s;
+  position: absolute; right: 2px; top: 50%; transform: translateY(-50%);
+  font-size: 14px; color: #9ca3af; cursor: pointer;
+  transition: all 0.2s; padding: 6px 8px;
+  border-radius: 6px; line-height: 1;
 }
-.switcher-arrow.open { transform: translateY(-50%) rotate(180deg); }
+.switcher-arrow:hover { background: #f3f4f6; color: #4b5563; }
+.switcher-arrow.open { color: #4b5563; }
+
+.destination-edit {
+  display: flex; align-items: center; gap: 4px;
+  background: #fef3c7; border-radius: 10px; padding: 2px 8px;
+}
+.destination-input {
+  border: none; background: transparent;
+  font-size: 12px; font-weight: 600; color: #92400e;
+  width: 70px; outline: none; text-align: center;
+}
+.destination-input::placeholder { color: #d97706; opacity: 0.6; }
+.destination-sep { color: #d97706; font-size: 12px; }
+.destination-unit { color: #92400e; font-size: 12px; font-weight: 600; }
+.days-input {
+  border: none; background: transparent;
+  font-size: 12px; font-weight: 600; color: #92400e;
+  width: 28px; outline: none; text-align: center;
+}
+.days-input::-webkit-inner-spin-button,
+.days-input::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+.days-input { -moz-appearance: textfield; appearance: textfield; }
 .plan-dropdown {
   position: absolute; top: calc(100% + 6px); left: 0;
   z-index: 9999;
@@ -915,6 +1030,12 @@ onUnmounted(() => {
 .dropdown-title { font-size: 13px; font-weight: 600; color: #1f2937; }
 .dropdown-meta { font-size: 11px; color: #9ca3af; }
 .plan-dropdown-empty { padding: 16px; text-align: center; color: #9ca3af; font-size: 14px; }
+.plan-dropdown-new {
+  padding: 10px 14px; text-align: center; color: #ff2442;
+  font-size: 13px; font-weight: 600; cursor: pointer;
+  border-top: 1px solid #f3f4f6; transition: background 0.15s;
+}
+.plan-dropdown-new:hover { background: #fff1f2; }
 
 /* === Sync Status === */
 .sync-status { display: flex; align-items: center; gap: 6px; font-size: 12px; color: #9ca3af; }
@@ -1275,6 +1396,172 @@ onUnmounted(() => {
 .step.active { color: #ff2442; font-weight: 600; }
 .step.pending { color: #d1d5db; }
 .loading-hint { font-size: 12px; color: #9ca3af; margin: 0; }
+
+/* === Dark Mode === */
+:root[data-theme="dark"] .top-bar {
+  background: var(--color-card);
+  border-bottom-color: var(--color-border);
+}
+:root[data-theme="dark"] .back-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-body);
+}
+:root[data-theme="dark"] .back-btn:hover {
+  background: var(--color-card-hover);
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .title-input {
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .title-input:hover,
+:root[data-theme="dark"] .title-input:focus {
+  background: var(--color-surface);
+}
+:root[data-theme="dark"] .switcher-arrow {
+  color: var(--color-hint);
+}
+:root[data-theme="dark"] .switcher-arrow:hover {
+  background: var(--color-surface);
+  color: var(--color-body);
+}
+:root[data-theme="dark"] .plan-dropdown {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+}
+:root[data-theme="dark"] .plan-dropdown-item {
+  border-bottom-color: var(--color-border);
+}
+:root[data-theme="dark"] .plan-dropdown-item:hover {
+  background: var(--color-card-hover);
+}
+:root[data-theme="dark"] .plan-dropdown-item.active {
+  background: var(--color-soft-red);
+}
+:root[data-theme="dark"] .dropdown-title {
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .plan-dropdown-new {
+  border-top-color: var(--color-border);
+  color: var(--color-red);
+}
+:root[data-theme="dark"] .plan-dropdown-new:hover {
+  background: var(--color-soft-red);
+}
+:root[data-theme="dark"] .destination-edit {
+  background: var(--color-soft-red);
+}
+:root[data-theme="dark"] .destination-input,
+:root[data-theme="dark"] .destination-sep,
+:root[data-theme="dark"] .destination-unit,
+:root[data-theme="dark"] .days-input {
+  color: var(--color-red-light);
+}
+:root[data-theme="dark"] .destination-input::placeholder {
+  color: var(--color-red-light);
+}
+:root[data-theme="dark"] .day-axis {
+  background: var(--color-card);
+  border-bottom-color: var(--color-border);
+}
+:root[data-theme="dark"] .axis-day-chip {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+:root[data-theme="dark"] .axis-add-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-hint);
+}
+:root[data-theme="dark"] .right-editor {
+  background: var(--color-card);
+  border-left-color: var(--color-border);
+}
+:root[data-theme="dark"] .editor-header {
+  border-bottom-color: var(--color-border);
+}
+:root[data-theme="dark"] .editor-header h3 {
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .icon-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+:root[data-theme="dark"] .icon-btn:hover {
+  background: var(--color-card-hover);
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .activity-edit-card {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+}
+:root[data-theme="dark"] .activity-index {
+  background: var(--gradient-brand);
+}
+:root[data-theme="dark"] .field-time,
+:root[data-theme="dark"] .field-location {
+  background: var(--color-card);
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .field-desc {
+  background: var(--color-card);
+  border-color: var(--color-border);
+  color: var(--color-body);
+}
+:root[data-theme="dark"] .field-group {
+  background: var(--color-card);
+  border-color: var(--color-border);
+}
+:root[data-theme="dark"] .field-tips,
+:root[data-theme="dark"] .field-cost {
+  color: var(--color-body);
+}
+:root[data-theme="dark"] .mini-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+:root[data-theme="dark"] .mini-btn:hover:not(:disabled) {
+  background: var(--color-card-hover);
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .drag-handle {
+  color: var(--color-hint);
+}
+:root[data-theme="dark"] .drag-handle:hover {
+  color: var(--color-secondary);
+}
+:root[data-theme="dark"] .drag-ghost-float {
+  background: var(--color-card);
+  border-color: var(--color-red);
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .ghost-text {
+  color: var(--color-title);
+}
+:root[data-theme="dark"] .tips-popup {
+  background: #2a2a2a;
+  color: var(--color-body);
+}
+:root[data-theme="dark"] .pick-location-btn {
+  border-color: var(--color-border);
+  color: var(--color-red);
+}
+:root[data-theme="dark"] .add-activity-btn {
+  background: var(--color-surface);
+  border-color: var(--color-border);
+  color: var(--color-secondary);
+}
+:root[data-theme="dark"] .add-activity-btn:hover {
+  border-color: var(--color-red);
+  color: var(--color-red);
+}
+:root[data-theme="dark"] .empty-day p {
+  color: var(--color-hint);
+}
 
 /* === Responsive === */
 @media (max-width: 900px) {
