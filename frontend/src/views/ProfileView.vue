@@ -60,7 +60,7 @@
                   <span>{{ item.days }}天</span>
                 </div>
               </div>
-              <span class="plan-date">{{ formatDate(item.createdAt) }}</span>
+              <span class="plan-date">{{ item.estimatedBudget ? '¥' + item.estimatedBudget : '' }}</span>
               <div class="plan-actions">
                 <button class="action-btn" @click="viewPlanDetail(item.planId)">查看</button>
                 <button class="action-btn primary" @click="$router.push(`/plan/workbench?planId=${item.planId}`)">工作台</button>
@@ -192,7 +192,7 @@
               </div>
               <div class="detail-section">
                 <h4>行程安排</h4>
-                <div class="itinerary-content" v-html="formatItinerary(selectedPlan?.itinerary)"></div>
+                <div class="itinerary-content" v-html="formatItinerary(selectedPlan?.activities)"></div>
               </div>
               <div v-if="selectedPlan?.highlights?.length" class="detail-section">
                 <h4>行程亮点</h4>
@@ -335,29 +335,28 @@ const deletePlan = async (planId) => {
   }
 }
 
-const formatItinerary = (itinerary) => {
-  if (!itinerary) return '<p>暂无行程安排</p>'
-  try {
-    const parsed = JSON.parse(itinerary)
-    if (Array.isArray(parsed)) {
-      let html = ''
-      parsed.forEach((day) => {
-        html += `<div class="itinerary-day"><strong>第${day.day}天</strong>`
-        if (day.activities && Array.isArray(day.activities)) {
-          day.activities.forEach((a) => {
-            html += `<div class="itinerary-item">`
-            if (a.time) html += `<span class="itinerary-time">${a.time}</span>`
-            html += `<span class="itinerary-location">${a.location || ''}</span>`
-            if (a.description) html += `<span class="itinerary-desc">${a.description}</span>`
-            html += `</div>`
-          })
-        }
-        html += `</div>`
-      })
-      return html
-    }
-  } catch { /* not json */ }
-  return itinerary.replace(/\n/g, '<br>')
+const formatItinerary = (activities) => {
+  if (!activities || !activities.length) return '<p>暂无行程安排</p>'
+  // Group by dayNumber
+  const daysMap = {}
+  activities.forEach(a => {
+    const d = a.dayNumber || 1
+    if (!daysMap[d]) daysMap[d] = []
+    daysMap[d].push(a)
+  })
+  let html = ''
+  Object.keys(daysMap).sort((a, b) => a - b).forEach(day => {
+    html += `<div class="itinerary-day"><strong>第${day}天</strong>`
+    daysMap[day].forEach(a => {
+      html += `<div class="itinerary-item">`
+      if (a.activityTime) html += `<span class="itinerary-time">${a.activityTime}</span>`
+      html += `<span class="itinerary-location">${a.locationName || ''}</span>`
+      if (a.description) html += `<span class="itinerary-desc">${a.description}</span>`
+      html += `</div>`
+    })
+    html += `</div>`
+  })
+  return html
 }
 
 // 编辑资料提交
