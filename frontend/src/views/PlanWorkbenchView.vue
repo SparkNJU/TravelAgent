@@ -40,7 +40,7 @@
               readonly
             />
             <span class="switcher-arrow" :class="{ open: planDropdownOpen }">▾</span>
-            <div v-if="planDropdownOpen" class="plan-dropdown" :style="planDropdownStyle">
+            <div class="plan-dropdown" :class="{ visible: planDropdownOpen }">
               <div
                 v-for="item in planList"
                 :key="item.planId"
@@ -341,31 +341,21 @@ function isSameActivity(a, b) {
 }
 
 // Plan switcher
-const planDropdownStyle = ref({})
-
 async function togglePlanDropdown() {
-  planDropdownOpen.value = !planDropdownOpen.value
   if (planDropdownOpen.value) {
-    nextTick(() => {
-      const el = document.querySelector('.plan-switcher')
-      if (el) {
-        const rect = el.getBoundingClientRect()
-        planDropdownStyle.value = {
-          position: 'fixed',
-          top: (rect.bottom + 6) + 'px',
-          left: rect.left + 'px'
-        }
-      }
-    })
-    if (planList.value.length === 0) {
-      try {
-        const uid = localStorage.getItem('userId') || '1'
-        const res = await fetch(`/api/travel/plans/user/${uid}`)
-        const data = await res.json()
-        if (data.code === 200) planList.value = data.data || []
-      } catch {}
-    }
+    planDropdownOpen.value = false
+    return
   }
+  // Fetch data first if needed
+  if (planList.value.length === 0) {
+    try {
+      const uid = localStorage.getItem('userId') || '1'
+      const res = await fetch(`/api/travel/plans/user/${uid}`)
+      const data = await res.json()
+      if (data.code === 200) planList.value = data.data || []
+    } catch {}
+  }
+  planDropdownOpen.value = true
 }
 
 function switchPlan(item) {
@@ -899,11 +889,16 @@ onUnmounted(() => {
 }
 .switcher-arrow.open { transform: translateY(-50%) rotate(180deg); }
 .plan-dropdown {
+  position: absolute; top: calc(100% + 6px); left: 0;
   z-index: 9999;
   min-width: 260px; max-height: 240px; overflow-y: auto;
   background: white; border: 1px solid #e5e7eb; border-radius: 10px;
   box-shadow: 0 8px 24px rgba(0,0,0,0.15);
-  animation: dropdownIn 0.15s ease-out;
+  opacity: 0; visibility: hidden; pointer-events: none;
+  transition: opacity 0.15s, visibility 0.15s;
+}
+.plan-dropdown.visible {
+  opacity: 1; visibility: visible; pointer-events: auto;
 }
 @keyframes dropdownIn {
   from { opacity: 0; transform: translateY(-6px); }
