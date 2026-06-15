@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections import defaultdict
 from typing import Any
 
 try:
@@ -129,3 +130,67 @@ class MilvusKnowledgeStore:
                 }
             )
         return parsed
+
+    def list_docs(self, namespace: str) -> list[dict[str, Any]]:
+        """查询指定 namespace 下的所有文档，按 doc_id 分组返回文档摘要。"""
+        results = self.client.query(
+            collection_name=self.collection,
+            filter=f'namespace == "{namespace}"',
+            output_fields=["doc_id", "doc_title", "source_type", "source_ref", "created_at"],
+            limit=10000,
+        )
+        groups: dict[str, dict[str, Any]] = {}
+        for row in results:
+            doc_id = row.get("doc_id", "")
+            if doc_id not in groups:
+                groups[doc_id] = {
+                    "doc_id": doc_id,
+                    "title": row.get("doc_title", ""),
+                    "source_type": row.get("source_type", ""),
+                    "source_ref": row.get("source_ref", ""),
+                    "created_at": row.get("created_at", ""),
+                    "chunk_count": 0,
+                }
+            groups[doc_id]["chunk_count"] += 1
+        docs = sorted(groups.values(), key=lambda d: d.get("created_at", ""), reverse=True)
+        return docs
+
+    def delete_by_doc_id(self, doc_id: str) -> int:
+        """删除指定 doc_id 的所有 chunk，返回删除数量。"""
+        result = self.client.delete(
+            collection_name=self.collection,
+            filter=f'doc_id == "{doc_id}"',
+        )
+        return int(result.get("delete_count", 0)) if isinstance(result, dict) else 0
+
+    def list_docs(self, namespace: str) -> list[dict[str, Any]]:
+        """查询指定 namespace 下的所有文档，按 doc_id 分组返回文档摘要列表。"""
+        results = self.client.query(
+            collection_name=self.collection,
+            filter=f'namespace == "{namespace}"',
+            output_fields=["doc_id", "doc_title", "source_type", "source_ref", "created_at"],
+            limit=10000,
+        )
+        groups: dict[str, dict[str, Any]] = {}
+        for row in results:
+            doc_id = row.get("doc_id", "")
+            if doc_id not in groups:
+                groups[doc_id] = {
+                    "doc_id": doc_id,
+                    "title": row.get("doc_title", ""),
+                    "source_type": row.get("source_type", ""),
+                    "source_ref": row.get("source_ref", ""),
+                    "created_at": row.get("created_at", ""),
+                    "chunk_count": 0,
+                }
+            groups[doc_id]["chunk_count"] += 1
+        docs = sorted(groups.values(), key=lambda d: d.get("created_at", ""), reverse=True)
+        return docs
+
+    def delete_by_doc_id(self, doc_id: str) -> int:
+        """删除指定 doc_id 的所有 chunk，返回删除数量。"""
+        result = self.client.delete(
+            collection_name=self.collection,
+            filter=f'doc_id == "{doc_id}"',
+        )
+        return int(result.get("delete_count", 0)) if isinstance(result, dict) else 0

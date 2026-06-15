@@ -25,6 +25,9 @@ public class KnowledgeService {
     @Value("${app.agent.knowledge-url:http://localhost:8000/api/knowledge/documents}")
     private String knowledgeDocumentsUrl;
 
+    @Value("${app.agent.knowledge-base-url:http://localhost:8000/api/knowledge}")
+    private String knowledgeBaseUrl;
+
     public KnowledgeService() {
         this(HttpClient.newBuilder()
                 .version(HttpClient.Version.HTTP_1_1)
@@ -57,6 +60,85 @@ public class KnowledgeService {
             HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
                 throw new IllegalStateException("Knowledge center returned HTTP " + response.statusCode() + ": " + response.body());
+            }
+            if (response.body() == null || response.body().isBlank()) {
+                return Map.of();
+            }
+            return objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
+        } catch (IOException e) {
+            throw new IllegalStateException("Knowledge center request failed: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Knowledge center request interrupted", e);
+        }
+    }
+
+    public Map<String, Object> listDocuments() {
+        try {
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(knowledgeBaseUrl + "/documents"))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .GET()
+                    .build();
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("Knowledge center returned HTTP " + response.statusCode());
+            }
+            if (response.body() == null || response.body().isBlank()) {
+                return Map.of("documents", List.of());
+            }
+            return objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
+        } catch (IOException e) {
+            throw new IllegalStateException("Knowledge center request failed: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Knowledge center request interrupted", e);
+        }
+    }
+
+    public Map<String, Object> deleteDocument(String docId) {
+        try {
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(knowledgeBaseUrl + "/documents/" + docId))
+                    .timeout(Duration.ofSeconds(10))
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .DELETE()
+                    .build();
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("Knowledge center returned HTTP " + response.statusCode());
+            }
+            if (response.body() == null || response.body().isBlank()) {
+                return Map.of();
+            }
+            return objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
+        } catch (IOException e) {
+            throw new IllegalStateException("Knowledge center request failed: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Knowledge center request interrupted", e);
+        }
+    }
+
+    public Map<String, Object> uploadDocument(String title, String fileName, String fileBase64, String sourceType) {
+        try {
+            Map<String, Object> payload = new LinkedHashMap<>();
+            payload.put("title", title);
+            payload.put("file_name", fileName);
+            payload.put("file_base64", fileBase64);
+            payload.put("source_type", sourceType != null ? sourceType : "uploaded_file");
+
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(knowledgeBaseUrl + "/documents/upload"))
+                    .timeout(Duration.ofSeconds(30))
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            objectMapper.writeValueAsString(payload), StandardCharsets.UTF_8))
+                    .build();
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("Knowledge center returned HTTP " + response.statusCode());
             }
             if (response.body() == null || response.body().isBlank()) {
                 return Map.of();

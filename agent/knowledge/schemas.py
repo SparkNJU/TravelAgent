@@ -38,3 +38,30 @@ class KnowledgeSearchItem(BaseModel):
 class KnowledgeSearchResponse(BaseModel):
     items: list[KnowledgeSearchItem] = Field(default_factory=list)
 
+
+class KnowledgeDocumentSummary(BaseModel):
+    doc_id: str
+    title: str
+    source_type: str = ""
+    source_ref: str = ""
+    created_at: str = ""
+    chunk_count: int = 0
+
+
+class KnowledgeDocumentListResponse(BaseModel):
+    documents: list[KnowledgeDocumentSummary] = Field(default_factory=list)
+
+
+class KnowledgeDocumentDeleteResponse(BaseModel):
+    doc_id: str
+    deleted_chunks: int
+    status: str = "deleted"
+
+
+class KnowledgeFileUploadRequest(BaseModel):
+    title: str = Field(..., min_length=1)
+    file_name: str = Field(..., min_length=1)
+    file_base64: str = Field(..., min_length=1)
+    source_type: str = "uploaded_file"
+    metadata: dict[str, Any] = Field(default_factory=dict)
+

@@ -22,6 +22,13 @@
         <SvgIcon name="brain" :size="18" />
         <span>偏好记忆</span>
       </button>
+      <button
+        :class="['tab-btn', { active: activeTab === 'knowledge' }]"
+        @click="activeTab = 'knowledge'"
+      >
+        <SvgIcon name="book" :size="18" />
+        <span>知识库</span>
+      </button>
     </nav>
 
     <div :class="['settings-container', activeTab === 'skills' ? 'show-left' : 'show-right']">
@@ -260,6 +267,61 @@
           </div>
         </div>
       </div>
+
+      <!-- Knowledge Column -->
+      <div v-if="activeTab === 'knowledge'" class="settings-column">
+        <div class="pane-card">
+          <div class="pane-header">
+            <h2 class="pane-title">
+              <span class="icon-indicator knowledge-color">
+                <SvgIcon name="book" :size="18" />
+              </span>
+              知识库管理
+            </h2>
+            <button class="action-btn knowledge-btn" @click="openKnowledgeModal()">
+              <SvgIcon name="plus" :size="14" />
+              添加知识
+            </button>
+          </div>
+
+          <div v-if="loadingKnowledge" class="loading-state">
+            <SvgIcon name="loader" :size="28" :spin="true" color="#4caf50" />
+            <span>正在加载知识库数据...</span>
+          </div>
+
+          <div v-else class="pane-content">
+            <div v-if="knowledgeDocuments.length > 0" class="list-grid">
+              <div v-for="doc in knowledgeDocuments" :key="doc.doc_id" class="tool-item knowledge-item">
+                <div class="item-header">
+                  <span class="tool-icon knowledge-icon"><SvgIcon name="book" :size="16" /></span>
+                  <div class="item-meta">
+                    <h4>{{ doc.title }}</h4>
+                    <span class="item-tag">{{ doc.source_type }}</span>
+                  </div>
+                  <span class="chunk-badge">{{ doc.chunk_count }} 片段</span>
+                </div>
+                <p class="item-desc">{{ doc.source_ref || '手动添加的知识文档' }}</p>
+                <div class="item-footer">
+                  <span class="badge">{{ formatDate(doc.created_at) }}</span>
+                  <button class="delete-btn" @click="confirmDeleteKnowledge(doc)">
+                    <SvgIcon name="trash" :size="12" /> 删除
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <div v-else class="sub-section stretch-section">
+              <div class="empty-placeholder" @click="openKnowledgeModal()">
+                <div class="empty-icon">
+                  <SvgIcon name="book" :size="24" color="#4caf50" />
+                </div>
+                <h5>构建专属知识库</h5>
+                <p>上传旅行攻略、游记或文档，Agent 将在规划时自动检索相关知识，提升规划质量。</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
 
     <!-- Skill Instructions View Modal -->
@@ -324,6 +386,56 @@
             <button type="button" class="cancel-btn" @click="closeMemoryModal">取消</button>
             <button type="submit" class="submit-btn memory-submit" :disabled="savingMemory">
               <span v-if="savingMemory">正在保存...</span>
+              <span v-else>确认保存</span>
+            </button>
+          </footer>
+        </form>
+      </div>
+    </div>
+
+    <!-- Knowledge Upload Modal -->
+    <div v-if="knowledgeModalVisible" class="modal-backdrop" @click.self="closeKnowledgeModal">
+      <div class="settings-modal-content knowledge-modal">
+        <header class="modal-header">
+          <h2>添加知识文档</h2>
+          <button class="close-btn" @click="closeKnowledgeModal">
+            <SvgIcon name="close" :size="16" />
+          </button>
+        </header>
+
+        <form class="modal-form" @submit.prevent="saveKnowledge">
+          <div class="form-group">
+            <label>文档标题</label>
+            <input v-model="knowledgeForm.title" class="form-input" placeholder="例如：北京三日游攻略" required />
+          </div>
+
+          <div class="form-group">
+            <label>添加方式</label>
+            <div class="category-tabs">
+              <button type="button" class="category-tab" :class="{ active: knowledgeUploadMode === 'text' }" @click="knowledgeUploadMode = 'text'">手动输入</button>
+              <button type="button" class="category-tab" :class="{ active: knowledgeUploadMode === 'file' }" @click="knowledgeUploadMode = 'file'">上传文件</button>
+            </div>
+          </div>
+
+          <div v-if="knowledgeUploadMode === 'text'" class="form-group">
+            <label>知识内容</label>
+            <textarea v-model="knowledgeForm.content" class="form-textarea knowledge-textarea" placeholder="输入旅行攻略、景点介绍、美食推荐等知识内容..." required></textarea>
+          </div>
+
+          <div v-else class="form-group">
+            <label>选择文件</label>
+            <div class="file-drop-area" @click="$refs.knowledgeFileInput.click()">
+              <SvgIcon name="upload" :size="24" color="var(--color-hint)" />
+              <p v-if="!knowledgeForm.fileName">点击选择文件（支持 PDF、DOCX、TXT、MD）</p>
+              <p v-else class="file-selected">已选择：{{ knowledgeForm.fileName }}</p>
+              <input ref="knowledgeFileInput" type="file" accept=".pdf,.doc,.docx,.txt,.md" style="display:none" @change="handleKnowledgeFileSelect" />
+            </div>
+          </div>
+
+          <footer class="modal-footer">
+            <button type="button" class="cancel-btn" @click="closeKnowledgeModal">取消</button>
+            <button type="submit" class="submit-btn knowledge-submit" :disabled="savingKnowledge || (knowledgeUploadMode === 'file' && !knowledgeForm.fileBase64)">
+              <span v-if="savingKnowledge">正在上传...</span>
               <span v-else>确认保存</span>
             </button>
           </footer>
@@ -401,6 +513,19 @@ const memoryForm = reactive({
   isEnabled: true
 })
 
+// Knowledge Data
+const knowledgeDocuments = ref([])
+const loadingKnowledge = ref(false)
+const savingKnowledge = ref(false)
+const knowledgeModalVisible = ref(false)
+const knowledgeUploadMode = ref('text')
+const knowledgeForm = reactive({
+  title: '',
+  content: '',
+  fileName: '',
+  fileBase64: ''
+})
+
 // ------------------- LOAD FUNCTIONS -------------------
 
 const loadSkills = async () => {
@@ -449,9 +574,24 @@ const loadMemories = async () => {
   loadingMemories.value = false
 }
 
+const loadKnowledgeDocuments = async () => {
+  loadingKnowledge.value = true
+  try {
+    const res = await fetch('/api/knowledge/documents')
+    const data = await res.json()
+    if (data.code === 200) {
+      knowledgeDocuments.value = data.data?.documents || []
+    }
+  } catch (e) {
+    console.error("加载知识库失败:", e)
+  }
+  loadingKnowledge.value = false
+}
+
 onMounted(() => {
   loadSkills()
   loadMemories()
+  loadKnowledgeDocuments()
 })
 
 // ------------------- SKILL ACTIONS -------------------
@@ -722,6 +862,109 @@ const formatDate = (dateString) => {
     return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
   } catch (e) {
     return dateString
+  }
+}
+
+// ------------------- KNOWLEDGE ACTIONS -------------------
+
+const openKnowledgeModal = () => {
+  knowledgeForm.title = ''
+  knowledgeForm.content = ''
+  knowledgeForm.fileName = ''
+  knowledgeForm.fileBase64 = ''
+  knowledgeUploadMode.value = 'text'
+  knowledgeModalVisible.value = true
+}
+
+const closeKnowledgeModal = () => {
+  knowledgeModalVisible.value = false
+}
+
+const handleKnowledgeFileSelect = (event) => {
+  const file = event.target.files[0]
+  if (!file) return
+  knowledgeForm.fileName = file.name
+  const reader = new FileReader()
+  reader.onload = () => {
+    const base64 = reader.result.split(',')[1]
+    knowledgeForm.fileBase64 = base64
+  }
+  reader.readAsDataURL(file)
+}
+
+const saveKnowledge = async () => {
+  if (!knowledgeForm.title.trim()) {
+    alert('请输入文档标题')
+    return
+  }
+  savingKnowledge.value = true
+  try {
+    if (knowledgeUploadMode.value === 'text') {
+      if (!knowledgeForm.content.trim()) {
+        alert('请输入知识内容')
+        savingKnowledge.value = false
+        return
+      }
+      const res = await fetch('/api/knowledge/documents', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: knowledgeForm.title,
+          content: knowledgeForm.content,
+          source_type: 'manual_text'
+        })
+      })
+      const data = await res.json()
+      if (data.doc_id) {
+        closeKnowledgeModal()
+        await loadKnowledgeDocuments()
+      } else {
+        alert('保存失败: ' + (data.detail || '未知错误'))
+      }
+    } else {
+      if (!knowledgeForm.fileBase64) {
+        alert('请选择文件')
+        savingKnowledge.value = false
+        return
+      }
+      const res = await fetch('/api/knowledge/documents/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          title: knowledgeForm.title,
+          fileName: knowledgeForm.fileName,
+          fileBase64: knowledgeForm.fileBase64,
+          sourceType: 'uploaded_file'
+        })
+      })
+      const data = await res.json()
+      if (data.code === 200) {
+        closeKnowledgeModal()
+        await loadKnowledgeDocuments()
+      } else {
+        alert('上传失败: ' + (data.message || '未知错误'))
+      }
+    }
+  } catch (e) {
+    console.error("保存知识文档失败:", e)
+    alert('保存失败: ' + e.message)
+  }
+  savingKnowledge.value = false
+}
+
+const confirmDeleteKnowledge = async (doc) => {
+  if (!confirm(`确认要删除知识文档「${doc.title}」吗？该文档的 ${doc.chunk_count} 个片段将被永久移除。`)) return
+  try {
+    const res = await fetch(`/api/knowledge/documents/${doc.doc_id}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.code === 200) {
+      knowledgeDocuments.value = knowledgeDocuments.value.filter(d => d.doc_id !== doc.doc_id)
+    } else {
+      alert('删除失败: ' + data.message)
+    }
+  } catch (e) {
+    console.error("删除知识文档失败:", e)
+    alert('删除失败: ' + e.message)
   }
 }
 </script>
@@ -1754,5 +1997,86 @@ input:checked + .slider:before {
     justify-content: space-between;
     margin-top: 10px;
   }
+}
+
+/* Knowledge Tab Styles */
+.knowledge-color {
+  background: rgba(76, 175, 80, 0.1);
+  color: #4caf50;
+}
+
+.knowledge-btn {
+  background: linear-gradient(135deg, #4caf50, #2e7d32);
+  box-shadow: 0 4px 12px rgba(76, 175, 80, 0.2);
+}
+
+.knowledge-btn:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 6px 16px rgba(76, 175, 80, 0.35);
+}
+
+.knowledge-icon {
+  background: rgba(76, 175, 80, 0.08);
+  color: #4caf50;
+}
+
+.chunk-badge {
+  font-size: 11px;
+  color: #4caf50;
+  background: rgba(76, 175, 80, 0.08);
+  padding: 3px 8px;
+  border-radius: 4px;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.knowledge-item input:checked + .slider {
+  background-color: #4caf50;
+}
+
+.file-drop-area {
+  border: 2px dashed var(--color-border);
+  border-radius: 8px;
+  padding: 24px;
+  text-align: center;
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+}
+
+.file-drop-area:hover {
+  border-color: #4caf50;
+  background: rgba(76, 175, 80, 0.02);
+}
+
+.file-drop-area p {
+  margin: 0;
+  font-size: 13px;
+  color: var(--color-secondary);
+}
+
+.file-drop-area .file-selected {
+  color: #4caf50;
+  font-weight: 600;
+}
+
+.knowledge-textarea {
+  height: 200px;
+}
+
+.knowledge-submit {
+  background: linear-gradient(135deg, #4caf50, #2e7d32);
+  box-shadow: 0 4px 10px rgba(76, 175, 80, 0.15);
+}
+
+.knowledge-submit:hover {
+  box-shadow: 0 6px 15px rgba(76, 175, 80, 0.25);
+}
+
+.knowledge-modal {
+  max-width: 550px;
 }
 </style>

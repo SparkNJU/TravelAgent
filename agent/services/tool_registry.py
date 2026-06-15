@@ -196,15 +196,18 @@ class UserConfirmTool(Tool):
             "required": ["message", "questions"],
         }
 
-    def execute(self, message: str, questions: list) -> str:
+    def execute(self, message: str, questions: list, choices: list = None) -> str:
+        # 使用 LLM 传入的 choices 作为默认选项，回退到 "是/否"
+        default_choices = choices if choices and len(choices) >= 2 else ["是", "否"]
+
         if not questions or not isinstance(questions, list):
-            questions = [{"question": message or "请提供更多信息", "options": ["选项1", "选项2"]}]
+            questions = [{"question": message or "请提供更多信息", "options": default_choices}]
         for q in questions:
             if not isinstance(q, dict):
                 continue
             opts = q.get("options", [])
             if not isinstance(opts, list) or len(opts) < 2:
-                q["options"] = opts[:2] if isinstance(opts, list) and len(opts) >= 2 else ["选项1", "选项2"]
+                q["options"] = default_choices
         return json.dumps({
             "status": "waiting_for_user",
             "message": message,

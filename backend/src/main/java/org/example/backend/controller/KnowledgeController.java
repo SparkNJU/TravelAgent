@@ -29,4 +29,44 @@ public class KnowledgeController {
             return ApiResponse.error(e.getMessage());
         }
     }
+
+    @GetMapping("/documents")
+    public ApiResponse<Map<String, Object>> listDocuments() {
+        try {
+            return ApiResponse.success(knowledgeService.listDocuments());
+        } catch (Exception e) {
+            return ApiResponse.error(e.getMessage());
+        }
+    }
+
+    @DeleteMapping("/documents/{docId}")
+    public ApiResponse<Map<String, Object>> deleteDocument(@PathVariable String docId) {
+        try {
+            return ApiResponse.success(knowledgeService.deleteDocument(docId));
+        } catch (Exception e) {
+            return ApiResponse.error(e.getMessage());
+        }
+    }
+
+    @PostMapping("/documents/upload")
+    public ApiResponse<Map<String, Object>> uploadDocument(@RequestBody Map<String, String> body) {
+        String title = body.get("title");
+        String fileName = body.get("fileName");
+        String fileBase64 = body.get("fileBase64");
+        String sourceType = body.get("sourceType");
+        if (title == null || title.isBlank()) {
+            return ApiResponse.error("title is required");
+        }
+        if (fileName == null || fileName.isBlank()) {
+            return ApiResponse.error("fileName is required");
+        }
+        if (fileBase64 == null || fileBase64.isBlank()) {
+            return ApiResponse.error("fileBase64 is required");
+        }
+        try {
+            return ApiResponse.success(knowledgeService.uploadDocument(title, fileName, fileBase64, sourceType));
+        } catch (Exception e) {
+            return ApiResponse.error(e.getMessage());
+        }
+    }
 }

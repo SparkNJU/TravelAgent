@@ -48,7 +48,7 @@
         :class="{ active: isActive('/settings') }"
       >
         <SvgIcon name="settings" :size="22" />
-        <span>模型个性化</span>
+        <span>个性化</span>
       </router-link>
     </nav>
 

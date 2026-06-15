@@ -8,6 +8,10 @@ from typing import Any
 from .schemas import (
     KnowledgeDocumentCreate,
     KnowledgeDocumentCreateResponse,
+    KnowledgeDocumentDeleteResponse,
+    KnowledgeDocumentListResponse,
+    KnowledgeDocumentSummary,
+    KnowledgeFileUploadRequest,
     KnowledgeSearchItem,
     KnowledgeSearchRequest,
     KnowledgeSearchResponse,
@@ -86,6 +90,42 @@ class KnowledgeService:
                 )
             )
         return KnowledgeSearchResponse(items=items)
+
+    def list_documents(self) -> KnowledgeDocumentListResponse:
+        """列出当前 namespace 下的所有知识文档。"""
+        docs = self._vector_store.list_docs(self._namespace)
+        summaries = [
+            KnowledgeDocumentSummary(
+                doc_id=d["doc_id"],
+                title=d["title"],
+                source_type=d["source_type"],
+                source_ref=d["source_ref"],
+                created_at=d["created_at"],
+                chunk_count=d["chunk_count"],
+            )
+            for d in docs
+        ]
+        return KnowledgeDocumentListResponse(documents=summaries)
+
+    def delete_document(self, doc_id: str) -> KnowledgeDocumentDeleteResponse:
+        """删除指定 doc_id 的所有 chunk。"""
+        deleted = self._vector_store.delete_by_doc_id(doc_id)
+        return KnowledgeDocumentDeleteResponse(doc_id=doc_id, deleted_chunks=deleted)
+
+    def ingest_file(self, request: KnowledgeFileUploadRequest) -> KnowledgeDocumentCreateResponse:
+        """解析上传文件并写入知识库。"""
+        from services.file_parser import parse_uploaded_file
+
+        content = parse_uploaded_file(request.file_name, request.file_base64)
+        if not content or not content.strip():
+            raise ValueError("无法从上传文件中提取文本内容")
+        document = KnowledgeDocumentCreate(
+            title=request.title,
+            content=content,
+            source_type=request.source_type,
+            metadata={**request.metadata, "file_name": request.file_name},
+        )
+        return self.ingest_text(document)
 
     @staticmethod
     def _new_doc_id() -> str:
