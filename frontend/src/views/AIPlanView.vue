@@ -1085,6 +1085,9 @@ async function finishStreamFor(targetConvId) {
   if (state) {
     state.loading = false
   }
+  if (state?.pendingAskUser) {
+    return
+  }
   streamStates.delete(targetConvId)
 }
 
