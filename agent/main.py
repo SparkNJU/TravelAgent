@@ -151,8 +151,19 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
         max_context_tokens=config.agent.max_context_tokens,
         compress_threshold=config.agent.compress_threshold,
         compress_keep_last=config.agent.compress_keep_last,
+        enable_plan_checker=False,  # agent 模式不启用 plan checker
     )
-    reflection_agent = ReflectionAgent(llm=llm, react_agent=agent)
+    reflection_react_agent = ReActAgent(
+        llm=llm,
+        tool_registry=tool_registry,
+        max_iterations=config.agent.max_iterations,
+        max_retries=config.agent.self_correction_retries,
+        max_context_tokens=config.agent.max_context_tokens,
+        compress_threshold=config.agent.compress_threshold,
+        compress_keep_last=config.agent.compress_keep_last,
+        enable_plan_checker=True,  # reflection 模式启用 plan checker
+    )
+    reflection_agent = ReflectionAgent(llm=llm, react_agent=reflection_react_agent)
 
     def event_stream():
         try:

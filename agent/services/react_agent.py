@@ -89,6 +89,7 @@ class ReActAgent:
         compress_threshold: float = 0.85,
         compress_keep_last: int = 6,
         max_check_retries: int = 2,
+        enable_plan_checker: bool = True,
     ) -> None:
         self._llm = llm
         self._tools = tool_registry
@@ -97,7 +98,7 @@ class ReActAgent:
         self._max_context_tokens = max_context_tokens
         self._compress_threshold = compress_threshold
         self._compress_keep_last = compress_keep_last
-        self._plan_checker = PlanChecker(llm)
+        self._plan_checker = PlanChecker(llm) if enable_plan_checker else None
         self._max_check_retries = max_check_retries
 
     def _sanitize_memory(self, memory_markdown: str) -> str:
@@ -374,7 +375,7 @@ class ReActAgent:
                         answer = pr.get("answer", "")
                         if answer and answer.strip():
                             # --- PlanChecker: validate before emitting ---
-                            if _check_retries < self._max_check_retries:
+                            if self._plan_checker and _check_retries < self._max_check_retries:
                                 compliant, violations = self._plan_checker.check(query, answer)
                                 if not compliant:
                                     _check_retries += 1
