@@ -6,7 +6,7 @@ llm:
   max_tokens: 4096
 
 agent:
-  max_iterations: 16
+  max_iterations: 32
   self_correction_retries: 2
 
 tools:

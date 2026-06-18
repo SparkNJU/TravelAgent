@@ -78,6 +78,17 @@
                       :content="turn.assistant.planContent"
                       :streaming="isMessageStreaming(turn.assistantIndex)"
                     />
+                    <!-- 实时思考过程展示：流式输出时显示最新的思考内容 -->
+                    <div
+                      v-if="isMessageStreaming(turn.assistantIndex) && !turn.assistant.answer && getLatestThought(turn.assistant.events)"
+                      class="live-thinking-block"
+                    >
+                      <div class="live-thinking-header">
+                        <span class="live-thinking-dot"></span>
+                        <span class="live-thinking-label">思考中...</span>
+                      </div>
+                      <div class="live-thinking-content">{{ getLatestThought(turn.assistant.events) }}</div>
+                    </div>
                     <div
                       v-if="turn.assistant.events?.length"
                       class="trace-panel"
@@ -450,9 +461,15 @@ const activeTurnIndex = ref(0)
 const manualTraceOpen = ref({})
 const turnMarkerPositions = ref({})
 
-// Token / compress state
-const TOKEN_STATUS_KEY = 'travel_token_status'
-const tokenStatus = ref(null)
+// Token / compress state — per-conversation tokenStatus stored in conversation object
+const tokenStatus = computed({
+  get: () => activeConversation.value?.tokenStatus || null,
+  set: (val) => {
+    if (activeConversation.value) {
+      activeConversation.value.tokenStatus = val
+    }
+  },
+})
 const forceCompress = ref(false)
 const compressing = ref(false)
 const compressNotice = ref('')
@@ -624,6 +641,18 @@ function traceSummary(events = []) {
   if (counts.observation) parts.push(`${counts.observation} observations`)
   if (counts.reflection) parts.push(`${counts.reflection} reflections`)
   return parts.length ? parts.join(' · ') : `${events.length} events`
+}
+
+function getLatestThought(events = []) {
+  if (!events.length) return ''
+  // 从后往前找最新的 thought 或 action 事件
+  for (let i = events.length - 1; i >= 0; i--) {
+    const ev = events[i]
+    if (ev.type === 'thought' || ev.type === 'action') {
+      return ev.content || ''
+    }
+  }
+  return ''
 }
 
 function scrollToBottom() {
@@ -920,13 +949,7 @@ onMounted(() => {
       })
     }
   })
-  const cached = localStorage.getItem(TOKEN_STATUS_KEY)
-  if (cached) tokenStatus.value = JSON.parse(cached)
 })
-
-watch(tokenStatus, (val) => {
-  if (val) localStorage.setItem(TOKEN_STATUS_KEY, JSON.stringify(val))
-}, { deep: true })
 
 function handleNewConversation() {
   newConversation()
@@ -1632,6 +1655,65 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 .scroll-jump-dot:hover::before {
   opacity: 1;
   transform: translateY(-50%) translateX(0);
+}
+
+/* 实时思考过程展示 */
+.live-thinking-block {
+  width: 100%;
+  padding: 12px 16px;
+  margin-bottom: 8px;
+  border: 1px solid rgba(59, 130, 246, 0.2);
+  border-radius: 12px;
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.04), rgba(147, 51, 234, 0.04));
+  animation: thinking-pulse 2s ease-in-out infinite;
+}
+
+@keyframes thinking-pulse {
+  0%, 100% { border-color: rgba(59, 130, 246, 0.2); }
+  50% { border-color: rgba(59, 130, 246, 0.4); }
+}
+
+.live-thinking-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.live-thinking-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: #3b82f6;
+  animation: dot-blink 1s ease-in-out infinite;
+}
+
+@keyframes dot-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
+.live-thinking-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: #3b82f6;
+}
+
+.live-thinking-content {
+  font-size: 14px;
+  line-height: 1.6;
+  color: #374151;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+:root[data-theme="dark"] .live-thinking-block {
+  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(147, 51, 234, 0.08));
+  border-color: rgba(59, 130, 246, 0.3);
+}
+
+:root[data-theme="dark"] .live-thinking-content {
+  color: var(--color-title);
 }
 
 .trace-panel {
