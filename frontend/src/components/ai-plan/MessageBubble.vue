@@ -1,19 +1,19 @@
 <template>
-  <div :class="['message-row', role]" @mouseenter="showCopy = true" @mouseleave="showCopy = false">
+  <div :class="['message-row', role]">
     <div v-if="role === 'assistant'" class="avatar agent-avatar">
       <SvgIcon name="sparkles" :size="16" />
     </div>
-    <div class="bubble-wrap">
+    <div class="bubble-col">
       <div class="bubble" v-html="rendered" />
       <transition name="fade">
         <button
-          v-if="showCopy && content"
+          v-if="content"
           class="copy-btn"
           :class="{ copied }"
           @click="handleCopy"
           title="复制"
         >
-          <SvgIcon :name="copied ? 'check' : 'copy'" :size="14" />
+          <SvgIcon :name="copied ? 'check' : 'copy'" :size="12" />
           <span>{{ copied ? '已复制' : '复制' }}</span>
         </button>
       </transition>
@@ -50,7 +50,6 @@ function escapeHtml(str) {
   return div.innerHTML
 }
 
-const showCopy = ref(false)
 const copied = ref(false)
 
 async function handleCopy() {
@@ -113,8 +112,9 @@ async function handleCopy() {
   border: 1px solid var(--color-border);
 }
 
-.bubble-wrap {
-  position: relative;
+.bubble-col {
+  display: flex;
+  flex-direction: column;
   min-width: 0;
   max-width: 100%;
 }
@@ -136,39 +136,33 @@ async function handleCopy() {
 }
 
 .user .bubble ::selection {
-  background: rgba(255, 255, 255, 0.4);
+  background: rgba(255, 36, 66, 0.2);
 }
 
 .copy-btn {
-  position: absolute;
-  bottom: 4px;
-  right: 4px;
+  align-self: flex-end;
   display: inline-flex;
   align-items: center;
   gap: 4px;
-  padding: 4px 8px;
+  margin-top: 4px;
+  padding: 3px 8px;
   border: 1px solid var(--color-border);
   border-radius: 6px;
-  background: rgba(255, 255, 255, 0.95);
-  color: var(--color-secondary);
+  background: transparent;
+  color: var(--color-tertiary);
   font-size: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
-  opacity: 0;
-  transform: translateY(4px);
-  pointer-events: none;
-}
-
-.message-row:hover .copy-btn {
-  opacity: 1;
-  transform: translateY(0);
-  pointer-events: auto;
 }
 
 .copy-btn:hover {
   border-color: var(--color-red);
   color: var(--color-red);
   background: #fff7f8;
+}
+
+.assistant .copy-btn {
+  align-self: flex-start;
 }
 
 .copy-btn.copied {
@@ -188,10 +182,10 @@ async function handleCopy() {
 }
 
 .user .bubble {
-  background: var(--gradient-brand);
-  color: white;
+  background: #fff0f1;
+  color: #333;
   border-bottom-right-radius: 6px;
-  box-shadow: 0 12px 26px rgba(255, 36, 66, 0.2);
+  box-shadow: 0 2px 8px rgba(255, 36, 66, 0.08);
 }
 
 .assistant .bubble {
@@ -328,6 +322,12 @@ async function handleCopy() {
   color: var(--color-secondary);
 }
 
+:root[data-theme="dark"] .user .bubble {
+  background: rgba(255, 36, 66, 0.12);
+  color: var(--color-body);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+}
+
 :root[data-theme="dark"] .assistant .bubble {
   background: var(--color-card);
   border-color: var(--color-border);
@@ -336,9 +336,9 @@ async function handleCopy() {
 }
 
 :root[data-theme="dark"] .copy-btn {
-  background: rgba(30, 30, 32, 0.95);
+  background: transparent;
   border-color: var(--color-border);
-  color: var(--color-secondary);
+  color: var(--color-tertiary);
 }
 
 :root[data-theme="dark"] .copy-btn:hover {
