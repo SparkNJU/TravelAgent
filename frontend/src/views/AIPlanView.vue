@@ -403,7 +403,7 @@ const {
 const sidebarCollapsed = ref(false)
 const messagesRef = ref(null)
 const selectedMode = ref('agent')
-const selectedModel = ref('qwen3.7-plus')
+const selectedModel = ref('deepseek-v4-pro')
 const arenaMode = ref(false)
 const navigatingToWorkbench = ref(false)
 
