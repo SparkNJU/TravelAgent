@@ -399,7 +399,7 @@ const initialQuery = computed(() => String(route.query.q || '').trim())
 const {
   conversations, activeId, activeConversation,
   newConversation, selectConversation, deleteConversation,
-  addMessage, setResult, persist, loadFromBackend, syncActiveToBackend,
+  addMessage, setResult, persist, syncActiveToBackend, load,
 } = useConversation()
 
 const { streamPost } = useSSE()
@@ -925,7 +925,7 @@ watch(activeId, () => {
 
 onMounted(() => {
   if (route.query.planId) loadSavedPlan(route.query.planId)
-  loadFromBackend().then(() => {
+  load().then(() => {
     // Restore workbenchPlanId from conversation result
     const savedPlanId = activeConversation.value?.result?.workbenchPlanId
     if (savedPlanId) workbenchPlanId.value = savedPlanId
@@ -1088,15 +1088,10 @@ async function finishStreamFor(targetConvId) {
       }
     }
   }
-  // Sync the target conversation (may not be the active one)
-  // Use syncActiveToBackend(conv) + saveConversations instead of persist()
-  // to avoid syncing the wrong (active) conversation
+  // Sync the target conversation to backend (logged-in users)
+  // For guests, syncActiveToBackend is a no-op; persist() handles IndexedDB
   await syncActiveToBackend(conv)
-  // persist() would also call syncActiveToBackend() for the active conversation,
-  // so just save to localStorage directly
-  try {
-    localStorage.setItem('travel_conversations', JSON.stringify(conversations.value))
-  } catch {}
+  persist()
   if (state) {
     state.loading = false
   }

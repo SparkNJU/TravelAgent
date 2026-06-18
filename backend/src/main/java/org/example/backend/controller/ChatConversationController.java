@@ -104,18 +104,17 @@ public class ChatConversationController {
     }
 
     private Map<String, Object> toSummary(ChatConversation conv) {
-        return Map.of(
-                "id", conv.getId(),
-                "title", conv.getTitle() != null ? conv.getTitle() : "新对话",
-                "createdAt", conv.getCreatedAt().toString(),
-                "updatedAt", conv.getUpdatedAt().toString()
-        );
-    }
-
-    private Map<String, Object> toDetail(ChatConversation conv) {
-        Map<String, Object> map = new java.util.HashMap<>(toSummary(conv));
+        java.util.HashMap<String, Object> map = new java.util.HashMap<>();
+        map.put("id", conv.getId());
+        map.put("title", conv.getTitle() != null ? conv.getTitle() : "新对话");
+        map.put("createdAt", conv.getCreatedAt().toString());
+        map.put("updatedAt", conv.getUpdatedAt().toString());
         map.put("messagesJson", conv.getMessagesJson());
         map.put("resultJson", conv.getResultJson());
         return map;
+    }
+
+    private Map<String, Object> toDetail(ChatConversation conv) {
+        return toSummary(conv);
     }
 }

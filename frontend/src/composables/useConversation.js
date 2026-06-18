@@ -1,73 +1,137 @@
 import { ref, computed } from 'vue'
+import localforage from 'localforage'
+import { useAuth } from './useAuth'
 
-const STORAGE_KEY = 'travel_conversations'
+const store = localforage.createInstance({ name: 'travel-agent', storeName: 'conversations' })
 
-function loadConversations() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY)
-    return raw ? JSON.parse(raw) : []
-  } catch {
-    return []
-  }
-}
+const conversations = ref([])
+const activeId = ref(null)
 
-function saveConversations(list) {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(list))
-}
+// 游客用的 IndexedDB key（登录用户不走 IndexedDB，所以无需隔离）
+const CONV_LIST_KEY = 'conversations-list'
+const CONV_KEY_PREFIX = 'conv-'
 
-const conversations = ref(loadConversations())
-const activeId = ref(conversations.value.length ? conversations.value[0].id : null)
-
-function persist() {
-  saveConversations(conversations.value)
-  syncActiveToBackend()
-}
-
-async function syncActiveToBackend(targetConv) {
-  const conv = targetConv || activeConversation.value
-  if (!conv) return
-  const userId = Number(localStorage.getItem('userId')) || 1
-
-  const body = {
-    userId,
-    title: conv.title,
-    messagesJson: JSON.stringify(
-      conv.messages.map(m => {
-        if (m.role === 'assistant') {
-          return { role: 'assistant', content: m.answer || m.content || '' }
-        }
-        return { role: m.role, content: m.content || '' }
-      })
-    ),
-    resultJson: conv.result ? JSON.stringify(conv.result) : null,
-  }
-
-  if (conv.backendId) {
-    body.id = conv.backendId
-  }
-
-  try {
-    const res = await fetch('/api/conversations', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    })
-    const data = await res.json()
-    if (data.code === 200 && data.data?.id) {
-      conv.backendId = data.data.id
-      saveConversations(conversations.value)
-    }
-  } catch {}
-}
-
-const activeConversation = computed(() =>
-  conversations.value.find((c) => c.id === activeId.value) || null
-)
+// 后端保存防抖定时器
+let saveTimer = null
 
 export function useConversation() {
+  const { userId } = useAuth()
+
+  const activeConversation = computed(() =>
+    conversations.value.find((c) => c.id === activeId.value) || null,
+  )
+
+  const activeMessages = computed(() => activeConversation.value?.messages || [])
+
+  // ── 加载 ──────────────────────────────────────────────
+  async function load() {
+    const uid = userId.value
+    if (uid) {
+      // 登录用户：从数据库加载
+      try {
+        const res = await fetch(`/api/conversations?userId=${uid}`)
+        const data = await res.json()
+        if (data.code === 200 && Array.isArray(data.data)) {
+          conversations.value = data.data.map((item) => ({
+            id: String(item.id),
+            backendId: item.id,
+            title: item.title || '新对话',
+            messages: safeParseJson(item.messagesJson, []),
+            result: safeParseJson(item.resultJson, null),
+            createdAt: new Date(item.createdAt).getTime(),
+            updatedAt: new Date(item.updatedAt).getTime(),
+          }))
+          conversations.value.sort((a, b) => b.updatedAt - a.updatedAt)
+          if (conversations.value.length && !activeId.value) {
+            activeId.value = conversations.value[0].id
+          }
+        }
+      } catch {
+        // 后端不可用时保持空列表
+      }
+    } else {
+      // 游客：从 IndexedDB 加载
+      try {
+        const saved = await store.getItem(CONV_LIST_KEY)
+        if (saved) {
+          conversations.value = saved
+          if (saved.length && !activeId.value) activeId.value = saved[0].id
+        }
+      } catch {}
+    }
+  }
+
+  function safeParseJson(str, fallback) {
+    if (!str) return fallback
+    try { return JSON.parse(str) } catch { return fallback }
+  }
+
+  // ── 持久化（根据登录状态走不同路径）──────────────────
+  function persist() {
+    if (userId.value) {
+      // 登录用户：防抖保存到后端
+      saveToBackendDebounced()
+    } else {
+      // 游客：保存到 IndexedDB
+      persistToIndexedDB()
+    }
+  }
+
+  async function persistToIndexedDB() {
+    try {
+      await store.setItem(CONV_LIST_KEY, conversations.value)
+      const conv = activeConversation.value
+      if (conv) await store.setItem(CONV_KEY_PREFIX + conv.id, conv)
+    } catch {}
+  }
+
+  function saveToBackendDebounced() {
+    if (saveTimer) clearTimeout(saveTimer)
+    saveTimer = setTimeout(() => saveConversationToBackend(activeConversation.value), 2000)
+  }
+
+  async function saveConversationToBackend(conv) {
+    const uid = userId.value
+    if (!uid || !conv) return
+
+    try {
+      const body = {
+        userId: uid,
+        title: conv.title || '新对话',
+        messagesJson: JSON.stringify(conv.messages),
+        resultJson: conv.result ? JSON.stringify(conv.result) : null,
+      }
+      if (conv.backendId) body.id = conv.backendId
+
+      const res = await fetch('/api/conversations', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      })
+      const data = await res.json()
+      if (data.code === 200 && data.data?.id) {
+        conv.backendId = data.data.id
+        conv.id = String(data.data.id)
+        if (activeId.value && activeId.value !== conv.id) {
+          activeId.value = conv.id
+        }
+      }
+    } catch {}
+  }
+
+  // ── 立即同步（用于需要 backendId 的场景，如工作台）──
+  async function syncActiveToBackend(targetConv) {
+    if (saveTimer) clearTimeout(saveTimer)
+    await saveConversationToBackend(targetConv || activeConversation.value)
+    return (targetConv || activeConversation.value)?.backendId || null
+  }
+
+  // ── 对话操作 ─────────────────────────────────────────
   function newConversation() {
+    const id = Date.now().toString() + Math.random().toString(36).slice(2, 6)
     const conv = {
-      id: Date.now().toString(),
+      id,
+      backendId: null,
       title: '新对话',
       messages: [],
       result: null,
@@ -75,8 +139,8 @@ export function useConversation() {
       updatedAt: Date.now(),
     }
     conversations.value.unshift(conv)
-    activeId.value = conv.id
-    persist()
+    activeId.value = id
+    if (!userId.value) persistToIndexedDB()
     return conv
   }
 
@@ -89,10 +153,10 @@ export function useConversation() {
     if (idx === -1) return
     const conv = conversations.value[idx]
 
-    // Delete from backend if synced
-    const userId = Number(localStorage.getItem('userId'))
-    if (userId && conv.backendId) {
-      fetch(`/api/conversations/${conv.backendId}?userId=${userId}`, {
+    // 登录用户：同时删除后端数据
+    const uid = userId.value
+    if (uid && conv.backendId) {
+      fetch(`/api/conversations/${conv.backendId}?userId=${uid}`, {
         method: 'DELETE',
       }).catch(() => {})
     }
@@ -101,7 +165,7 @@ export function useConversation() {
     if (activeId.value === id) {
       activeId.value = conversations.value.length ? conversations.value[0].id : null
     }
-    persist()
+    if (!uid) persistToIndexedDB()
   }
 
   function addMessage(msg) {
@@ -133,64 +197,12 @@ export function useConversation() {
     persist()
   }
 
-  async function loadFromBackend() {
-    const userId = Number(localStorage.getItem('userId')) || 1
-
-    try {
-      const res = await fetch(`/api/conversations?userId=${userId}`)
-      const data = await res.json()
-      if (data.code !== 200 || !data.data) return
-
-      // Merge backend conversations into localStorage
-      for (const remote of data.data) {
-        const existing = conversations.value.find(c => c.backendId === remote.id)
-        if (existing) {
-          // Update existing with backend data if newer
-          const remoteTime = new Date(remote.updatedAt).getTime()
-          if (remoteTime > existing.updatedAt) {
-            existing.title = remote.title
-            try {
-              const parsed = JSON.parse(remote.messagesJson)
-              if (parsed?.length) existing.messages = parsed
-            } catch {}
-            // Only overwrite result if backend actually has it (list endpoint doesn't return resultJson)
-            if (remote.resultJson) {
-              try { existing.result = JSON.parse(remote.resultJson) } catch {}
-            }
-            existing.updatedAt = remoteTime
-          }
-        } else {
-          // Add new conversation from backend
-          const conv = {
-            id: Date.now().toString() + Math.random().toString(36).slice(2, 6),
-            backendId: remote.id,
-            title: remote.title,
-            messages: [],
-            result: null,
-            createdAt: new Date(remote.createdAt).getTime(),
-            updatedAt: new Date(remote.updatedAt).getTime(),
-          }
-          try { conv.messages = JSON.parse(remote.messagesJson) } catch {}
-          try { conv.result = remote.resultJson ? JSON.parse(remote.resultJson) : null } catch {}
-          conversations.value.push(conv)
-        }
-      }
-
-      // Sort by updatedAt descending
-      conversations.value.sort((a, b) => b.updatedAt - a.updatedAt)
-      if (!activeId.value && conversations.value.length) {
-        activeId.value = conversations.value[0].id
-      }
-      persist()
-    } catch {
-      // Backend unavailable, keep localStorage data
-    }
-  }
-
   return {
     conversations,
     activeId,
     activeConversation,
+    activeMessages,
+    load,
     persist,
     newConversation,
     selectConversation,
@@ -198,7 +210,6 @@ export function useConversation() {
     addMessage,
     setResult,
     updateLastAssistantMessage,
-    loadFromBackend,
     syncActiveToBackend,
   }
 }

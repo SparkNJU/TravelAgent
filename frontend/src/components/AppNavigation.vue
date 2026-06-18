@@ -100,17 +100,6 @@ const workbenchLink = computed(() => {
   if (route.path.startsWith('/plan/workbench') && route.query.planId) {
     return { path: '/plan/workbench', query: route.query }
   }
-  // Check localStorage for a conversation with a saved workbenchPlanId
-  try {
-    const raw = localStorage.getItem('travel_conversations')
-    if (raw) {
-      const convs = JSON.parse(raw)
-      const withPlan = convs.find(c => c.result?.workbenchPlanId)
-      if (withPlan) {
-        return { path: '/plan/workbench', query: { planId: withPlan.result.workbenchPlanId } }
-      }
-    }
-  } catch {}
   return '/plan/workbench'
 })
 const displayName = computed(() => (isLoggedIn.value ? username.value || '旅行者' : '未登录'))
