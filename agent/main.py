@@ -151,7 +151,6 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
         max_context_tokens=config.agent.max_context_tokens,
         compress_threshold=config.agent.compress_threshold,
         compress_keep_last=config.agent.compress_keep_last,
-        enable_plan_checker=False,  # agent 模式不启用 plan checker
     )
     reflection_react_agent = ReActAgent(
         llm=llm,
@@ -161,7 +160,6 @@ async def agent_chat(request: AgentChatRequest) -> StreamingResponse:
         max_context_tokens=config.agent.max_context_tokens,
         compress_threshold=config.agent.compress_threshold,
         compress_keep_last=config.agent.compress_keep_last,
-        enable_plan_checker=True,  # reflection 模式启用 plan checker
     )
     reflection_agent = ReflectionAgent(llm=llm, react_agent=reflection_react_agent)
 

@@ -112,7 +112,7 @@ const props = defineProps({
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
   arenaMode: { type: Boolean, default: false },
-  selectedModel: { type: String, default: 'deepseek-v4-flash' },
+  selectedModel: { type: String, default: 'deepseek-v4-pro' },
   canCompress: { type: Boolean, default: true },
   compressHint: { type: String, default: '' },
   tokenStatus: {
@@ -137,8 +137,8 @@ const modes = [
 ]
 
 const models = [
-  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { value: 'glm-5.1', label: 'GLM 5.1' },
   { value: 'kimi-k2.6', label: 'Kimi K2.6' },
   { value: 'MiniMax-M2.5', label: 'MiniMax M2.5' },

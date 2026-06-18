@@ -1,4 +1,4 @@
-"""Reflection mode: ReAct loop + self-evaluation with revision if needed."""
+"""Reflection mode: ReAct loop + plan compliance check + quality evaluation with revision."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ from typing import Generator
 
 from .llm_service import LLMService
 from .react_agent import ReActAgent
+from .plan_checker import PlanChecker
 from .sse_events import sse_event
 
 _EVALUATION_SCHEMA = {
@@ -51,17 +52,20 @@ Return a JSON evaluation with:
 
 
 class ReflectionAgent:
-    """ReAct agent with a post-execution self-reflection and revision cycle."""
+    """ReAct agent with plan compliance check + self-evaluation and revision cycle."""
 
     def __init__(
         self,
         llm: LLMService,
         react_agent: ReActAgent,
         max_revisions: int = 1,
+        max_check_retries: int = 2,
     ) -> None:
         self._llm = llm
         self._react = react_agent
         self._max_revisions = max_revisions
+        self._plan_checker = PlanChecker(llm)
+        self._max_check_retries = max_check_retries
 
     def run(
         self,
@@ -72,6 +76,32 @@ class ReflectionAgent:
     ) -> Generator[str, None, None]:
         answer = yield from self._run_react(query, file_summary, execution_plan, user_memory_markdown)
 
+        # Phase 1: Plan compliance check (structural validation)
+        for check_attempt in range(self._max_check_retries):
+            compliant, violations = self._plan_checker.check(query, answer)
+            if compliant:
+                yield sse_event(
+                    "plan_check",
+                    "结构合规检查通过。",
+                    {"compliant": True, "attempt": check_attempt},
+                )
+                break
+
+            yield sse_event(
+                "plan_check",
+                f"结构合规检查失败 ({check_attempt + 1}/{self._max_check_retries})：{'; '.join(violations[:3])}",
+                {"compliant": False, "violations": violations, "attempt": check_attempt},
+            )
+
+            # Inject violation feedback and re-run
+            violation_msg = "\n".join(f"- {v}" for v in violations)
+            revised_plan = f"[PlanChecker 反馈] 方案存在结构问题，请修正：\n{violation_msg}"
+            if execution_plan:
+                revised_plan = f"{execution_plan}\n\n{revised_plan}"
+
+            answer = yield from self._run_react(query, file_summary, revised_plan, user_memory_markdown)
+
+        # Phase 2: Quality evaluation with revision cycle
         for revision in range(self._max_revisions):
             verdict, issues, suggestions = self._evaluate(query, answer)
 
