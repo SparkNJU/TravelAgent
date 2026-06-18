@@ -78,19 +78,18 @@
                       :content="turn.assistant.planContent"
                       :streaming="isMessageStreaming(turn.assistantIndex)"
                     />
-                    <!-- 流式输出时：显示最新的思考过程 -->
-                    <div
-                      v-if="isMessageStreaming(turn.assistantIndex) && getLatestEvent(turn.assistant.events)"
-                      class="live-event-block"
-                    >
+                    <!-- 流式输出时：显示所有思考过程，最新一条展开 -->
+                    <template v-if="isMessageStreaming(turn.assistantIndex) && turn.assistant.events?.length">
                       <AgentEventBlock
-                        :type="getLatestEvent(turn.assistant.events).type"
-                        :content="getLatestEvent(turn.assistant.events).content"
-                        :toolName="getLatestEvent(turn.assistant.events).metadata?.tool_name || ''"
-                        :metadata="getLatestEvent(turn.assistant.events).metadata"
-                        :streaming="true"
+                        v-for="(ev, j) in turn.assistant.events"
+                        :key="j"
+                        :type="ev.type"
+                        :content="ev.content"
+                        :toolName="ev.metadata?.tool_name || ''"
+                        :metadata="ev.metadata"
+                        :streaming="j === turn.assistant.events.length - 1"
                       />
-                    </div>
+                    </template>
                     <!-- 完成后：显示所有事件的折叠面板 -->
                     <div
                       v-if="!isMessageStreaming(turn.assistantIndex) && turn.assistant.events?.length"
@@ -644,12 +643,6 @@ function traceSummary(events = []) {
   if (counts.observation) parts.push(`${counts.observation} observations`)
   if (counts.reflection) parts.push(`${counts.reflection} reflections`)
   return parts.length ? parts.join(' · ') : `${events.length} events`
-}
-
-function getLatestEvent(events = []) {
-  if (!events.length) return null
-  // 从后往前找最新的事件
-  return events[events.length - 1]
 }
 
 function scrollToBottom() {
@@ -1652,18 +1645,6 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 .scroll-jump-dot:hover::before {
   opacity: 1;
   transform: translateY(-50%) translateX(0);
-}
-
-/* 实时事件展示（流式输出时） */
-.live-event-block {
-  width: 100%;
-  margin-bottom: 8px;
-  animation: event-fade-in 0.3s ease;
-}
-
-@keyframes event-fade-in {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
 }
 
 .trace-panel {

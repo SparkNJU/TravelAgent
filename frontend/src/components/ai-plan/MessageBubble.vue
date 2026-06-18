@@ -11,10 +11,9 @@
           class="copy-btn"
           :class="{ copied }"
           @click="handleCopy"
-          title="复制"
+          :title="copied ? '已复制' : '复制'"
         >
-          <SvgIcon :name="copied ? 'check' : 'copy'" :size="12" />
-          <span>{{ copied ? '已复制' : '复制' }}</span>
+          <SvgIcon :name="copied ? 'check' : 'copy'" :size="13" />
         </button>
       </transition>
     </div>
@@ -143,20 +142,18 @@ async function handleCopy() {
   align-self: flex-end;
   display: inline-flex;
   align-items: center;
-  gap: 4px;
+  justify-content: center;
   margin-top: 4px;
-  padding: 3px 8px;
-  border: 1px solid var(--color-border);
-  border-radius: 6px;
+  padding: 3px;
+  border: none;
+  border-radius: 4px;
   background: transparent;
   color: var(--color-tertiary);
-  font-size: 11px;
   cursor: pointer;
   transition: all 0.15s ease;
 }
 
 .copy-btn:hover {
-  border-color: var(--color-red);
   color: var(--color-red);
   background: #fff7f8;
 }
@@ -166,9 +163,7 @@ async function handleCopy() {
 }
 
 .copy-btn.copied {
-  border-color: #22c55e;
   color: #22c55e;
-  background: #f0fdf4;
 }
 
 .fade-enter-active,
@@ -337,12 +332,10 @@ async function handleCopy() {
 
 :root[data-theme="dark"] .copy-btn {
   background: transparent;
-  border-color: var(--color-border);
   color: var(--color-tertiary);
 }
 
 :root[data-theme="dark"] .copy-btn:hover {
-  border-color: var(--color-red-light);
   color: var(--color-red-light);
   background: rgba(255, 36, 66, 0.1);
 }
