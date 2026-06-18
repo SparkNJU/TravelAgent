@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 
 from openai import OpenAI
+
+# Import project config
+import sys
+from pathlib import Path
+
+_BENCHMARK_DIR = Path(__file__).resolve().parent
+_AGENT_ROOT = _BENCHMARK_DIR.parent
+sys.path.insert(0, str(_AGENT_ROOT))
+from config import config
 
 # System prompt for the LLM parser
 PARSE_SYSTEM_PROMPT = """You are a data extraction assistant. Your job is to convert a Markdown travel plan into a structured JSON array.
@@ -62,9 +72,9 @@ Rules:
 
 def parse_plan_with_llm(
     markdown_plan: str,
-    llm_base_url: str = "https://api.deepseek.com/v1",
+    llm_base_url: str | None = None,
     llm_api_key: str | None = None,
-    llm_model: str = "deepseek-chat",
+    llm_model: str | None = None,
     max_retries: int = 2,
 ) -> list[dict] | None:
     """
@@ -72,28 +82,31 @@ def parse_plan_with_llm(
 
     Args:
         markdown_plan: The agent's Markdown travel plan.
-        llm_base_url: OpenAI-compatible API base URL.
-        llm_api_key: API key (if None, reads from env).
-        llm_model: Model name.
+        llm_base_url: OpenAI-compatible API base URL. If None, reads from config.
+        llm_api_key: API key (if None, reads from config env var).
+        llm_model: Model name. If None, reads from config.
         max_retries: Number of retries on parse failure.
 
     Returns:
         List of day dicts, or None if parsing fails.
     """
-    import os
+    # Use config defaults if not provided
+    base_url = llm_base_url or config.llm.base_url
+    model = llm_model or config.llm.chat_model
 
-    api_key = llm_api_key or os.getenv("DEEPSEEK_API_KEY", "") or os.getenv("DASHSCOPE_API_KEY", "")
+    # Resolve API key from env var specified in config
+    api_key = llm_api_key or os.getenv(config.llm.api_key_env, "")
     if not api_key:
-        raise RuntimeError("No API key found. Set DEEPSEEK_API_KEY or DASHSCOPE_API_KEY.")
+        raise RuntimeError(f"No API key found. Set {config.llm.api_key_env} env var.")
 
-    client = OpenAI(api_key=api_key, base_url=llm_base_url)
+    client = OpenAI(api_key=api_key, base_url=base_url)
 
     user_prompt = f"Convert the following travel plan to JSON:\n\n{markdown_plan}"
 
     for attempt in range(max_retries + 1):
         try:
             resp = client.chat.completions.create(
-                model=llm_model,
+                model=model,
                 messages=[
                     {"role": "system", "content": PARSE_SYSTEM_PROMPT},
                     {"role": "user", "content": user_prompt},
