@@ -112,7 +112,7 @@ const props = defineProps({
   hasMessages: { type: Boolean, default: false },
   modelValue: { type: String, default: 'agent' },
   arenaMode: { type: Boolean, default: false },
-  selectedModel: { type: String, default: 'qwen3.7-plus' },
+  selectedModel: { type: String, default: 'deepseek-v4-flash' },
   canCompress: { type: Boolean, default: true },
   compressHint: { type: String, default: '' },
   tokenStatus: {
@@ -137,12 +137,12 @@ const modes = [
 ]
 
 const models = [
-  { value: 'qwen3.7-plus', label: 'Qwen 3.7 Plus' },
   { value: 'deepseek-v4-flash', label: 'DeepSeek V4 Flash' },
   { value: 'deepseek-v4-pro', label: 'DeepSeek V4 Pro' },
+  { value: 'glm-5.1', label: 'GLM 5.1' },
   { value: 'kimi-k2.6', label: 'Kimi K2.6' },
   { value: 'MiniMax-M2.5', label: 'MiniMax M2.5' },
-  { value: 'glm-5.1', label: 'GLM 5.1' },
+  { value: 'qwen3.7-plus', label: 'Qwen 3.7 Plus' },
 ]
 
 const tags = ['3天短途', '5天深度游', '美食为主', '亲子游', '情侣出行']
