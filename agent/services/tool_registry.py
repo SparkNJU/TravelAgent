@@ -78,7 +78,7 @@ class WebSearchTool(Tool):
                 "num": {
                     "type": "integer",
                     "description": "Number of results",
-                    "default": 5,
+                    "default": 6,
                 },
             },
             "required": ["query"],
