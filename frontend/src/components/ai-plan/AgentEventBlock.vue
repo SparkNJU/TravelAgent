@@ -1,5 +1,5 @@
 <template>
-  <div :class="['event-block', type]">
+  <div :class="['event-block', type, { streaming }]">
     <button class="event-header" @click="toggle">
       <span class="event-icon"><SvgIcon :name="iconName" :size="14" /></span>
       <span class="event-label">{{ label }}</span>
@@ -29,12 +29,13 @@ const props = defineProps({
   toolName: { type: String, default: '' },
   metadata: { type: Object, default: null },
   expanded: { type: Boolean, default: false },
+  streaming: { type: Boolean, default: false },
 })
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const rendered = computed(() => DOMPurify.sanitize(md.render(props.content)))
 
-const expanded = ref(props.expanded)
+const expanded = ref(props.expanded || props.streaming)
 const bodyRef = ref(null)
 
 function updateHeight() {
@@ -142,6 +143,21 @@ const label = computed(() => {
 .event-block:hover {
   border-color: rgba(255, 36, 66, 0.2);
   box-shadow: 0 12px 30px rgba(17, 24, 39, 0.055);
+}
+
+/* Streaming 状态动画 */
+.event-block.streaming {
+  border-color: rgba(59, 130, 246, 0.3);
+  animation: streaming-pulse 2s ease-in-out infinite;
+}
+
+@keyframes streaming-pulse {
+  0%, 100% { border-color: rgba(59, 130, 246, 0.2); }
+  50% { border-color: rgba(59, 130, 246, 0.5); }
+}
+
+.event-block.streaming .event-header {
+  background: linear-gradient(90deg, rgba(59, 130, 246, 0.05), transparent);
 }
 
 .event-header {

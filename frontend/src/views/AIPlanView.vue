@@ -78,21 +78,24 @@
                       :content="turn.assistant.planContent"
                       :streaming="isMessageStreaming(turn.assistantIndex)"
                     />
-                    <!-- 实时思考过程展示：流式输出时显示最新的思考内容 -->
+                    <!-- 流式输出时：显示最新的思考过程 -->
                     <div
-                      v-if="isMessageStreaming(turn.assistantIndex) && !turn.assistant.answer && getLatestThought(turn.assistant.events)"
-                      class="live-thinking-block"
+                      v-if="isMessageStreaming(turn.assistantIndex) && getLatestEvent(turn.assistant.events)"
+                      class="live-event-block"
                     >
-                      <div class="live-thinking-header">
-                        <span class="live-thinking-dot"></span>
-                        <span class="live-thinking-label">思考中...</span>
-                      </div>
-                      <div class="live-thinking-content">{{ getLatestThought(turn.assistant.events) }}</div>
+                      <AgentEventBlock
+                        :type="getLatestEvent(turn.assistant.events).type"
+                        :content="getLatestEvent(turn.assistant.events).content"
+                        :toolName="getLatestEvent(turn.assistant.events).metadata?.tool_name || ''"
+                        :metadata="getLatestEvent(turn.assistant.events).metadata"
+                        :streaming="true"
+                      />
                     </div>
+                    <!-- 完成后：显示所有事件的折叠面板 -->
                     <div
-                      v-if="turn.assistant.events?.length"
+                      v-if="!isMessageStreaming(turn.assistantIndex) && turn.assistant.events?.length"
                       class="trace-panel"
-                      :class="{ open: isTraceOpen(turn.assistantIndex), streaming: isMessageStreaming(turn.assistantIndex) }"
+                      :class="{ open: isTraceOpen(turn.assistantIndex) }"
                     >
                       <button
                         type="button"
@@ -643,16 +646,10 @@ function traceSummary(events = []) {
   return parts.length ? parts.join(' · ') : `${events.length} events`
 }
 
-function getLatestThought(events = []) {
-  if (!events.length) return ''
-  // 从后往前找最新的 thought 或 action 事件
-  for (let i = events.length - 1; i >= 0; i--) {
-    const ev = events[i]
-    if (ev.type === 'thought' || ev.type === 'action') {
-      return ev.content || ''
-    }
-  }
-  return ''
+function getLatestEvent(events = []) {
+  if (!events.length) return null
+  // 从后往前找最新的事件
+  return events[events.length - 1]
 }
 
 function scrollToBottom() {
@@ -1657,63 +1654,16 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   transform: translateY(-50%) translateX(0);
 }
 
-/* 实时思考过程展示 */
-.live-thinking-block {
+/* 实时事件展示（流式输出时） */
+.live-event-block {
   width: 100%;
-  padding: 12px 16px;
   margin-bottom: 8px;
-  border: 1px solid rgba(59, 130, 246, 0.2);
-  border-radius: 12px;
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.04), rgba(147, 51, 234, 0.04));
-  animation: thinking-pulse 2s ease-in-out infinite;
+  animation: event-fade-in 0.3s ease;
 }
 
-@keyframes thinking-pulse {
-  0%, 100% { border-color: rgba(59, 130, 246, 0.2); }
-  50% { border-color: rgba(59, 130, 246, 0.4); }
-}
-
-.live-thinking-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 8px;
-}
-
-.live-thinking-dot {
-  width: 8px;
-  height: 8px;
-  border-radius: 50%;
-  background: #3b82f6;
-  animation: dot-blink 1s ease-in-out infinite;
-}
-
-@keyframes dot-blink {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.4; }
-}
-
-.live-thinking-label {
-  font-size: 12px;
-  font-weight: 600;
-  color: #3b82f6;
-}
-
-.live-thinking-content {
-  font-size: 14px;
-  line-height: 1.6;
-  color: #374151;
-  white-space: pre-wrap;
-  word-break: break-word;
-}
-
-:root[data-theme="dark"] .live-thinking-block {
-  background: linear-gradient(135deg, rgba(59, 130, 246, 0.08), rgba(147, 51, 234, 0.08));
-  border-color: rgba(59, 130, 246, 0.3);
-}
-
-:root[data-theme="dark"] .live-thinking-content {
-  color: var(--color-title);
+@keyframes event-fade-in {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 
 .trace-panel {
