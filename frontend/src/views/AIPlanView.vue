@@ -1328,16 +1328,20 @@ async function goToWorkbench(convOverride) {
     return
   }
 
-  if (!conv.backendId) {
-    alert('会话尚未同步，请稍候重试...')
-    return
-  }
-
   // Start background parsing
   workbenchParsing.value = true
   workbenchError.value = ''
 
   try {
+    // If not synced yet, sync first to get backendId
+    if (!conv.backendId) {
+      await syncActiveToBackend(conv)
+    }
+    if (!conv.backendId) {
+      workbenchError.value = '会话同步失败，请刷新后重试'
+      return
+    }
+
     const res = await fetch('/api/travel/plan/parse-and-save', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
