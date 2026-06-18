@@ -1032,8 +1032,10 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
       } else if (event.type === 'suggestions') {
         state.activeSuggestions = event.metadata?.questions || []
       } else if (event.type === 'action' && event.metadata?.tool === 'finish') {
+        // Mark plan as finished but don't push finish action/observation to events
         targetMsg._planFinished = true
-        targetMsg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
+      } else if (event.type === 'observation' && targetMsg._planFinished) {
+        // Skip the observation event that follows finish tool call
       } else if (['thought', 'action', 'observation', 'reflection'].includes(event.type)) {
         targetMsg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
       } else if (event.type === 'error') {
@@ -1102,6 +1104,11 @@ async function finishStreamFor(targetConvId) {
     return
   }
   streamStates.delete(targetConvId)
+
+  // Auto-trigger workbench parsing after finish
+  if (conv.result && conv.backendId && msg?._planFinished) {
+    nextTick(() => goToWorkbench(conv))
+  }
 }
 
 // Legacy wrapper for template / other callers that don't have a convId
@@ -1311,8 +1318,8 @@ async function loadSavedPlan(planId) {
   }
 }
 
-async function goToWorkbench() {
-  const conv = activeConversation.value
+async function goToWorkbench(convOverride) {
+  const conv = convOverride || activeConversation.value
   if (!conv) return
 
   // If already parsed, go directly

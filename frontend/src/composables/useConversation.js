@@ -149,8 +149,14 @@ export function useConversation() {
           const remoteTime = new Date(remote.updatedAt).getTime()
           if (remoteTime > existing.updatedAt) {
             existing.title = remote.title
-            try { existing.messages = JSON.parse(remote.messagesJson) } catch {}
-            try { existing.result = remote.resultJson ? JSON.parse(remote.resultJson) : null } catch {}
+            try {
+              const parsed = JSON.parse(remote.messagesJson)
+              if (parsed?.length) existing.messages = parsed
+            } catch {}
+            // Only overwrite result if backend actually has it (list endpoint doesn't return resultJson)
+            if (remote.resultJson) {
+              try { existing.result = JSON.parse(remote.resultJson) } catch {}
+            }
             existing.updatedAt = remoteTime
           }
         } else {
