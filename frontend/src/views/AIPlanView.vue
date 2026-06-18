@@ -1105,7 +1105,7 @@ async function finishStreamFor(targetConvId) {
   if (state) {
     state.loading = false
   }
-  if (state?.pendingAskUser) {
+  if (state?.pendingAskUser || state?.activeSuggestions?.length) {
     return
   }
   streamStates.delete(targetConvId)
