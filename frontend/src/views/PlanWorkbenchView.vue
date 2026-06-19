@@ -780,25 +780,6 @@ async function initWorkspace() {
       goBack()
     }
   } else {
-    // Check if there is an active conversation with a plan already generated
-    const localConvsRaw = localStorage.getItem('travel_conversations')
-    let latestBackendId = null
-    if (localConvsRaw) {
-      try {
-        const localConvs = JSON.parse(localConvsRaw)
-        const latest = localConvs.find(c => c.result && c.backendId)
-        if (latest) {
-          latestBackendId = latest.backendId
-        }
-      } catch (e) {}
-    }
-
-    if (latestBackendId) {
-      router.replace({ name: 'planWorkbench', query: { c: latestBackendId } })
-      initWorkspace()
-      return
-    }
-
     // Try to fetch the latest plan of the user from the backend
     try {
       const uid = localStorage.getItem('userId') || '1'
