@@ -1173,8 +1173,21 @@ async function finishStreamFor(targetConvId) {
       }
     }
   }
+
+  // 如果 Agent 调用了 finish 工具，标记触发后端异步解析
+  if (conv.result && conv.backendId && msg?._planFinished) {
+    conv.result = { ...conv.result, triggerParse: true }
+    conv.workbenchStatus = 'parsing'
+  }
+
   // 立即保存到后端（登录用户）
   await syncActiveToBackend(conv)
+
+  // 保存后清理 triggerParse（仅用于触发后端，不需要持久化到前端）
+  if (conv.result?.triggerParse) {
+    delete conv.result.triggerParse
+  }
+
   if (state) {
     state.loading = false
   }
@@ -1182,13 +1195,6 @@ async function finishStreamFor(targetConvId) {
     return
   }
   streamStates.delete(targetConvId)
-
-  // Signal backend to start async workbench parsing
-  if (conv.result && conv.backendId && msg?._planFinished) {
-    conv.result = { ...conv.result, triggerParse: true }
-    conv.workbenchStatus = 'parsing'
-    await syncActiveToBackend(conv)
-  }
 }
 
 // Legacy wrapper for template / other callers that don't have a convId
