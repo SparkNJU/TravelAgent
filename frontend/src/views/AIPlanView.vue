@@ -78,7 +78,7 @@
                       :content="turn.assistant.planContent"
                       :streaming="isMessageStreaming(turn.assistantIndex)"
                     />
-                    <!-- 流式输出时：显示所有思考过程，最新一条展开 -->
+                    <!-- 流式输出时：显示所有思考过程，最近3条展开，其余折叠 -->
                     <template v-if="isMessageStreaming(turn.assistantIndex) && turn.assistant.events?.length">
                       <AgentEventBlock
                         v-for="(ev, j) in turn.assistant.events"
@@ -87,7 +87,10 @@
                         :content="ev.content"
                         :toolName="ev.metadata?.tool_name || ''"
                         :metadata="ev.metadata"
+                        :expanded="j >= turn.assistant.events.length - 3"
                         :streaming="j === turn.assistant.events.length - 1"
+                        :confirmed="ev._confirmed"
+                        @confirm="handleConfirmResponse"
                       />
                     </template>
                     <!-- 完成后：显示所有事件的折叠面板 -->
@@ -103,7 +106,7 @@
                         @click="toggleTrace(turn.assistantIndex)"
                       >
                         <span class="trace-spark"><SvgIcon name="sparkles" :size="15" /></span>
-                        <span class="trace-title">Thoughts</span>
+                        <span class="trace-title">思考过程</span>
                         <span class="trace-meta">{{ traceSummary(turn.assistant.events) }}</span>
                         <span class="trace-chevron">
                           <SvgIcon name="chevron-down" :size="15" />
@@ -117,6 +120,8 @@
                           :content="ev.content"
                           :toolName="ev.metadata?.tool_name || ''"
                           :metadata="ev.metadata"
+                          :confirmed="ev._confirmed"
+                          @confirm="handleConfirmResponse"
                         />
                       </div>
                     </div>
@@ -125,6 +130,16 @@
                       role="assistant"
                       :content="turn.assistant.answer"
                     />
+                    <!-- 建议问题：仅最新消息且非流式时显示 -->
+                    <div
+                      v-if="turn.assistant.answer && !loading && activeSuggestions.length && turn.assistantIndex === (activeConversation?.messages?.length || 0) - 1"
+                      class="suggestions-wrapper"
+                    >
+                      <SuggestionChips
+                        :questions="activeSuggestions"
+                        @select="handleSuggestionSelect"
+                      />
+                    </div>
                     <div v-if="turn.assistant.answer && !loading" class="message-actions">
                       <button
                         class="sync-knowledge-btn"
@@ -141,7 +156,11 @@
             </div>
           </template>
 
-          <StreamingIndicator v-if="loading" />
+          <!-- 加载指示器：独立于消息气泡，在消息列表最底部 -->
+          <div v-if="loading" class="loading-hint">
+            <span class="loading-dot"></span>
+            <span>Agent 正在思考...</span>
+          </div>
 
           <!-- Workbench: parsing / ready / error -->
           <div v-if="activeConversation && activeConversation.result && !loading" class="workbench-trigger-wrapper">
@@ -188,14 +207,6 @@
           />
         </div>
 
-        <!-- SuggestionChips: aligned with agent-content-wrapper -->
-        <div v-if="activeSuggestions.length && !loading" class="agent-content-wrapper">
-          <SuggestionChips
-            :questions="activeSuggestions"
-            @select="handleSuggestionSelect"
-          />
-        </div>
-
         <div class="compact-input-area">
           <ChatInput
             compact
@@ -204,6 +215,7 @@
             :hasMessages="true"
             v-model="selectedMode"
             :initialQuery="initialQuery"
+            :query="selectedQuery"
             :selectedModel="selectedModel"
             :arenaMode="arenaMode"
             :tokenStatus="tokenStatus"
@@ -415,8 +427,10 @@ const {
 
 const sidebarCollapsed = ref(false)
 const messagesRef = ref(null)
+const isUserScrolled = ref(false)
 const selectedMode = ref('agent')
 const selectedModel = ref('deepseek-v4-pro')
+const selectedQuery = ref('')
 const arenaMode = ref(false)
 const navigatingToWorkbench = ref(false)
 
@@ -462,6 +476,7 @@ const inspectorCollapsed = ref(false)
 const activeTurnIndex = ref(0)
 const manualTraceOpen = ref({})
 const turnMarkerPositions = ref({})
+const confirmedAskEvents = ref(new Set())
 
 // Token / compress state — per-conversation tokenStatus stored in conversation object
 const tokenStatus = computed({
@@ -544,7 +559,22 @@ watch(settingTooltip, (val) => {
   else document.removeEventListener('click', onDocClick)
 })
 
-onUnmounted(() => document.removeEventListener('click', onDocClick))
+onUnmounted(() => {
+  document.removeEventListener('click', onDocClick)
+  window.removeEventListener('beforeunload', flushPendingSave)
+})
+
+// 页面关闭/刷新前立即保存未完成的对话
+function flushPendingSave() {
+  const conv = activeConversation.value
+  if (!conv) return
+  // 如果流式输出还在进行中，先把 answer 合并到 content
+  const msg = conv.messages.at(-1)
+  if (msg?.answer && msg.content !== msg.answer) {
+    msg.content = msg.answer
+  }
+  syncActiveToBackend(conv)
+}
 
 const contextPercent = computed(() => Math.round((tokenStatus.value?.utilization || 0) * 100))
 const contextStats = computed(() => [
@@ -608,7 +638,7 @@ const turnMarkers = computed(() => {
   return messages.map((message, index) => ({
     index,
     role: message.role,
-    label: message.role === 'user' ? `Jump to question ${index + 1}` : `Jump to answer ${index + 1}`,
+    label: message.role === 'user' ? `问题 ${index + 1}` : `回答 ${index + 1}`,
     top: turnMarkerPositions.value[index] || `${Math.max(3, Math.min(97, (index / total) * 100))}%`,
   }))
 })
@@ -622,7 +652,14 @@ function isTraceManuallyOpen(index) {
 }
 
 function isTraceOpen(index) {
-  return isMessageStreaming(index) || isTraceManuallyOpen(index)
+  // 用户手动操作过则跟随手动状态
+  if (manualTraceOpen.value[index] !== undefined) {
+    return manualTraceOpen.value[index]
+  }
+  // 默认：最新一条 assistant 消息展开，其余折叠
+  const msgs = activeConversation.value?.messages || []
+  const latestAssistantIdx = msgs.length - 1
+  return index === latestAssistantIdx
 }
 
 function toggleTrace(index) {
@@ -638,22 +675,61 @@ function traceSummary(events = []) {
     return acc
   }, {})
   const parts = []
-  if (counts.thought) parts.push(`${counts.thought} thoughts`)
-  if (counts.action) parts.push(`${counts.action} tools`)
-  if (counts.observation) parts.push(`${counts.observation} observations`)
-  if (counts.reflection) parts.push(`${counts.reflection} reflections`)
-  return parts.length ? parts.join(' · ') : `${events.length} events`
+  if (counts.thought) parts.push(`${counts.thought} 次思考`)
+  if (counts.action) parts.push(`${counts.action} 次调用工具`)
+  if (counts.observation) parts.push(`${counts.observation} 次观察`)
+  if (counts.reflection) parts.push(`${counts.reflection} 次反思`)
+  if (counts.ask_user) parts.push(`${counts.ask_user} 次确认`)
+  if (counts.suggestions) parts.push(`${counts.suggestions} 次建议`)
+  return parts.length ? parts.join(' · ') : `${events.length} 个步骤`
 }
 
 function scrollToBottom() {
   nextTick(() => {
     const el = messagesRef.value
+    if (el && !isUserScrolled.value) {
+      el.scrollTop = el.scrollHeight
+      updateTurnMarkerPositions()
+    }
+  })
+}
+
+// 强制滚动到底部（进入会话、发送消息时使用）
+function scrollToBottomForce() {
+  nextTick(() => {
+    const el = messagesRef.value
     if (el) {
+      isUserScrolled.value = false
+      el.scrollTop = el.scrollHeight
+      updateTurnMarkerPositions()
+    }
+  })
+}
+
+// 进入会话时，监听 DOM 变化直到内容完全渲染后滚动到底部
+function scrollToBottomWhenStable() {
+  const el = messagesRef.value
+  if (!el) return
+  isUserScrolled.value = false
+  // 先尝试立即滚动
+  el.scrollTop = el.scrollHeight
+  let scrollTimer = null
+  const observer = new MutationObserver(() => {
+    if (scrollTimer) clearTimeout(scrollTimer)
+    scrollTimer = setTimeout(() => {
       el.scrollTop = el.scrollHeight
       updateTurnMarkerPositions()
       handleMessagesScroll()
-    }
+      observer.disconnect()
+    }, 100)
   })
+  observer.observe(el, { childList: true, subtree: true })
+  // 兜底：最多监听 3 秒
+  setTimeout(() => {
+    if (scrollTimer) clearTimeout(scrollTimer)
+    observer.disconnect()
+    el.scrollTop = el.scrollHeight
+  }, 3000)
 }
 
 function updateTurnMarkerPositions() {
@@ -674,6 +750,10 @@ function updateTurnMarkerPositions() {
 function handleMessagesScroll() {
   const el = messagesRef.value
   if (!el) return
+
+  // 检测用户是否主动拖离底部（超过 100px 视为离开）
+  const distanceFromBottom = el.scrollHeight - el.scrollTop - el.clientHeight
+  isUserScrolled.value = distanceFromBottom > 100
 
   const turns = Array.from(el.querySelectorAll('[data-message-index]'))
   if (!turns.length) {
@@ -701,6 +781,7 @@ function scrollToTurn(index) {
       behavior: 'smooth',
     })
     activeTurnIndex.value = index
+    isUserScrolled.value = true // 跳转到指定位置，标记为用户主动操作
   })
 }
 
@@ -914,22 +995,27 @@ watch(() => activeConversation.value?.messages?.length, () => {
 watch(activeId, () => {
   manualTraceOpen.value = {}
   turnMarkerPositions.value = {}
+  confirmedAskEvents.value = new Set()
+  isUserScrolled.value = false
   syncJumpMarkers()
-  // Reset workbench parsing state on conversation switch
-  workbenchParsing.value = false
-  workbenchError.value = ''
+  // 切换会话时恢复 workbench 状态，但正在解析中时不重置
+  if (!workbenchParsing.value) {
+    workbenchError.value = ''
+  }
   // Restore workbenchPlanId from conversation result if available
   const savedPlanId = activeConversation.value?.result?.workbenchPlanId
   workbenchPlanId.value = savedPlanId || null
 })
 
 onMounted(() => {
+  // 页面关闭/刷新前，立即保存未完成的对话
+  window.addEventListener('beforeunload', flushPendingSave)
   if (route.query.planId) loadSavedPlan(route.query.planId)
   load().then(() => {
     // Restore workbenchPlanId from conversation result
     const savedPlanId = activeConversation.value?.result?.workbenchPlanId
     if (savedPlanId) workbenchPlanId.value = savedPlanId
-    scrollToBottom()
+    scrollToBottomWhenStable()
     if (route.query.auto === '1' && initialQuery.value) {
       if (!activeConversation.value || activeConversation.value.messages.length) {
         newConversation()
@@ -982,7 +1068,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
   state.loading = true
   state.pendingAskUser = null
   state.activeSuggestions = []
-  scrollToBottom()
+  scrollToBottomForce()
 
   const formData = new FormData()
   formData.append('query', query)
@@ -1031,6 +1117,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
         targetMsg.events.push({ type: 'ask_user', content: event.content, metadata: event.metadata })
       } else if (event.type === 'suggestions') {
         state.activeSuggestions = event.metadata?.questions || []
+        targetMsg.events.push({ type: 'suggestions', content: event.content, metadata: event.metadata })
       } else if (event.type === 'action' && event.metadata?.tool === 'finish') {
         // Mark plan as finished but don't push finish action/observation to events
         targetMsg._planFinished = true
@@ -1075,6 +1162,8 @@ async function finishStreamFor(targetConvId) {
 
   const msg = conv.messages.at(-1)
   if (msg?.answer) {
+    // 将流式累积的 answer 合并到 content，确保保存到数据库
+    msg.content = msg.answer
     try {
       const parsed = JSON.parse(msg.answer)
       if (parsed.destination || parsed.markdown) {
@@ -1088,10 +1177,8 @@ async function finishStreamFor(targetConvId) {
       }
     }
   }
-  // Sync the target conversation to backend (logged-in users)
-  // For guests, syncActiveToBackend is a no-op; persist() handles IndexedDB
+  // 立即保存到后端（登录用户）
   await syncActiveToBackend(conv)
-  persist()
   if (state) {
     state.loading = false
   }
@@ -1115,6 +1202,7 @@ async function finishStream() {
 function handleSend({ query, file }) {
   if (!query) return
   if (!activeConversation.value) newConversation()
+  selectedQuery.value = ''
 
   if (arenaMode.value) {
     handleAutoSend({ query, file })
@@ -1125,6 +1213,20 @@ function handleSend({ query, file }) {
 }
 
 function handleConfirmResponse({ answers }) {
+  // 标记最近的 ask_user 事件为已确认
+  const conv = activeConversation.value
+  if (conv) {
+    const lastMsg = conv.messages.at(-1)
+    if (lastMsg?.events) {
+      for (let i = lastMsg.events.length - 1; i >= 0; i--) {
+        if (lastMsg.events[i].type === 'ask_user' && !lastMsg.events[i]._confirmed) {
+          lastMsg.events[i]._confirmed = true
+          confirmedAskEvents.value.add(`${lastMsg.id || lastMsg.backendId || ''}-${i}`)
+          break
+        }
+      }
+    }
+  }
   const parts = answers.map(a => `${a.question}: ${a.answer}`)
   const message = `[用户确认信息] ${parts.join('; ')}`
   startStream(message, 'agent', false)
@@ -1132,7 +1234,7 @@ function handleConfirmResponse({ answers }) {
 
 function handleSuggestionSelect(question) {
   activeSuggestions.value = []
-  startStream(question, selectedMode.value)
+  selectedQuery.value = question
 }
 
 async function handleAutoSend({ query, file }) {
@@ -1166,7 +1268,7 @@ async function handleAutoSend({ query, file }) {
 
   const state = getStreamState(targetConvId)
   state.loading = true
-  scrollToBottom()
+  scrollToBottomForce()
 
   const formData = new FormData()
   formData.append('query', query)
@@ -1328,10 +1430,6 @@ async function goToWorkbench(convOverride) {
   workbenchError.value = ''
 
   try {
-    // If not synced yet, sync first to get backendId
-    if (!conv.backendId) {
-      await syncActiveToBackend(conv)
-    }
     if (!conv.backendId) {
       workbenchError.value = '会话同步失败，请刷新后重试'
       return
@@ -1346,11 +1444,10 @@ async function goToWorkbench(convOverride) {
 
     if (data.code === 200 && data.data) {
       workbenchPlanId.value = data.data.planId
-      // Persist planId in conversation result so it survives component re-creation
-      const result = conv.result
-      if (result) {
-        setResult({ ...result, workbenchPlanId: data.data.planId })
-      }
+      // 立即持久化 workbenchPlanId（不依赖 debounce）
+      conv.result = { ...(conv.result || {}), workbenchPlanId: data.data.planId }
+      conv.updatedAt = Date.now()
+      await syncActiveToBackend(conv)
     } else {
       workbenchError.value = data.message || '暂不支持解析该对话'
     }
@@ -1735,6 +1832,11 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   max-width: min(1160px, calc(100% - 32px));
 }
 
+.suggestions-wrapper {
+  max-width: min(900px, calc(100% - 64px));
+  margin: 0 auto;
+}
+
 .compact-input-area {
   padding: 12px 28px 18px;
   border-top: 1px solid transparent;
@@ -1747,6 +1849,28 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
   display: flex;
   justify-content: flex-end;
   margin-top: 4px;
+}
+
+.loading-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 12px;
+  color: var(--color-muted);
+}
+
+.loading-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-red-light);
+  animation: loading-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes loading-pulse {
+  0%, 80%, 100% { opacity: 0.3; transform: scale(0.8); }
+  40% { opacity: 1; transform: scale(1); }
 }
 
 .sync-knowledge-btn {

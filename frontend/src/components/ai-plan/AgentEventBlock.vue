@@ -6,12 +6,33 @@
       <span v-if="actionSummary" class="event-summary">{{ actionSummary }}</span>
       <span v-else-if="toolName" class="tool-tag">{{ toolDisplayName }}</span>
       <span v-if="observationSummary" class="event-summary">{{ observationSummary }}</span>
-      <span class="expand-arrow" :class="{ open: expanded }">
+      <span v-if="props.type !== 'suggestions'" class="expand-arrow" :class="{ open: expanded }">
         <SvgIcon name="chevron-right" :size="12" />
       </span>
     </button>
     <div ref="bodyRef" class="event-body">
+      <!-- 思考内容：Markdown 渲染 -->
       <div v-if="props.type === 'thought'" class="event-content rendered" v-html="rendered" />
+      <!-- 向用户确认：已确认状态 -->
+      <div v-else-if="props.type === 'ask_user' && props.confirmed" class="event-content ask-user-content confirmed-state">
+        <SvgIcon name="check" :size="14" />
+        <span>已确认并发送</span>
+      </div>
+      <!-- 向用户确认：交互式 UserConfirmBlock -->
+      <div v-else-if="props.type === 'ask_user'" class="event-content ask-user-content">
+        <UserConfirmBlock
+          :message="askData.message"
+          :questions="askData.questions"
+          @confirm="emit('confirm', $event)"
+        />
+      </div>
+      <!-- 建议问题：始终折叠，展开后仅展示问题列表（不可点击） -->
+      <div v-else-if="props.type === 'suggestions' && expanded" class="event-content suggestions-content">
+        <ul class="suggestions-plain-list">
+          <li v-for="(q, i) in suggestionQuestions" :key="i">{{ q }}</li>
+        </ul>
+      </div>
+      <!-- 其他事件：纯文本 -->
       <pre v-else class="event-content">{{ content }}</pre>
     </div>
   </div>
@@ -22,20 +43,25 @@ import { ref, computed, nextTick, onMounted, watch } from 'vue'
 import MarkdownIt from 'markdown-it'
 import DOMPurify from 'dompurify'
 import SvgIcon from '../SvgIcon.vue'
+import SuggestionChips from './SuggestionChips.vue'
+import UserConfirmBlock from './UserConfirmBlock.vue'
 
 const props = defineProps({
   type: { type: String, required: true },
   content: { type: String, default: '' },
   toolName: { type: String, default: '' },
   metadata: { type: Object, default: null },
-  expanded: { type: Boolean, default: false },
+  expanded: { type: Boolean, default: true },
   streaming: { type: Boolean, default: false },
+  confirmed: { type: Boolean, default: false },
 })
+
+const emit = defineEmits(['confirm'])
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: true })
 const rendered = computed(() => DOMPurify.sanitize(md.render(props.content)))
 
-const expanded = ref(props.expanded || props.streaming)
+const expanded = ref(props.expanded)
 const bodyRef = ref(null)
 
 function updateHeight() {
@@ -48,6 +74,7 @@ function updateHeight() {
 }
 
 function toggle() {
+  if (props.type === 'suggestions') return // 建议始终折叠
   expanded.value = !expanded.value
   updateHeight()
 }
@@ -70,6 +97,7 @@ const iconMap = {
   observation: 'eye',
   reflection: 'refresh',
   ask_user: 'message',
+  suggestions: 'sparkles',
 }
 
 const labelMap = {
@@ -78,7 +106,8 @@ const labelMap = {
   action: '调用工具',
   observation: '观察结果',
   reflection: '自我反思',
-  ask_user: '等待用户确认',
+  ask_user: '向用户确认',
+  suggestions: '建议问题',
 }
 
 const iconName = computed(() => iconMap[props.type] || 'sparkles')
@@ -86,6 +115,10 @@ const iconName = computed(() => iconMap[props.type] || 'sparkles')
 const toolNameMap = {
   web_search: '联网搜索',
   parse_file: '文件解析',
+  search: '联网搜索',
+  wikipedia: '维基百科查询',
+  calculate: '计算',
+  translate: '翻译',
 }
 
 const toolDisplayName = computed(() => toolNameMap[props.toolName] || props.toolName)
@@ -118,12 +151,31 @@ const observationSummary = computed(() => {
   return ''
 })
 
+const askData = computed(() => {
+  if (props.type !== 'ask_user') return { message: '', questions: [] }
+  return {
+    message: props.content || '',
+    questions: props.metadata?.questions || [],
+  }
+})
+
+const suggestionQuestions = computed(() => {
+  if (props.type !== 'suggestions') return []
+  return props.metadata?.questions || []
+})
+
 const label = computed(() => {
   if (props.type === 'action' && props.toolName) {
     return `调用工具: ${toolDisplayName.value}`
   }
   if (props.type === 'thought' && props.metadata?.step) {
     return `思考中... (步骤 ${props.metadata.step})`
+  }
+  if (props.type === 'suggestions') {
+    return '让我想想你也许会问什么'
+  }
+  if (props.type === 'ask_user' && props.confirmed) {
+    return '已确认'
   }
   return labelMap[props.type] || '处理中...'
 })
@@ -191,7 +243,8 @@ const label = computed(() => {
 .action .event-icon,
 .observation .event-icon,
 .reflection .event-icon,
-.ask_user .event-icon {
+.ask_user .event-icon,
+.suggestions .event-icon {
   color: var(--color-red);
 }
 
@@ -287,6 +340,48 @@ const label = computed(() => {
   border-radius: 8px;
   overflow-x: auto;
   font-size: 12px;
+}
+
+/* ── 向用户确认 ── */
+.ask-user-content {
+  padding: 0 !important;
+  border-top: none !important;
+  background: transparent !important;
+}
+
+.confirmed-state {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 10px 14px !important;
+  font-size: 12px;
+  color: #16a34a;
+}
+
+/* ── 建议问题 ── */
+.suggestions-content {
+  padding: 4px 14px !important;
+  border-top: none !important;
+  background: transparent !important;
+}
+
+.suggestions-plain-list {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.suggestions-plain-list li {
+  padding: 4px 0;
+  font-size: 12.5px;
+  color: #6b7280;
+  line-height: 1.5;
+}
+
+.suggestions-plain-list li::before {
+  content: '·';
+  margin-right: 6px;
+  color: #d1d5db;
 }
 
 :root[data-theme="dark"] .event-block {

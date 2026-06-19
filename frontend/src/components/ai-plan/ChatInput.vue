@@ -120,6 +120,7 @@ const props = defineProps({
     default: () => null,
   },
   initialQuery: { type: String, default: '' },
+  query: { type: String, default: '' },
 })
 
 const emit = defineEmits(['submit', 'update:modelValue', 'update:selectedModel', 'stop', 'toggleArena', 'compress'])
@@ -171,6 +172,13 @@ watch(() => props.initialQuery, (value) => {
     nextTick(autoResize)
   }
 }, { immediate: true })
+
+watch(() => props.query, (value) => {
+  if (value != null) {
+    localQuery.value = value
+    nextTick(autoResize)
+  }
+})
 
 function appendTag(tag) {
   if (!localQuery.value.includes(tag)) {
@@ -501,6 +509,7 @@ function handleSubmit() {
   color: var(--color-red);
   cursor: pointer;
   transition: all 0.15s;
+  flex-shrink: 0;
 }
 
 .stop-btn:hover {
