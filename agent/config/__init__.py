@@ -25,7 +25,7 @@ class LLMConfig(BaseModel):
 class AgentConfig(BaseModel):
     max_iterations: int = 8
     self_correction_retries: int = 2
-    max_context_tokens: int = 10000
+    max_context_tokens: int = 20000
     compress_threshold: float = 0.80
     compress_keep_last: int = 6
 
