@@ -1,4 +1,4 @@
-import { ref, computed } from 'vue'
+import { ref, computed, watch } from 'vue'
 import localforage from 'localforage'
 import { useAuth } from './useAuth'
 
@@ -22,6 +22,13 @@ export function useConversation() {
   )
 
   const activeMessages = computed(() => activeConversation.value?.messages || [])
+
+  // 登录状态变化时自动刷新对话列表
+  watch(userId, () => {
+    activeId.value = null
+    conversations.value = []
+    load()
+  })
 
   // ── 加载 ──────────────────────────────────────────────
   async function load() {
