@@ -159,11 +159,13 @@
           <!-- 加载指示器：独立于消息气泡，在消息列表最底部 -->
           <div v-if="loading" class="loading-hint">
             <span class="loading-dot"></span>
-            <span>Agent 正在思考...</span>
+            <span v-if="planFinished">Agent 思考完毕，正在解析成为可视化计划</span>
+            <span v-else>Agent 正在思考...</span>
           </div>
 
-          <!-- Workbench: parsing / ready / error -->
-          <div v-if="activeConversation && !loading && workbenchStatus !== 'none'" class="workbench-trigger-wrapper">
+          <!-- 保存成功 + Workbench -->
+          <div v-if="activeConversation && !loading && planFinished" class="workbench-trigger-wrapper">
+            <div class="save-hint">✓ 本次对话已成功保存</div>
             <!-- Parsing in progress -->
             <div v-if="workbenchParsing" class="workbench-parsing-indicator">
               <StreamingIndicator />
@@ -464,6 +466,11 @@ const activeSuggestions = computed({
 const workbenchParsing = computed(() => activeConversation.value?.workbenchStatus === 'parsing')
 const workbenchPlanId = computed(() => activeConversation.value?.workbenchPlanId || null)
 const workbenchError = computed(() => activeConversation.value?.workbenchError || '')
+const planFinished = computed(() => {
+  const msgs = activeConversation.value?.messages
+  if (!msgs?.length) return false
+  return !!msgs[msgs.length - 1]._planFinished
+})
 const syncingKnowledgeTurns = ref(new Set())
 
 const COMPRESS_KEEP_LAST = 6
@@ -1117,6 +1124,7 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
       } else if (event.type === 'action' && event.metadata?.tool === 'finish') {
         // Mark plan as finished but don't push finish action/observation to events
         targetMsg._planFinished = true
+        targetConv.workbenchStatus = 'parsing'
       } else if (event.type === 'observation' && targetMsg._planFinished) {
         // Skip the observation event that follows finish tool call
       } else if (['thought', 'action', 'observation', 'reflection'].includes(event.type)) {
@@ -1174,10 +1182,13 @@ async function finishStreamFor(targetConvId) {
     }
   }
 
-  // 如果 Agent 调用了 finish 工具，标记触发后端异步解析
-  if (conv.result && conv.backendId && msg?._planFinished) {
-    conv.result = { ...conv.result, triggerParse: true }
+  // 如果 Agent 调用了 finish 工具，一定显示工作台按钮
+  if (msg?._planFinished) {
     conv.workbenchStatus = 'parsing'
+    // 同时触发后端异步解析（需要 result 和 backendId）
+    if (conv.result && conv.backendId) {
+      conv.result = { ...conv.result, triggerParse: true }
+    }
   }
 
   // 立即保存到后端（登录用户）
@@ -1940,6 +1951,13 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 }
 
 @keyframes btn-spin { to { transform: rotate(360deg); } }
+
+.save-hint {
+  font-size: 13px;
+  color: #10b981;
+  font-weight: 500;
+  padding: 0 4px;
+}
 
 .workbench-parsing-indicator {
   display: flex;

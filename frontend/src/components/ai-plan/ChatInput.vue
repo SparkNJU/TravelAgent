@@ -76,21 +76,14 @@
           />
 
           <button
-            v-if="loading"
-            class="stop-btn"
-            @click="emit('stop')"
-          >
-            <SvgIcon name="close" :size="14" />
-          </button>
-
-          <button
-            v-else
             class="send-btn"
-            :disabled="!canSend"
-            @click="handleSubmit"
-            title="发送"
+            :class="{ loading }"
+            :disabled="!loading && !canSend"
+            @click="loading ? emit('stop') : handleSubmit()"
+            :title="loading ? '停止生成' : '发送'"
           >
-            <SvgIcon name="send" :size="16" />
+            <span v-if="loading" class="send-spinner"></span>
+            <SvgIcon v-else name="send" :size="16" />
           </button>
         </div>
       </div>
@@ -496,25 +489,32 @@ function handleSubmit() {
   transform: none;
 }
 
-/* ── Stop button ── */
-.stop-btn {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  width: 34px;
-  height: 34px;
-  border: 1.5px solid rgba(255, 36, 66, 0.25);
-  border-radius: 10px;
-  background: rgba(255, 36, 66, 0.06);
-  color: var(--color-red);
+/* ── Send button loading state ── */
+.send-btn.loading {
+  background: #fff;
+  border: 1.5px solid rgba(255, 36, 66, 0.3);
+  box-shadow: none;
   cursor: pointer;
-  transition: all 0.15s;
-  flex-shrink: 0;
+  opacity: 1;
 }
 
-.stop-btn:hover {
-  background: rgba(255, 36, 66, 0.14);
+.send-btn.loading:hover {
+  background: rgba(255, 36, 66, 0.08);
   border-color: var(--color-red);
+  transform: scale(1.06);
+}
+
+.send-spinner {
+  width: 16px;
+  height: 16px;
+  border: 2px solid rgba(255, 36, 66, 0.2);
+  border-top-color: var(--color-red);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
 }
 
 /* ── Dark mode ── */
