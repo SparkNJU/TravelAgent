@@ -5,17 +5,20 @@
     </div>
     <div class="bubble-col">
       <div class="bubble" v-html="rendered" />
-      <transition name="fade">
-        <button
-          v-if="content"
-          class="copy-btn"
-          :class="{ copied }"
-          @click="handleCopy"
-          :title="copied ? '已复制' : '复制'"
-        >
-          <SvgIcon :name="copied ? 'check' : 'copy'" :size="13" />
-        </button>
-      </transition>
+      <div class="bubble-actions">
+        <transition name="fade">
+          <button
+            v-if="content"
+            class="copy-btn"
+            :class="{ copied }"
+            @click="handleCopy"
+            :title="copied ? '已复制' : '复制'"
+          >
+            <SvgIcon :name="copied ? 'check' : 'copy'" :size="13" />
+          </button>
+        </transition>
+        <slot name="actions" />
+      </div>
     </div>
     <div v-if="role === 'user'" class="avatar user-avatar">
       <SvgIcon name="user" :size="16" />
@@ -138,12 +141,17 @@ async function handleCopy() {
   background: rgba(255, 36, 66, 0.2);
 }
 
+.bubble-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  margin-top: 4px;
+}
+
 .copy-btn {
-  align-self: flex-end;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  margin-top: 4px;
   padding: 3px;
   border: none;
   border-radius: 4px;
@@ -156,10 +164,6 @@ async function handleCopy() {
 .copy-btn:hover {
   color: var(--color-red);
   background: #fff7f8;
-}
-
-.assistant .copy-btn {
-  align-self: flex-start;
 }
 
 .copy-btn.copied {

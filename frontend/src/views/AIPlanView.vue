@@ -129,7 +129,18 @@
                       v-if="turn.assistant.answer"
                       role="assistant"
                       :content="turn.assistant.answer"
-                    />
+                    >
+                      <template v-if="!loading" #actions>
+                        <button
+                          class="sync-knowledge-btn"
+                          :disabled="isSyncingKnowledgeTurn(turn.assistantIndex)"
+                          @click="syncTurnToKnowledge(turn.assistantIndex)"
+                        >
+                          <SvgIcon name="sparkles" :size="13" />
+                          {{ isSyncingKnowledgeTurn(turn.assistantIndex) ? '同步中...' : '同步到知识中心' }}
+                        </button>
+                      </template>
+                    </MessageBubble>
                     <!-- 建议问题：仅最新消息且非流式时显示 -->
                     <div
                       v-if="turn.assistant.answer && !loading && activeSuggestions.length && turn.assistantIndex === (activeConversation?.messages?.length || 0) - 1"
@@ -139,16 +150,6 @@
                         :questions="activeSuggestions"
                         @select="handleSuggestionSelect"
                       />
-                    </div>
-                    <div v-if="turn.assistant.answer && !loading" class="message-actions">
-                      <button
-                        class="sync-knowledge-btn"
-                        :disabled="isSyncingKnowledgeTurn(turn.assistantIndex)"
-                        @click="syncTurnToKnowledge(turn.assistantIndex)"
-                      >
-                        <SvgIcon name="sparkles" :size="13" />
-                        {{ isSyncingKnowledgeTurn(turn.assistantIndex) ? '同步中...' : '同步到知识中心' }}
-                      </button>
                     </div>
                   </template>
                 </div>
@@ -482,7 +483,6 @@ const inspectorOpen = ref(false)
 const inspectorCollapsed = ref(false)
 const activeTurnIndex = ref(0)
 const manualTraceOpen = ref({})
-const turnMarkerPositions = ref({})
 const confirmedAskEvents = ref(new Set())
 
 // Token / compress state — per-conversation tokenStatus stored in conversation object
@@ -641,12 +641,12 @@ const conversationTurns = computed(() => {
 })
 const turnMarkers = computed(() => {
   const messages = activeConversation.value?.messages || []
-  const total = Math.max(1, messages.length - 1)
+  const total = Math.max(1, messages.length)
   return messages.map((message, index) => ({
     index,
     role: message.role,
     label: message.role === 'user' ? `问题 ${index + 1}` : `回答 ${index + 1}`,
-    top: turnMarkerPositions.value[index] || `${Math.max(3, Math.min(97, (index / total) * 100))}%`,
+    top: `${Math.max(3, Math.min(97, ((index + 0.5) / total) * 100))}%`,
   }))
 })
 
@@ -696,7 +696,6 @@ function scrollToBottom() {
     const el = messagesRef.value
     if (el && !isUserScrolled.value) {
       el.scrollTop = el.scrollHeight
-      updateTurnMarkerPositions()
     }
   })
 }
@@ -708,7 +707,6 @@ function scrollToBottomForce() {
     if (el) {
       isUserScrolled.value = false
       el.scrollTop = el.scrollHeight
-      updateTurnMarkerPositions()
     }
   })
 }
@@ -725,7 +723,6 @@ function scrollToBottomWhenStable() {
     if (scrollTimer) clearTimeout(scrollTimer)
     scrollTimer = setTimeout(() => {
       el.scrollTop = el.scrollHeight
-      updateTurnMarkerPositions()
       handleMessagesScroll()
       observer.disconnect()
     }, 100)
@@ -737,21 +734,6 @@ function scrollToBottomWhenStable() {
     observer.disconnect()
     el.scrollTop = el.scrollHeight
   }, 3000)
-}
-
-function updateTurnMarkerPositions() {
-  const el = messagesRef.value
-  if (!el) return
-  const turns = Array.from(el.querySelectorAll('[data-message-index]'))
-  const maxScroll = el.scrollHeight - el.clientHeight
-  const total = Math.max(1, turns.length - 1)
-  const next = {}
-  turns.forEach((turn, order) => {
-    const index = Number(turn.dataset.messageIndex || 0)
-    const percent = maxScroll > 1 ? (turn.offsetTop / maxScroll) * 100 : (order / total) * 100
-    next[index] = `${Math.max(3, Math.min(97, percent))}%`
-  })
-  turnMarkerPositions.value = next
 }
 
 function handleMessagesScroll() {
@@ -794,7 +776,6 @@ function scrollToTurn(index) {
 
 function syncJumpMarkers() {
   nextTick(() => {
-    updateTurnMarkerPositions()
     handleMessagesScroll()
   })
 }
@@ -1001,7 +982,6 @@ watch(() => activeConversation.value?.messages?.length, () => {
 
 watch(activeId, () => {
   manualTraceOpen.value = {}
-  turnMarkerPositions.value = {}
   confirmedAskEvents.value = new Set()
   isUserScrolled.value = false
   syncJumpMarkers()
@@ -1840,12 +1820,6 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 
 .compress-notice { margin-top: 8px; font-size: 12px; color: var(--color-muted); line-height: 1.4; }
 
-.message-actions {
-  display: flex;
-  justify-content: flex-end;
-  margin-top: 4px;
-}
-
 .loading-hint {
   display: flex;
   align-items: center;
@@ -1871,13 +1845,13 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 .sync-knowledge-btn {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   border: 1px solid var(--color-border);
   background: var(--color-card);
   color: var(--color-secondary);
   border-radius: 999px;
-  padding: 5px 12px;
-  font-size: 12px;
+  padding: 2px 8px;
+  font-size: 11px;
   font-weight: 700;
   cursor: pointer;
   transition: all 0.18s ease;
