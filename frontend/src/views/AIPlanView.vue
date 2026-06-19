@@ -163,7 +163,7 @@
           </div>
 
           <!-- Workbench: parsing / ready / error -->
-          <div v-if="activeConversation && activeConversation.result && !loading" class="workbench-trigger-wrapper">
+          <div v-if="activeConversation && !loading && workbenchStatus !== 'none'" class="workbench-trigger-wrapper">
             <!-- Parsing in progress -->
             <div v-if="workbenchParsing" class="workbench-parsing-indicator">
               <StreamingIndicator />
@@ -178,10 +178,6 @@
               <span class="error-text">⚠ {{ workbenchError }}</span>
               <button class="retry-btn" @click="retryWorkbench">重试</button>
             </div>
-            <!-- Not started -->
-            <button v-else class="workbench-trigger-btn" @click="goToWorkbench">
-              进入可视化工作台 ➜
-            </button>
           </div>
         </div>
 
@@ -465,9 +461,9 @@ const activeSuggestions = computed({
   get: () => currentStreamState.value.activeSuggestions,
   set: (v) => { currentStreamState.value.activeSuggestions = v },
 })
-const workbenchParsing = ref(false)
-const workbenchPlanId = ref(null)
-const workbenchError = ref('')
+const workbenchParsing = computed(() => activeConversation.value?.workbenchStatus === 'parsing')
+const workbenchPlanId = computed(() => activeConversation.value?.workbenchPlanId || null)
+const workbenchError = computed(() => activeConversation.value?.workbenchError || '')
 const syncingKnowledgeTurns = ref(new Set())
 
 const COMPRESS_KEEP_LAST = 6
@@ -998,13 +994,11 @@ watch(activeId, () => {
   confirmedAskEvents.value = new Set()
   isUserScrolled.value = false
   syncJumpMarkers()
-  // 切换会话时恢复 workbench 状态，但正在解析中时不重置
-  if (!workbenchParsing.value) {
-    workbenchError.value = ''
+  // 切换到正在解析的会话时，向后端查询一次最新状态
+  const conv = activeConversation.value
+  if (conv?.workbenchStatus === 'parsing') {
+    refreshWorkbenchStatus(conv)
   }
-  // Restore workbenchPlanId from conversation result if available
-  const savedPlanId = activeConversation.value?.result?.workbenchPlanId
-  workbenchPlanId.value = savedPlanId || null
 })
 
 onMounted(() => {
@@ -1012,9 +1006,11 @@ onMounted(() => {
   window.addEventListener('beforeunload', flushPendingSave)
   if (route.query.planId) loadSavedPlan(route.query.planId)
   load().then(() => {
-    // Restore workbenchPlanId from conversation result
-    const savedPlanId = activeConversation.value?.result?.workbenchPlanId
-    if (savedPlanId) workbenchPlanId.value = savedPlanId
+    // 页面加载时，如果当前会话正在解析，查一次最新状态
+    const conv = activeConversation.value
+    if (conv?.workbenchStatus === 'parsing') {
+      refreshWorkbenchStatus(conv)
+    }
     scrollToBottomWhenStable()
     if (route.query.auto === '1' && initialQuery.value) {
       if (!activeConversation.value || activeConversation.value.messages.length) {
@@ -1187,9 +1183,11 @@ async function finishStreamFor(targetConvId) {
   }
   streamStates.delete(targetConvId)
 
-  // Auto-trigger workbench parsing after finish
+  // Signal backend to start async workbench parsing
   if (conv.result && conv.backendId && msg?._planFinished) {
-    nextTick(() => goToWorkbench(conv))
+    conv.result = { ...conv.result, triggerParse: true }
+    conv.workbenchStatus = 'parsing'
+    await syncActiveToBackend(conv)
   }
 }
 
@@ -1415,60 +1413,36 @@ async function loadSavedPlan(planId) {
   }
 }
 
-async function goToWorkbench(convOverride) {
-  const conv = convOverride || activeConversation.value
-  if (!conv) return
-
-  // If already parsed, go directly
-  if (workbenchPlanId.value) {
-    router.push({ name: 'planWorkbench', query: { planId: workbenchPlanId.value, c: conv.backendId } })
-    return
-  }
-
-  // Start background parsing
-  workbenchParsing.value = true
-  workbenchError.value = ''
-
-  try {
-    if (!conv.backendId) {
-      workbenchError.value = '会话同步失败，请刷新后重试'
-      return
-    }
-
-    const res = await fetch('/api/travel/plan/parse-and-save', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ conversationId: conv.backendId })
-    })
-    const data = await res.json()
-
-    if (data.code === 200 && data.data) {
-      workbenchPlanId.value = data.data.planId
-      // 立即持久化 workbenchPlanId（不依赖 debounce）
-      conv.result = { ...(conv.result || {}), workbenchPlanId: data.data.planId }
-      conv.updatedAt = Date.now()
-      await syncActiveToBackend(conv)
-    } else {
-      workbenchError.value = data.message || '暂不支持解析该对话'
-    }
-  } catch (e) {
-    workbenchError.value = '解析失败：' + e.message
-  } finally {
-    workbenchParsing.value = false
-  }
-}
-
 function enterWorkbench() {
-  if (workbenchPlanId.value) {
-    const conv = activeConversation.value
-    router.push({ name: 'planWorkbench', query: { planId: workbenchPlanId.value, ...(conv?.backendId ? { c: conv.backendId } : {}) } })
+  const conv = activeConversation.value
+  const planId = conv?.workbenchPlanId
+  if (planId) {
+    router.push({ name: 'planWorkbench', query: { planId, ...(conv?.backendId ? { c: conv.backendId } : {}) } })
   }
 }
 
-function retryWorkbench() {
-  workbenchPlanId.value = null
-  workbenchError.value = ''
-  goToWorkbench()
+async function retryWorkbench() {
+  const conv = activeConversation.value
+  if (!conv) return
+  conv.workbenchStatus = 'parsing'
+  conv.workbenchPlanId = null
+  conv.workbenchError = null
+  conv.result = { ...(conv.result || {}), triggerParse: true }
+  await syncActiveToBackend(conv)
+}
+
+async function refreshWorkbenchStatus(conv) {
+  if (!conv?.backendId) return
+  const uid = localStorage.getItem('userId') || '1'
+  try {
+    const res = await fetch(`/api/conversations/${conv.backendId}?userId=${uid}`)
+    const data = await res.json()
+    if (data.code === 200 && data.data) {
+      conv.workbenchStatus = data.data.workbenchStatus || 'none'
+      conv.workbenchPlanId = data.data.workbenchPlanId || null
+      conv.workbenchError = data.data.workbenchError || null
+    }
+  } catch {}
 }
 
 function handleUpdateItinerary(updated) {

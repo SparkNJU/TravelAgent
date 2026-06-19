@@ -29,6 +29,15 @@ public class ChatConversation {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    @Column(name = "workbench_plan_id")
+    private Long workbenchPlanId;
+
+    @Column(name = "workbench_status", length = 20)
+    private String workbenchStatus = "none";
+
+    @Column(name = "workbench_error", length = 500)
+    private String workbenchError;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -62,4 +71,13 @@ public class ChatConversation {
 
     public LocalDateTime getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(LocalDateTime updatedAt) { this.updatedAt = updatedAt; }
+
+    public Long getWorkbenchPlanId() { return workbenchPlanId; }
+    public void setWorkbenchPlanId(Long workbenchPlanId) { this.workbenchPlanId = workbenchPlanId; }
+
+    public String getWorkbenchStatus() { return workbenchStatus; }
+    public void setWorkbenchStatus(String workbenchStatus) { this.workbenchStatus = workbenchStatus; }
+
+    public String getWorkbenchError() { return workbenchError; }
+    public void setWorkbenchError(String workbenchError) { this.workbenchError = workbenchError; }
 }

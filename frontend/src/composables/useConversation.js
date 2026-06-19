@@ -47,6 +47,9 @@ export function useConversation() {
             result: safeParseJson(item.resultJson, null),
             createdAt: new Date(item.createdAt).getTime(),
             updatedAt: new Date(item.updatedAt).getTime(),
+            workbenchPlanId: item.workbenchPlanId || null,
+            workbenchStatus: item.workbenchStatus || 'none',
+            workbenchError: item.workbenchError || null,
           }))
           conversations.value.sort((a, b) => b.updatedAt - a.updatedAt)
           if (conversations.value.length && !activeId.value) {

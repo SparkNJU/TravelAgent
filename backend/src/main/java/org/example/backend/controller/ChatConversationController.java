@@ -3,6 +3,7 @@ package org.example.backend.controller;
 import org.example.backend.dto.ApiResponse;
 import org.example.backend.entity.ChatConversation;
 import org.example.backend.repository.ChatConversationRepository;
+import org.example.backend.service.WorkbenchParseService;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.web.bind.annotation.*;
 
@@ -16,6 +17,9 @@ public class ChatConversationController {
 
     @Autowired
     private ChatConversationRepository chatConversationRepository;
+
+    @Autowired
+    private WorkbenchParseService workbenchParseService;
 
     @GetMapping
     public ApiResponse<List<Map<String, Object>>> listConversations(
@@ -66,7 +70,26 @@ public class ChatConversationController {
         conv.setTitle(title);
         conv.setMessagesJson(messagesJson);
         conv.setResultJson(resultJson);
+
+        // Detect triggerParse flag in resultJson to start async workbench parsing
+        boolean shouldTriggerParse = false;
+        if (resultJson != null && resultJson.contains("\"triggerParse\":true")) {
+            String status = conv.getWorkbenchStatus();
+            if (status == null || "none".equals(status) || "failed".equals(status)) {
+                shouldTriggerParse = true;
+            }
+        }
+
+        if (shouldTriggerParse) {
+            conv.setWorkbenchStatus("parsing");
+            conv.setWorkbenchError(null);
+        }
+
         conv = chatConversationRepository.save(conv);
+
+        if (shouldTriggerParse) {
+            workbenchParseService.parseAsync(conv.getId());
+        }
 
         return ApiResponse.success(toDetail(conv));
     }
@@ -111,6 +134,9 @@ public class ChatConversationController {
         map.put("updatedAt", conv.getUpdatedAt().toString());
         map.put("messagesJson", conv.getMessagesJson());
         map.put("resultJson", conv.getResultJson());
+        map.put("workbenchPlanId", conv.getWorkbenchPlanId());
+        map.put("workbenchStatus", conv.getWorkbenchStatus() != null ? conv.getWorkbenchStatus() : "none");
+        map.put("workbenchError", conv.getWorkbenchError());
         return map;
     }
 
