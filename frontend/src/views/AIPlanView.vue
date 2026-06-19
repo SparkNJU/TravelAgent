@@ -156,6 +156,11 @@
             </div>
           </template>
 
+          <!-- 保存成功提示：与"同步到知识中心"同级，靠左 -->
+          <div v-if="planFinished && !loading" class="save-hint">
+            <span>✓ 本次对话已成功保存</span>
+          </div>
+
           <!-- 加载指示器：独立于消息气泡，在消息列表最底部 -->
           <div v-if="loading" class="loading-hint">
             <span class="loading-dot"></span>
@@ -163,9 +168,8 @@
             <span v-else>Agent 正在思考...</span>
           </div>
 
-          <!-- 保存成功 + Workbench -->
+          <!-- Workbench -->
           <div v-if="activeConversation && !loading && planFinished" class="workbench-trigger-wrapper">
-            <div class="save-hint">✓ 本次对话已成功保存</div>
             <!-- Parsing in progress -->
             <div v-if="workbenchParsing" class="workbench-parsing-indicator">
               <StreamingIndicator />
@@ -1953,10 +1957,14 @@ function formatToken(v) { if (!v) return '0'; return v >= 1000 ? (v / 1000).toFi
 @keyframes btn-spin { to { transform: rotate(360deg); } }
 
 .save-hint {
-  font-size: 13px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 4px;
+  padding: 2px 14px;
+  font-size: 12px;
   color: #10b981;
   font-weight: 500;
-  padding: 0 4px;
 }
 
 .workbench-parsing-indicator {
