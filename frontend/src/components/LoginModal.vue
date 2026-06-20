@@ -31,7 +31,7 @@
               <span v-if="loading" class="spinner"></span>
               {{ loading ? '登录中...' : '登 录' }}
             </button>
-            <div class="tips">测试账号: <strong>admin</strong> / <strong>admin123</strong></div>
+            <div class="tips">测试账号: <strong>NJU</strong> / <strong>123456</strong></div>
           </form>
 
           <!-- 注册表单 -->
