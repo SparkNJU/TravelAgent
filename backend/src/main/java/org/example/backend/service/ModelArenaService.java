@@ -296,7 +296,10 @@ public class ModelArenaService {
     }
 
     public void recordVote(ArenaVoteRequest request) {
-        if (request == null || request.getModelA() == null || request.getModelB() == null || request.getResult() == null) {
+        if (request == null
+                || request.getModelA() == null || request.getModelA().isBlank()
+                || request.getModelB() == null || request.getModelB().isBlank()
+                || request.getResult() == null || request.getResult().isBlank()) {
             return;
         }
         ModelArenaVote vote = new ModelArenaVote();
@@ -321,6 +324,9 @@ public class ModelArenaService {
         for (ModelArenaVote vote : votes) {
             String modelA = vote.getModelA();
             String modelB = vote.getModelB();
+            if (modelA == null || modelA.isBlank() || modelB == null || modelB.isBlank()) {
+                continue;
+            }
             ensureModel(models, modelA, wins, losses, ties, matches, n, w);
             ensureModel(models, modelB, wins, losses, ties, matches, n, w);
 
