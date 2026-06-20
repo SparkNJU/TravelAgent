@@ -117,11 +117,11 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 import SvgIcon from '../components/SvgIcon.vue'
 import ModelLeaderboardPanel from '../components/ModelLeaderboardPanel.vue'
-import { getVendorLogo, getModelMeta, MODEL_META, METRIC_OPTIONS } from '../utils/modelMeta'
+import { getVendorLogo, getModelMeta, METRIC_OPTIONS } from '../utils/modelMeta'
 
 const router = useRouter()
 const entries = ref([])
@@ -177,7 +177,20 @@ const loadPairwise = async () => {
 onMounted(() => {
   loadLeaderboard()
   loadPairwise()
+
+  document.addEventListener('visibilitychange', onVisibilityChange)
 })
+
+onUnmounted(() => {
+  document.removeEventListener('visibilitychange', onVisibilityChange)
+})
+
+const onVisibilityChange = () => {
+  if (document.visibilityState === 'visible') {
+    loadLeaderboard()
+    loadPairwise()
+  }
+}
 
 const activeMetricMeta = computed(() => METRIC_OPTIONS.find(item => item.id === activeMetric.value) || METRIC_OPTIONS[0])
 

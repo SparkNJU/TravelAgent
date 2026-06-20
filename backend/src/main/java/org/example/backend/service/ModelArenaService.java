@@ -296,7 +296,7 @@ public class ModelArenaService {
     }
 
     public void recordVote(ArenaVoteRequest request) {
-        if (request == null || request.getModelA() == null || request.getModelB() == null) {
+        if (request == null || request.getModelA() == null || request.getModelB() == null || request.getResult() == null) {
             return;
         }
         ModelArenaVote vote = new ModelArenaVote();

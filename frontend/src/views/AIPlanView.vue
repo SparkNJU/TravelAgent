@@ -1398,7 +1398,7 @@ async function handleArenaVote(msg, result) {
   msg.arena.voted = result
   activeConversation.value.messages = [...activeConversation.value.messages]
   try {
-    await fetch('/api/arena/vote', {
+    const res = await fetch('/api/arena/vote', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -1407,6 +1407,7 @@ async function handleArenaVote(msg, result) {
         result,
       }),
     })
+    if (!res.ok) throw new Error('投票请求失败')
   } catch {
     msg.arena.voted = ''
     activeConversation.value.messages = [...activeConversation.value.messages]
