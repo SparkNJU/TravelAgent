@@ -117,12 +117,13 @@
 </template>
 
 <script setup>
-import { computed, onMounted, ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { computed, onMounted, ref, watch } from 'vue'
+import { useRoute, useRouter } from 'vue-router'
 import SvgIcon from '../components/SvgIcon.vue'
 import ModelLeaderboardPanel from '../components/ModelLeaderboardPanel.vue'
 import { getVendorLogo, getModelMeta, MODEL_META, METRIC_OPTIONS } from '../utils/modelMeta'
 
+const route = useRoute()
 const router = useRouter()
 const entries = ref([])
 const loading = ref(false)
@@ -175,6 +176,12 @@ const loadPairwise = async () => {
 }
 
 onMounted(() => {
+  loadLeaderboard()
+  loadPairwise()
+})
+
+// 从投票页返回时自动刷新排行榜
+watch(() => route.fullPath, () => {
   loadLeaderboard()
   loadPairwise()
 })
