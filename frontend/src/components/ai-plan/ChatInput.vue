@@ -289,6 +289,11 @@ function handleSubmit() {
   color: #9ca3af;
 }
 
+/* 隐藏 Edge 浏览器在 textarea 上显示的蓝色清除叉号 */
+.chat-textarea::-ms-clear {
+  display: none;
+}
+
 .compact .chat-textarea {
   padding: 10px 14px 4px;
   font-size: 14px;

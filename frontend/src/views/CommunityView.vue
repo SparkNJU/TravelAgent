@@ -500,6 +500,10 @@ onMounted(() => {
   font-size: 15px;
 }
 
+.search-bar input::-webkit-search-cancel-button {
+  display: none;
+}
+
 .search-bar input::placeholder {
   color: var(--color-hint);
 }
