@@ -173,7 +173,7 @@ ReAct Agent 调用 finish(answer)
         ▼
   PlanChecker 检查 8 条结构规则
         │
-   ┌────┴────┐
+   ┌────┴────┐zai
    │         │
 合规      不合规
    │         │
@@ -236,32 +236,117 @@ ReAct Agent 调用 finish(answer)
 
 ---
 
-## Slide 11: 能力优化 — 工具链重构 + 上下文工程 + RAG 增强
+## Slide 11: 能力优化 — 工具链重构与扩展
 
-### 工具链重构与扩展
+**核心思路**: 抽象基类统一接口 + LLM 自纠正重试 + 多级降级兜底
 
-| 问题 | 解决方案 |
-|------|----------|
-| 联网搜索工具迭代次数过多 | 失败重试 + 超限降级处理 |
-| 工具参数 JSON 格式错误 | LLM 自纠正（temperature=0.1） |
-| 搜索关键词质量波动 | 查询预处理 + 防御性解析 |
+**代码片段 1 — Tool 抽象基类 + 注册表**
 
-### 上下文压缩工程
+```python
+# agent/services/tool_registry.py
+class Tool(ABC):
+    @property
+    @abstractmethod
+    def name(self) -> str: ...
+    @property
+    @abstractmethod
+    def parameters_schema(self) -> dict: ...
+    @abstractmethod
+    def execute(self, **kwargs) -> Any: ...
 
-- Token 使用超过阈值（80%）时自动触发
-- 保留系统消息 + 最近 6 轮对话
-- 用低温度 LLM 压缩历史为忠实摘要
-- 通过 SSE 通知前端已压缩
+class ToolRegistry:
+    def register(self, tool: Tool) -> None:
+        self._tools[tool.name] = tool
+    def call(self, name, arguments):
+        return self._tools.get(name).execute(**arguments)
+```
 
-### RAG 知识增强
+> 所有工具实现统一接口，`build_tool_registry` 按请求动态注册，竞技场模式可禁用 ask_user / suggest
 
-- 对话结果 + 联网搜索 → 向量化存储到 Milvus
-- 稠密(75%) + BM25 稀疏(25%) 混合检索
-- Agent 通过 `knowledge_search` 工具按需检索，规划有据可依
+**代码片段 2 — LLM 自纠正重试**
+
+```python
+# agent/services/react_agent.py
+def _execute_with_retry(self, tool_name, arguments):
+    for attempt in range(self._max_retries + 1):  # 默认 2 次重试
+        try:
+            return self._tools.call(tool_name, arguments)
+        except Exception as e:
+            if attempt < self._max_retries:
+                fixed = self._self_correct(tool_name, arguments, str(e))
+                if fixed:
+                    arguments = fixed  # LLM 修正参数后重试
+    return {"error": f"Tool {tool_name} failed after retries"}
+```
+
+> 工具调用失败不直接报错，把错误信息发给 LLM 修正 JSON 参数，最多重试 2 次
+
+**其他优化**:
+- 高德坐标三级兜底：本地地标库 → 高德 API → 城市中心偏移
+- Plan Parser 双路径：`chat_json` → `chat` + 正则 → 硬编码空结构
+- 所有 HTTP 调用设超时（搜索 20s、地理编码 10s、技能激活 5s）
 
 ---
 
-## Slide 12: 实机演示 — Demo 脚本
+## Slide 12: 能力优化 — 上下文压缩工程
+
+**核心问题**: 多轮对话 + 工具调用积累大量历史，Token 占用逼近模型上限
+
+**压缩策略**:
+
+```
+┌─────────────────────────────────────────────────┐
+│  系统消息 (System Prompt)          ← 始终保留    │
+├─────────────────────────────────────────────────┤
+│  压缩摘要 (LLM 生成)              ← 旧对话压缩  │
+├─────────────────────────────────────────────────┤
+│  最近 2 轮对话                    ← 原文保留     │
+└─────────────────────────────────────────────────┘
+```
+
+- **触发条件**: Token 占用超过阈值（默认 80%），每次新消息到达时检测
+- **压缩方式**: 用低温度 LLM（temperature=0.1）将旧对话摘要为忠实总结
+- **保留策略**: 系统消息 + 最近 2 轮原文不动，只压缩更早的历史
+- **为什么用 LLM 而不是截断**: 截断会丢失用户偏好和关键决策，摘要保留语义
+- **通知机制**: 压缩后通过 SSE 通知前端，用户可感知上下文已被压缩
+- **可配置参数**: `compress_threshold`（阈值）、`compress_keep_last`（保留轮数）
+
+---
+
+## Slide 13: 能力优化 — RAG 知识增强
+
+**核心思路**: 对话结果 + 联网搜索 → 向量化存储 → 混合检索，让 Agent 规划有据可依
+
+**存储架构**:
+
+```
+用户对话 + 联网搜索结果
+        │
+        ▼
+  Chunking → Embedding → Milvus 向量库
+                           │
+                    ┌──────┴──────┐
+                    │  稠密 75%   │ 语义相似度 (COSINE, HNSW)
+                    │  +          │
+                    │  BM25 25%  │ 关键词精确匹配
+                    └──────┬──────┘
+                           │
+                    WeightedRanker 加权融合
+                           │
+                    Agent 通过 knowledge_search 工具按需检索
+```
+
+**关键技术点**:
+
+- **混合检索**: 稠密向量（语义匹配）+ BM25 稀疏（关键词匹配）加权融合，兼顾"意思相近"和"字面命中"
+- **中文分词**: Milvus Schema 启用 `analyzer: chinese`，BM25 索引自动构建
+- **Embedding 缓存**: SHA-256 哈希做 key 的 write-through 缓存，相同文本只调用一次 API
+- **命名空间隔离**: 按用户 namespace 隔离检索范围，不同用户知识库互不干扰
+- **两种接入模式**: `inprocess`（进程内直连）/ `http`（远程服务），外部服务不可用时可降级
+
+---
+
+## Slide 14: 实机演示 — Demo 脚本
 
 ### Demo 1: AI 对话生成旅行规划（2-3 分钟）
 
@@ -290,7 +375,7 @@ ReAct Agent 调用 finish(answer)
 
 ---
 
-## Slide 13: 技术架构总览
+## Slide 15: 技术架构总览
 
 ```
 Frontend (Vue 3 + Vite, :5173)
@@ -318,7 +403,7 @@ Agent (FastAPI, :8000)
 
 ---
 
-## Slide 14: 团队分工
+## Slide 16: 团队分工
 
 | 成员 | 职责 | 主线 | 核心交付 |
 |------|------|------|----------|
@@ -331,7 +416,7 @@ Agent (FastAPI, :8000)
 
 ---
 
-## Slide 15: 总结与展望
+## Slide 17: 总结与展望
 
 ### 迭代三核心成果
 
@@ -351,7 +436,7 @@ Agent (FastAPI, :8000)
 
 ---
 
-## Slide 16: Q&A
+## Slide 18: Q&A
 
 - 感谢老师和同学们的聆听
 - 欢迎提问与交流
