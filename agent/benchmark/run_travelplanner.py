@@ -172,7 +172,7 @@ async def run_benchmark(
     concurrent: int = 1,
     llm_base_url: str = "https://dashscope.aliyuncs.com/compatible-mode/v1",
     llm_api_key: str | None = None,
-    llm_model: str = "deepseek-v4-flash",
+    llm_model: str = "glm-5.1",
 ) -> dict:
     """
     Run the full benchmark pipeline.
@@ -322,7 +322,7 @@ def main():
                         help="Number of concurrent agent calls")
     parser.add_argument("--llm_base_url", type=str, default="https://token-plan-cn.xiaomimimo.com/v1",
                         help="LLM API base URL for parsing")
-    parser.add_argument("--llm_model", type=str, default="deepseek-v4-flash",
+    parser.add_argument("--llm_model", type=str, default="glm-5.1",
                         help="LLM model name for parsing")
     parser.add_argument("--llm_api_key", type=str, default=None,
                         help="LLM API key (overrides env)")

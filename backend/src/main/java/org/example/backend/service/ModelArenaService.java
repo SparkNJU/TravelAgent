@@ -32,11 +32,11 @@ import java.util.concurrent.TimeoutException;
 public class ModelArenaService {
 
     private static final List<String> DEFAULT_MODELS = List.of(
+            "glm-5.1",
             "deepseek-v4-flash",
             "kimi-k2.6",
             "MiniMax-M2.5",
-            "qwen3.6-plus",
-            "glm-5.1"
+            "qwen3.6-plus"
     );
 
     private final TripAssistantService tripAssistantService;
