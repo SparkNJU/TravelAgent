@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS chat_conversations (
     workbench_plan_id BIGINT,
     workbench_status VARCHAR(20) DEFAULT 'none',
     workbench_error VARCHAR(500),
+    is_streaming BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
     FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,

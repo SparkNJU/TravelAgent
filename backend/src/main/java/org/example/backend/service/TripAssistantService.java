@@ -22,6 +22,9 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.LinkedBlockingQueue;
+import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -59,6 +62,13 @@ public class TripAssistantService {
     private String agentCompressUrl;
 
     private final ChatConversationRepository conversationRepository;
+
+    // 流式接续：conversationId -> 已累积事件列表（用于回放）
+    private final ConcurrentHashMap<Long, List<Map<String, Object>>> streamBuffers = new ConcurrentHashMap<>();
+    // 流式接续：conversationId -> 实时事件队列（用于接续新事件）
+    private final ConcurrentHashMap<Long, LinkedBlockingQueue<Map<String, Object>>> streamQueues = new ConcurrentHashMap<>();
+    // 流式接续：conversationId -> 结束标记
+    private final ConcurrentHashMap<Long, Boolean> streamEnded = new ConcurrentHashMap<>();
 
     public TripAssistantService(RestTemplate restTemplate, ChatConversationRepository conversationRepository) {
         this.restTemplate = restTemplate;
@@ -135,58 +145,36 @@ public class TripAssistantService {
 
     /**
      * SSE streaming endpoint: proxies the Python agent's SSE stream to the frontend.
-     * Forwards model and temperature for per-request LLM configuration.
+     * Accumulates all events into memory buffers for reconnection support.
      */
     public SseEmitter streamAgentChat(AgentChatRequest req, MultipartFile file) {
         SseEmitter emitter = new SseEmitter(300_000L); // 5 min timeout
 
+        Long convId = req.getConversationId();
+
+        // 初始化流式缓冲
+        if (convId != null) {
+            streamBuffers.put(convId, new java.util.ArrayList<>());
+            streamQueues.put(convId, new LinkedBlockingQueue<>());
+            streamEnded.put(convId, false);
+            // 标记对话为流式中
+            try {
+                ChatConversation conv = conversationRepository.findByIdAndUserId(convId, req.getUserId()).orElse(null);
+                if (conv != null) {
+                    conv.setIsStreaming(true);
+                    conversationRepository.save(conv);
+                }
+            } catch (Exception e) {
+                logger.warn("Failed to set isStreaming=true for convId={}", convId, e);
+            }
+        }
+
         sseExecutor.execute(() -> {
             try {
-                Map<String, Object> payload = new LinkedHashMap<>();
-                payload.put("query", req.getQuery());
-                payload.put("user_id", req.getUserId());
-                payload.put("mode", req.getMode());
-                payload.put("generate_plan_first", req.isGeneratePlanFirst());
-                if (req.isArena()) {
-                    payload.put("arena", true);
-                }
-                if (req.isForceCompress()) {
-                    payload.put("force_compress", true);
-                }
-
-                if (req.getModel() != null && !req.getModel().isEmpty()) {
-                    payload.put("model", req.getModel());
-                }
-                if (req.getTemperature() != null) {
-                    payload.put("temperature", req.getTemperature());
-                }
-
-                payload.put("web_search_enabled", req.isWebSearchEnabled());
-                payload.put("knowledge_search_enabled", req.isKnowledgeSearchEnabled());
-
-                if (req.getChatHistory() != null && !req.getChatHistory().isEmpty()) {
-                    payload.put("chat_history", req.getChatHistory());
-                } else if (req.getChatHistoryJson() != null && !req.getChatHistoryJson().isEmpty()) {
-                    try {
-                        List<Map<String, Object>> parsedHistory = objectMapper.readValue(
-                            req.getChatHistoryJson(),
-                            new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}
-                        );
-                        payload.put("chat_history", parsedHistory);
-                    } catch (Exception e) {
-                        logger.warn("Failed to parse chatHistoryJson", e);
-                    }
-                }
-
-                if (file != null && !file.isEmpty()) {
-                    payload.put("file_name", file.getOriginalFilename());
-                    payload.put("file_mime_type", file.getContentType());
-                    payload.put("file_base64", Base64.getEncoder().encodeToString(file.getBytes()));
-                }
-
+                Map<String, Object> payload = buildAgentPayload(req, file);
                 String jsonBody = objectMapper.writeValueAsString(payload);
-                logger.info("SSE stream started: userId={}, mode={}, model={}, query={}",
-                        req.getUserId(), req.getMode(), req.getModel(), req.getQuery());
+                logger.info("SSE stream started: userId={}, mode={}, model={}, query={}, convId={}",
+                        req.getUserId(), req.getMode(), req.getModel(), req.getQuery(), convId);
 
                 HttpRequest request = HttpRequest.newBuilder()
                         .uri(URI.create(agentChatUrl))
@@ -204,10 +192,14 @@ public class TripAssistantService {
                     emitter.send(SseEmitter.event().name("error").data(
                             Map.of("type", "error", "content", "Agent returned HTTP " + response.statusCode())));
                     emitter.complete();
+                    cleanupStream(convId);
                     return;
                 }
 
                 StringBuilder accumulatedAnswer = new StringBuilder();
+                StringBuilder accumulatedPlan = new StringBuilder();
+                List<Map<String, Object>> allEvents = new java.util.ArrayList<>();
+                int eventCount = 0;
 
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
@@ -219,42 +211,102 @@ public class TripAssistantService {
                         if (line.startsWith("data: ")) {
                             String data = line.substring(6);
                             if ("[DONE]".equals(data)) {
-                                emitter.send(SseEmitter.event().name("done").data(
-                                        Map.of("type", "done", "content", "")));
+                                try {
+                                    emitter.send(SseEmitter.event().name("done").data(
+                                            Map.of("type", "done", "content", "")));
+                                } catch (IOException ignored) {}
                                 break;
                             }
-                            // 累积 answer 类型事件的内容，用于流式结束后持久化
+                            // 解析并累积所有事件
                             try {
                                 @SuppressWarnings("unchecked")
                                 Map<String, Object> evt = objectMapper.readValue(data, Map.class);
-                                if ("answer".equals(evt.get("type")) && evt.get("content") != null) {
-                                    accumulatedAnswer.append(evt.get("content").toString());
+                                String type = (String) evt.get("type");
+                                String content = evt.get("content") != null ? evt.get("content").toString() : "";
+
+                                if ("answer".equals(type)) {
+                                    accumulatedAnswer.append(content);
+                                } else if ("plan".equals(type)) {
+                                    accumulatedPlan.append(content);
+                                }
+
+                                // 保存所有非 done/token_status 事件
+                                if (type != null && !"done".equals(type) && !"token_status".equals(type)) {
+                                    Map<String, Object> eventRecord = new LinkedHashMap<>();
+                                    eventRecord.put("type", type);
+                                    eventRecord.put("content", content);
+                                    if (evt.get("metadata") != null) {
+                                        eventRecord.put("metadata", evt.get("metadata"));
+                                    }
+                                    allEvents.add(eventRecord);
+
+                                    // 推入队列供 reconnect 使用
+                                    if (convId != null) {
+                                        LinkedBlockingQueue<Map<String, Object>> queue = streamQueues.get(convId);
+                                        if (queue != null) {
+                                            queue.offer(eventRecord);
+                                        }
+                                        List<Map<String, Object>> buffer = streamBuffers.get(convId);
+                                        if (buffer != null) {
+                                            buffer.add(eventRecord);
+                                        }
+                                    }
+                                }
+
+                                eventCount++;
+                                // 每 5 个事件存一次 DB
+                                if (eventCount % 5 == 0 && convId != null) {
+                                    saveStreamResult(req, accumulatedAnswer.toString(), accumulatedPlan.toString(), allEvents, true);
                                 }
                             } catch (Exception ignored) {}
                             logger.debug("SSE event: {}", data);
-                            emitter.send(SseEmitter.event().name("agent").data(data));
+                            try {
+                                emitter.send(SseEmitter.event().name("agent").data(data));
+                            } catch (IOException e) {
+                                // 前端断开，但继续读 Agent
+                                logger.warn("SSE client disconnected, continuing Agent read: userId={}, convId={}", req.getUserId(), convId);
+                            }
                         }
                     }
                 }
 
-                // 流式结束后，将累积的 answer 内容保存到对话记录
-                saveStreamResult(req, accumulatedAnswer.toString());
+                // 流式结束，最终存一次
+                logger.info("SSE stream loop ended: userId={}, events={}, answerLen={}, convId={}",
+                        req.getUserId(), allEvents.size(), accumulatedAnswer.length(), convId);
+                saveStreamResult(req, accumulatedAnswer.toString(), accumulatedPlan.toString(), allEvents, false);
 
-                logger.info("SSE stream completed: userId={}", req.getUserId());
-                emitter.complete();
+                // 标记流式结束
+                if (convId != null) {
+                    streamEnded.put(convId, true);
+                    // 向队列推入结束标记
+                    LinkedBlockingQueue<Map<String, Object>> queue = streamQueues.get(convId);
+                    if (queue != null) {
+                        queue.offer(Map.of("type", "__stream_end__", "content", ""));
+                    }
+                }
+
+                logger.info("SSE stream completed: userId={}, convId={}", req.getUserId(), convId);
+                try {
+                    emitter.complete();
+                } catch (Exception ignored) {}
             } catch (IOException e) {
-                // Client disconnected — just log and clean up
                 logger.warn("SSE client disconnected: userId={}, reason: {}", req.getUserId(), e.getMessage());
-                emitter.complete();
+                try { emitter.complete(); } catch (Exception ignored) {}
             } catch (Exception e) {
                 logger.error("Agent SSE proxy error: userId={}", req.getUserId(), e);
                 try {
                     emitter.send(SseEmitter.event().name("error").data(
                             Map.of("type", "error", "content", e.getMessage())));
                 } catch (Exception ignored) {}
-                try {
-                    emitter.completeWithError(e);
-                } catch (Exception ignored) {}
+                try { emitter.completeWithError(e); } catch (Exception ignored) {}
+            } finally {
+                // 延迟清理缓冲（给 reconnect 留时间读取）
+                if (convId != null) {
+                    sseExecutor.execute(() -> {
+                        try { Thread.sleep(30_000); } catch (InterruptedException ignored) {}
+                        cleanupStream(convId);
+                    });
+                }
             }
         });
 
@@ -265,45 +317,172 @@ public class TripAssistantService {
     }
 
     /**
-     * 流式结束后，将累积的 answer 内容保存到对话记录。
-     * 如果请求中包含 conversationId，则更新已有对话；否则创建新对话。
+     * SSE reconnect endpoint: replays buffered events then streams new ones.
      */
-    private void saveStreamResult(AgentChatRequest req, String answer) {
-        if (answer == null || answer.isEmpty()) return;
+    public SseEmitter reconnectStream(Long conversationId, Long userId) {
+        SseEmitter emitter = new SseEmitter(300_000L);
+
+        sseExecutor.execute(() -> {
+            try {
+                List<Map<String, Object>> buffer = streamBuffers.get(conversationId);
+                LinkedBlockingQueue<Map<String, Object>> queue = streamQueues.get(conversationId);
+                Boolean ended = streamEnded.get(conversationId);
+
+                if (buffer == null || queue == null) {
+                    // 流式已结束或不存在
+                    logger.info("Reconnect: no active stream for convId={}", conversationId);
+                    emitter.send(SseEmitter.event().name("done").data(
+                            Map.of("type", "done", "content", "")));
+                    emitter.complete();
+                    return;
+                }
+
+                logger.info("Reconnect: replaying {} buffered events for convId={}", buffer.size(), conversationId);
+
+                // 回放缓冲中的已有事件
+                for (Map<String, Object> event : buffer) {
+                    try {
+                        emitter.send(SseEmitter.event().name("agent").data(objectMapper.writeValueAsString(event)));
+                    } catch (IOException e) {
+                        logger.warn("Reconnect: client disconnected during replay, convId={}", conversationId);
+                        return;
+                    }
+                }
+
+                // 如果流式已结束，发送 done
+                if (Boolean.TRUE.equals(ended)) {
+                    try {
+                        emitter.send(SseEmitter.event().name("done").data(
+                                Map.of("type", "done", "content", "")));
+                    } catch (IOException ignored) {}
+                    emitter.complete();
+                    return;
+                }
+
+                // 从队列读取新事件（实时接续）
+                logger.info("Reconnect: switching to live queue for convId={}", conversationId);
+                while (true) {
+                    Map<String, Object> event = queue.poll(30, TimeUnit.SECONDS);
+                    if (event == null) {
+                        // 超时，可能流式已结束
+                        logger.info("Reconnect: queue timeout for convId={}", conversationId);
+                        break;
+                    }
+                    if ("__stream_end__".equals(event.get("type"))) {
+                        // 流式结束标记
+                        try {
+                            emitter.send(SseEmitter.event().name("done").data(
+                                    Map.of("type", "done", "content", "")));
+                        } catch (IOException ignored) {}
+                        break;
+                    }
+                    try {
+                        emitter.send(SseEmitter.event().name("agent").data(objectMapper.writeValueAsString(event)));
+                    } catch (IOException e) {
+                        logger.info("Reconnect: client disconnected during live, convId={}", conversationId);
+                        return;
+                    }
+                }
+
+                emitter.complete();
+            } catch (Exception e) {
+                logger.error("Reconnect error: convId={}", conversationId, e);
+                try { emitter.completeWithError(e); } catch (Exception ignored) {}
+            }
+        });
+
+        emitter.onTimeout(emitter::complete);
+        emitter.onError(t -> emitter.complete());
+
+        return emitter;
+    }
+
+    private void cleanupStream(Long convId) {
+        streamBuffers.remove(convId);
+        streamQueues.remove(convId);
+        streamEnded.remove(convId);
+        logger.info("Stream buffer cleaned up: convId={}", convId);
+    }
+
+    private Map<String, Object> buildAgentPayload(AgentChatRequest req, MultipartFile file) throws Exception {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("query", req.getQuery());
+        payload.put("user_id", req.getUserId());
+        payload.put("mode", req.getMode());
+        payload.put("generate_plan_first", req.isGeneratePlanFirst());
+        if (req.isArena()) payload.put("arena", true);
+        if (req.isForceCompress()) payload.put("force_compress", true);
+        if (req.getModel() != null && !req.getModel().isEmpty()) payload.put("model", req.getModel());
+        if (req.getTemperature() != null) payload.put("temperature", req.getTemperature());
+        payload.put("web_search_enabled", req.isWebSearchEnabled());
+        payload.put("knowledge_search_enabled", req.isKnowledgeSearchEnabled());
+
+        if (req.getChatHistory() != null && !req.getChatHistory().isEmpty()) {
+            payload.put("chat_history", req.getChatHistory());
+        } else if (req.getChatHistoryJson() != null && !req.getChatHistoryJson().isEmpty()) {
+            try {
+                List<Map<String, Object>> parsedHistory = objectMapper.readValue(
+                    req.getChatHistoryJson(),
+                    new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}
+                );
+                payload.put("chat_history", parsedHistory);
+            } catch (Exception e) {
+                logger.warn("Failed to parse chatHistoryJson", e);
+            }
+        }
+
+        if (file != null && !file.isEmpty()) {
+            payload.put("file_name", file.getOriginalFilename());
+            payload.put("file_mime_type", file.getContentType());
+            payload.put("file_base64", Base64.getEncoder().encodeToString(file.getBytes()));
+        }
+        return payload;
+    }
+
+    /**
+     * 流式过程中周期性保存 + 流式结束最终保存。
+     * 将累积的 answer、plan、events 写入对话的最后一条 assistant 消息。
+     */
+    private void saveStreamResult(AgentChatRequest req, String answer, String plan,
+                                  List<Map<String, Object>> events, boolean isStreaming) {
         try {
             Long convId = req.getConversationId();
             Long userId = req.getUserId();
-            ChatConversation conv = null;
+            if (convId == null) return;
 
-            if (convId != null) {
-                conv = conversationRepository.findByIdAndUserId(convId, userId).orElse(null);
-            }
+            ChatConversation conv = conversationRepository.findByIdAndUserId(convId, userId).orElse(null);
+            if (conv == null) return;
 
-            if (conv == null) {
-                return; // 对话不存在，跳过（可能是 guest 用户）
-            }
-
-            // 更新最后一条 assistant 消息的 content（前端已通过 syncActiveToBackend 创建了空的 assistant 消息）
             String existingMessages = conv.getMessagesJson();
             if (existingMessages == null || existingMessages.isEmpty()) return;
 
             @SuppressWarnings("unchecked")
             List<Map<String, Object>> messages = objectMapper.readValue(existingMessages, List.class);
 
-            // 找到最后一条 assistant 消息并更新其 content
+            // 找到最后一条 assistant 消息并更新
             for (int i = messages.size() - 1; i >= 0; i--) {
                 Map<String, Object> msg = messages.get(i);
                 if ("assistant".equals(msg.get("role"))) {
-                    msg.put("content", answer);
+                    if (answer != null && !answer.isEmpty()) {
+                        msg.put("content", answer);
+                    }
+                    if (plan != null && !plan.isEmpty()) {
+                        msg.put("planContent", plan);
+                    }
+                    if (events != null && !events.isEmpty()) {
+                        msg.put("events", events);
+                    }
                     break;
                 }
             }
 
             conv.setMessagesJson(objectMapper.writeValueAsString(messages));
+            conv.setIsStreaming(isStreaming);
             conversationRepository.save(conv);
-            logger.info("Stream result saved: convId={}, userId={}, answerLen={}", conv.getId(), userId, answer.length());
+            logger.debug("Stream result saved: convId={}, isStreaming={}, events={}", convId, isStreaming,
+                    events != null ? events.size() : 0);
         } catch (Exception e) {
-            logger.error("Failed to save stream result: userId={}", req.getUserId(), e);
+            logger.error("Failed to save stream result: convId={}", req.getConversationId(), e);
         }
     }
 
@@ -426,52 +605,6 @@ public class TripAssistantService {
         }
 
         onDone.run();
-    }
-
-    private Map<String, Object> buildAgentPayload(AgentChatRequest req, MultipartFile file) throws IOException {
-        Map<String, Object> payload = new LinkedHashMap<>();
-        payload.put("query", req.getQuery());
-        payload.put("user_id", req.getUserId());
-        payload.put("mode", req.getMode());
-        payload.put("generate_plan_first", req.isGeneratePlanFirst());
-        if (req.isArena()) {
-            payload.put("arena", true);
-        }
-        if (req.isForceCompress()) {
-            payload.put("force_compress", true);
-        }
-
-        if (req.getModel() != null && !req.getModel().isEmpty()) {
-            payload.put("model", req.getModel());
-        }
-        if (req.getTemperature() != null) {
-            payload.put("temperature", req.getTemperature());
-        }
-
-        payload.put("web_search_enabled", req.isWebSearchEnabled());
-        payload.put("knowledge_search_enabled", req.isKnowledgeSearchEnabled());
-
-        if (req.getChatHistory() != null && !req.getChatHistory().isEmpty()) {
-            payload.put("chat_history", req.getChatHistory());
-        } else if (req.getChatHistoryJson() != null && !req.getChatHistoryJson().isEmpty()) {
-            try {
-                List<Map<String, Object>> parsedHistory = objectMapper.readValue(
-                        req.getChatHistoryJson(),
-                        new com.fasterxml.jackson.core.type.TypeReference<List<Map<String, Object>>>() {}
-                );
-                payload.put("chat_history", parsedHistory);
-            } catch (Exception e) {
-                logger.warn("Failed to parse chatHistoryJson", e);
-            }
-        }
-
-        if (file != null && !file.isEmpty()) {
-            payload.put("file_name", file.getOriginalFilename());
-            payload.put("file_mime_type", file.getContentType());
-            payload.put("file_base64", Base64.getEncoder().encodeToString(file.getBytes()));
-        }
-
-        return payload;
     }
 
     private Map<String, Object> fallbackPlan(String query, MultipartFile file, String reason) {

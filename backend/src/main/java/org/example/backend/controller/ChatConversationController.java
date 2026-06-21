@@ -137,6 +137,7 @@ public class ChatConversationController {
         map.put("workbenchPlanId", conv.getWorkbenchPlanId());
         map.put("workbenchStatus", conv.getWorkbenchStatus() != null ? conv.getWorkbenchStatus() : "none");
         map.put("workbenchError", conv.getWorkbenchError());
+        map.put("isStreaming", Boolean.TRUE.equals(conv.getIsStreaming()));
         return map;
     }
 

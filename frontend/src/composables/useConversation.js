@@ -50,6 +50,7 @@ export function useConversation() {
             workbenchPlanId: item.workbenchPlanId || null,
             workbenchStatus: item.workbenchStatus || 'none',
             workbenchError: item.workbenchError || null,
+            isStreaming: item.isStreaming || false,
           }))
           conversations.value.sort((a, b) => b.updatedAt - a.updatedAt)
           if (conversations.value.length && !activeId.value) {

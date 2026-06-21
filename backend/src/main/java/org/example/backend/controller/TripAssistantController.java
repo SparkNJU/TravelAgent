@@ -70,4 +70,15 @@ public class TripAssistantController {
         );
         return ApiResponse.success(result);
     }
+
+    /**
+     * SSE reconnect endpoint: replays buffered events then streams new ones.
+     * Used when the user navigates back to an active streaming conversation.
+     */
+    @GetMapping(value = "/chat/reconnect", produces = MediaType.TEXT_EVENT_STREAM_VALUE + ";charset=UTF-8")
+    public SseEmitter reconnectStream(
+            @RequestParam Long conversationId,
+            @RequestParam Long userId) {
+        return tripAssistantService.reconnectStream(conversationId, userId);
+    }
 }

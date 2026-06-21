@@ -417,7 +417,7 @@ const {
   addMessage, setResult, persist, syncActiveToBackend, load,
 } = useConversation()
 
-const { streamPost } = useSSE()
+const { streamPost, streamGet } = useSSE()
 const {
   webSearchEnabled,
   knowledgeSearchEnabled,
@@ -452,6 +452,90 @@ function getStreamState(convId) {
     })
   }
   return streamStates.get(convId)
+}
+
+// ── 流式接续：切路由回来后自动重连 SSE ──
+let reconnectController = null
+
+function startReconnect(conv) {
+  if (reconnectController) {
+    reconnectController.abort()
+    reconnectController = null
+  }
+  if (!conv?.backendId) return
+
+  const lastMsg = conv.messages.at(-1)
+  if (!lastMsg || lastMsg.role !== 'assistant') return
+
+  // 设置流式状态
+  const state = getStreamState(conv.id)
+  state.loading = true
+  scrollToBottomForce()
+
+  const userId = localStorage.getItem('userId') || '1'
+  const url = `/api/assistant/chat/reconnect?conversationId=${conv.backendId}&userId=${userId}`
+
+  reconnectController = streamGet(
+    url,
+    (event) => {
+      // 复用正常流式的事件处理逻辑
+      if (event.type === 'token_status') {
+        tokenStatus.value = {
+          ...(tokenStatus.value || {}),
+          ...(event.metadata || {}),
+        }
+        return
+      }
+      if (event.type === 'answer') {
+        lastMsg.answer = (lastMsg.answer || '') + event.content
+      } else if (event.type === 'plan') {
+        if (!lastMsg.planContent) lastMsg.planContent = ''
+        lastMsg.planContent += event.content
+      } else if (event.type === 'done') {
+        return
+      } else if (event.type === 'ask_user') {
+        state.pendingAskUser = {
+          message: event.content,
+          questions: event.metadata?.questions || [],
+        }
+        lastMsg.events.push({ type: 'ask_user', content: event.content, metadata: event.metadata })
+      } else if (event.type === 'suggestions') {
+        state.activeSuggestions = event.metadata?.questions || []
+        lastMsg.events.push({ type: 'suggestions', content: event.content, metadata: event.metadata })
+      } else if (event.type === 'action' && event.metadata?.tool === 'finish') {
+        lastMsg._planFinished = true
+        conv.workbenchStatus = 'parsing'
+      } else if (event.type === 'observation' && lastMsg._planFinished) {
+        // skip
+      } else if (['thought', 'action', 'observation', 'reflection'].includes(event.type)) {
+        lastMsg.events.push({ type: event.type, content: event.content, metadata: event.metadata })
+      } else if (event.type === 'error') {
+        lastMsg.events.push({ type: 'observation', content: `Error: ${event.content}`, metadata: {} })
+      }
+      scrollToBottom()
+      conv.messages = [...conv.messages]
+    },
+    () => {
+      // onDone: 流式结束
+      finishStreamFor(conv.id)
+      reconnectController = null
+    },
+    (err) => {
+      // onError
+      console.error('Reconnect SSE error:', err)
+      state.loading = false
+      state.controller = null
+      streamStates.delete(conv.id)
+      reconnectController = null
+    },
+  )
+}
+
+function stopReconnect() {
+  if (reconnectController) {
+    reconnectController.abort()
+    reconnectController = null
+  }
 }
 
 // Template-facing computed refs (backward-compatible with existing template bindings)
@@ -571,6 +655,7 @@ watch(settingTooltip, (val) => {
 onUnmounted(() => {
   document.removeEventListener('click', onDocClick)
   window.removeEventListener('beforeunload', flushPendingSave)
+  stopReconnect()
 })
 
 // 页面关闭/刷新前立即保存未完成的对话
@@ -986,11 +1071,15 @@ watch(activeId, () => {
   manualTraceOpen.value = {}
   confirmedAskEvents.value = new Set()
   isUserScrolled.value = false
+  stopReconnect()
   syncJumpMarkers()
-  // 切换到正在解析的会话时，向后端查询一次最新状态
   const conv = activeConversation.value
   if (conv?.workbenchStatus === 'parsing') {
     refreshWorkbenchStatus(conv)
+  }
+  // 切换到正在流式输出的会话时，自动重连
+  if (conv?.isStreaming) {
+    startReconnect(conv)
   }
 })
 
@@ -999,10 +1088,13 @@ onMounted(() => {
   window.addEventListener('beforeunload', flushPendingSave)
   if (route.query.planId) loadSavedPlan(route.query.planId)
   load().then(() => {
-    // 页面加载时，如果当前会话正在解析，查一次最新状态
     const conv = activeConversation.value
     if (conv?.workbenchStatus === 'parsing') {
       refreshWorkbenchStatus(conv)
+    }
+    // 检测是否有未完成的流式输出，自动重连 SSE
+    if (conv?.isStreaming) {
+      startReconnect(conv)
     }
     scrollToBottomWhenStable()
     if (route.query.auto === '1' && initialQuery.value) {

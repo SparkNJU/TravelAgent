@@ -38,6 +38,9 @@ public class ChatConversation {
     @Column(name = "workbench_error", length = 500)
     private String workbenchError;
 
+    @Column(name = "is_streaming")
+    private Boolean isStreaming = false;
+
     @PrePersist
     protected void onCreate() {
         createdAt = LocalDateTime.now();
@@ -80,4 +83,7 @@ public class ChatConversation {
 
     public String getWorkbenchError() { return workbenchError; }
     public void setWorkbenchError(String workbenchError) { this.workbenchError = workbenchError; }
+
+    public Boolean getIsStreaming() { return isStreaming; }
+    public void setIsStreaming(Boolean isStreaming) { this.isStreaming = isStreaming; }
 }
