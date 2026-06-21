@@ -145,27 +145,6 @@
                 </div>
               </div>
 
-              <div v-if="selectedNote.isCommunity" class="comment-box">
-                <button class="comment-toggle" @click="toggleComments">
-                  <SvgIcon name="message" :size="15" />
-                  {{ showComments ? '收起评论' : `查看评论（${selectedNote.comments || 0}）` }}
-                </button>
-                <div v-if="showComments" class="comment-list">
-                  <div v-for="comment in comments" :key="comment.id" class="comment-item">
-                    <span class="avatar-text small">{{ (comment.username || '用').charAt(0) }}</span>
-                    <div>
-                      <strong>{{ comment.username }}</strong>
-                      <p>{{ comment.content }}</p>
-                    </div>
-                  </div>
-                  <p v-if="!comments.length" class="no-comments">暂无评论</p>
-                  <div class="comment-input">
-                    <input v-model="newComment" placeholder="写下你的评论..." @keydown.enter="submitComment" />
-                    <button @click="submitComment"><SvgIcon name="send" :size="14" /></button>
-                  </div>
-                </div>
-              </div>
-
               <div class="detail-actions">
                 <button class="detail-primary" @click="planFromNote(selectedNote)">
                   <SvgIcon name="sparkles" :size="15" />
@@ -180,9 +159,13 @@
                   <SvgIcon :name="selectedNote.isLiked ? 'heart-fill' : 'heart'" :size="15" />
                   {{ selectedNote.isLiked ? '已喜欢' : '喜欢' }}
                 </button>
-                <button class="detail-secondary" @click="handleShare(selectedNote)">
-                  <SvgIcon name="share" :size="15" />
-                  分享
+                <button
+                  v-if="selectedNote.isCommunity && isOwner(selectedNote)"
+                  class="detail-secondary danger"
+                  @click="handleDeletePost(selectedNote)"
+                >
+                  <SvgIcon name="trash" :size="15" />
+                  删除
                 </button>
               </div>
             </div>
@@ -212,9 +195,6 @@ const backendNotes = ref([])
 const postsLoading = ref(false)
 const selectedNote = ref(null)
 const showPublishModal = ref(false)
-const showComments = ref(false)
-const comments = ref([])
-const newComment = ref('')
 
 function requireAuth(action) {
   if (!isLoggedIn.value) {
@@ -323,14 +303,10 @@ function resetFilters() {
 
 function openNote(note) {
   selectedNote.value = note
-  comments.value = []
-  newComment.value = ''
-  showComments.value = false
 }
 
 function closeNote() {
   selectedNote.value = null
-  showComments.value = false
 }
 
 function buildPlanQuery(note) {
@@ -342,58 +318,25 @@ function planFromNote(note) {
   router.push({ path: '/ai-plan', query: { q: buildPlanQuery(note), auto: '1' } })
 }
 
-async function toggleComments() {
-  showComments.value = !showComments.value
-  const note = selectedNote.value
-  if (!showComments.value || !note?.isCommunity || comments.value.length) return
-  try {
-    const res = await fetch(`/api/community/posts/${note.postId}/comments`)
-    const data = await res.json()
-    comments.value = data.code === 200 && Array.isArray(data.data) ? data.data : []
-  } catch {
-    comments.value = []
-  }
+function isOwner(note) {
+  if (!note?.isCommunity || !note.raw) return false
+  const currentUserId = localStorage.getItem('userId') || '1'
+  return String(note.raw.userId || note.raw.authorId || '') === String(currentUserId)
 }
 
-async function submitComment() {
-  if (!selectedNote.value?.isCommunity) return
-  if (!isLoggedIn.value) {
-    showLogin?.()
-    return
-  }
-  if (!newComment.value.trim()) return
+async function handleDeletePost(note) {
+  if (!confirm('确定要删除这篇帖子吗？')) return
   try {
-    const res = await fetch(`/api/community/posts/${selectedNote.value.postId}/comments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Id': localStorage.getItem('userId') || '1',
-      },
-      body: JSON.stringify({ content: newComment.value.trim() }),
-    })
+    const res = await fetch(`/api/community/posts/${note.postId}`, { method: 'DELETE' })
     const data = await res.json()
     if (data.code === 200) {
-      comments.value.unshift(data.data || {
-        id: Date.now(),
-        username: localStorage.getItem('username') || '用户',
-        content: newComment.value.trim(),
-      })
-      selectedNote.value.comments = (selectedNote.value.comments || 0) + 1
-      newComment.value = ''
+      backendNotes.value = backendNotes.value.filter(n => n.postId !== note.postId)
+      closeNote()
+    } else {
+      alert(data.message || '删除失败')
     }
   } catch {
-    // 评论失败时保持弹窗状态，避免丢失用户正在查看的内容。
-  }
-}
-
-function handleShare(note) {
-  const url = `${window.location.origin}/ai-plan?q=${encodeURIComponent(buildPlanQuery(note))}`
-  if (navigator.share) {
-    navigator.share({ title: note.title, text: note.summary, url }).catch(() => {})
-  } else {
-    navigator.clipboard?.writeText(url).then(() => {
-      alert('链接已复制到剪贴板')
-    }).catch(() => {})
+    alert('删除失败，请稍后重试')
   }
 }
 
@@ -550,8 +493,7 @@ onMounted(() => {
 .plan-float,
 .detail-close,
 .detail-primary,
-.detail-secondary,
-.comment-toggle {
+.detail-secondary {
   font-family: var(--font-family);
 }
 
@@ -735,8 +677,7 @@ onMounted(() => {
 .note-author,
 .note-stats,
 .detail-author,
-.detail-actions,
-.comment-input {
+.detail-actions {
   display: flex;
   align-items: center;
 }
@@ -1031,81 +972,6 @@ onMounted(() => {
   font-size: 12px;
 }
 
-.comment-box {
-  margin: 8px 0 18px;
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  overflow: hidden;
-}
-
-.comment-toggle {
-  display: inline-flex;
-  width: 100%;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 40px;
-  border: 0;
-  background: var(--color-surface);
-  color: var(--color-body);
-  font-weight: 800;
-  cursor: pointer;
-}
-
-.comment-list {
-  padding: 12px;
-}
-
-.comment-item {
-  display: flex;
-  gap: 9px;
-  padding: 8px 0;
-}
-
-.comment-item strong {
-  color: var(--color-title);
-  font-size: 12px;
-}
-
-.comment-item p {
-  margin: 2px 0 0;
-  color: var(--color-secondary);
-  font-size: 13px;
-}
-
-.no-comments {
-  margin: 8px 0 12px;
-  color: var(--color-hint);
-  font-size: 13px;
-  text-align: center;
-}
-
-.comment-input {
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.comment-input input {
-  flex: 1;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-card);
-  color: var(--color-title);
-  outline: 0;
-}
-
-.comment-input button {
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--color-red);
-  color: #ffffff;
-  cursor: pointer;
-}
-
 .detail-actions {
   display: flex;
   align-items: center;
@@ -1142,6 +1008,17 @@ onMounted(() => {
   border: 1px solid var(--color-border);
   background: var(--color-card);
   color: var(--color-body);
+}
+
+.detail-secondary.danger {
+  color: var(--color-red-light, #e63946);
+  border-color: rgba(230, 57, 70, 0.2);
+}
+
+.detail-secondary.danger:hover {
+  background: var(--color-red-light, #e63946);
+  color: white;
+  border-color: transparent;
 }
 
 .modal-enter-active,

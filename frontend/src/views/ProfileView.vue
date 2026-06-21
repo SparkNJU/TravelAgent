@@ -91,7 +91,9 @@
                   <span v-for="tag in post.tags?.slice(0, 2)" :key="tag" class="tag">{{ tag }}</span>
                   <div class="card-stats">
                     <span><SvgIcon name="heart" :size="12" /> {{ post.likes }}</span>
-                    <span><SvgIcon name="message" :size="12" /> {{ post.comments }}</span>
+                    <button class="delete-post-btn" @click.stop="deletePost(post.id)" title="删除帖子">
+                      <SvgIcon name="trash" :size="12" />
+                    </button>
                   </div>
                 </div>
               </div>
@@ -254,27 +256,6 @@
                 </div>
               </div>
 
-              <div v-if="selectedNote.isCommunity" class="comment-box">
-                <button class="comment-toggle" @click="toggleComments">
-                  <SvgIcon name="message" :size="15" />
-                  {{ showComments ? '收起评论' : `查看评论（${selectedNote.comments || 0}）` }}
-                </button>
-                <div v-if="showComments" class="comment-list">
-                  <div v-for="comment in noteComments" :key="comment.id" class="comment-item">
-                    <span class="avatar-text small">{{ (comment.username || '用').charAt(0) }}</span>
-                    <div>
-                      <strong>{{ comment.username }}</strong>
-                      <p>{{ comment.content }}</p>
-                    </div>
-                  </div>
-                  <p v-if="!noteComments.length" class="no-comments">暂无评论</p>
-                  <div class="comment-input">
-                    <input v-model="newNoteComment" placeholder="写下你的评论..." @keydown.enter="submitNoteComment" />
-                    <button @click="submitNoteComment"><SvgIcon name="send" :size="14" /></button>
-                  </div>
-                </div>
-              </div>
-
               <div class="detail-actions">
                 <button class="detail-primary" @click="planFromNote(selectedNote)">
                   <SvgIcon name="sparkles" :size="15" />
@@ -289,9 +270,13 @@
                   <SvgIcon :name="selectedNote.isLiked ? 'heart-fill' : 'heart'" :size="15" />
                   {{ selectedNote.isLiked ? '已喜欢' : '喜欢' }}
                 </button>
-                <button class="detail-secondary" @click="handleNoteShare(selectedNote)">
-                  <SvgIcon name="share" :size="15" />
-                  分享
+                <button
+                  v-if="selectedNote.isCommunity"
+                  class="detail-secondary danger"
+                  @click="handleDeletePost(selectedNote)"
+                >
+                  <SvgIcon name="trash" :size="15" />
+                  删除
                 </button>
               </div>
             </div>
@@ -324,9 +309,6 @@ const showDetailModal = ref(false)
 
 // 笔记详情弹窗
 const selectedNote = ref(null)
-const showComments = ref(false)
-const noteComments = ref([])
-const newNoteComment = ref('')
 
 const tabs = [
   { id: 'plans', name: '旅行规划' },
@@ -450,14 +432,10 @@ function formatCount(value) {
 
 function openNote(rawPost) {
   selectedNote.value = normalizePost(rawPost)
-  noteComments.value = []
-  newNoteComment.value = ''
-  showComments.value = false
 }
 
 function closeNote() {
   selectedNote.value = null
-  showComments.value = false
 }
 
 function buildPlanQuery(note) {
@@ -470,56 +448,34 @@ function planFromNote(note) {
   router.push({ path: '/ai-plan', query: { q: buildPlanQuery(note), auto: '1' } })
 }
 
-async function toggleComments() {
-  showComments.value = !showComments.value
-  const note = selectedNote.value
-  if (!showComments.value || !note?.isCommunity || noteComments.value.length) return
+async function handleDeletePost(note) {
+  if (!confirm('确定要删除这篇帖子吗？')) return
   try {
-    const res = await fetch(`/api/community/posts/${note.postId}/comments`)
-    const data = await res.json()
-    noteComments.value = data.code === 200 && Array.isArray(data.data) ? data.data : []
-  } catch {
-    noteComments.value = []
-  }
-}
-
-async function submitNoteComment() {
-  if (!selectedNote.value?.isCommunity) return
-  if (!isLoggedIn.value) {
-    showLogin?.()
-    return
-  }
-  if (!newNoteComment.value.trim()) return
-  try {
-    const res = await fetch(`/api/community/posts/${selectedNote.value.postId}/comments`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-User-Id': localStorage.getItem('userId') || '1',
-      },
-      body: JSON.stringify({ content: newNoteComment.value.trim() }),
-    })
+    const res = await fetch(`/api/community/posts/${note.postId}`, { method: 'DELETE' })
     const data = await res.json()
     if (data.code === 200) {
-      noteComments.value.unshift(data.data || {
-        id: Date.now(),
-        username: localStorage.getItem('username') || '用户',
-        content: newNoteComment.value.trim(),
-      })
-      selectedNote.value.comments = (selectedNote.value.comments || 0) + 1
-      newNoteComment.value = ''
+      posts.value = posts.value.filter(p => p.id !== note.postId)
+      closeNote()
+    } else {
+      alert(data.message || '删除失败')
     }
-  } catch {}
+  } catch {
+    alert('删除失败，请稍后重试')
+  }
 }
 
-function handleNoteShare(note) {
-  const url = `${window.location.origin}/ai-plan?q=${encodeURIComponent(buildPlanQuery(note))}`
-  if (navigator.share) {
-    navigator.share({ title: note.title, text: note.summary, url }).catch(() => {})
-  } else {
-    navigator.clipboard?.writeText(url).then(() => {
-      alert('链接已复制到剪贴板')
-    }).catch(() => {})
+async function deletePost(postId) {
+  if (!confirm('确定要删除这篇帖子吗？')) return
+  try {
+    const res = await fetch(`/api/community/posts/${postId}`, { method: 'DELETE' })
+    const data = await res.json()
+    if (data.code === 200) {
+      posts.value = posts.value.filter(p => p.id !== postId)
+    } else {
+      alert(data.message || '删除失败')
+    }
+  } catch {
+    alert('删除失败，请稍后重试')
   }
 }
 
@@ -831,8 +787,14 @@ onMounted(() => {
   font-size: 11px; padding: 3px 8px; border-radius: var(--radius-pill);
   background: rgba(230,57,70,0.12); color: var(--color-red-light);
 }
-.card-stats { display: flex; gap: 12px; font-size: 12px; color: var(--color-muted); }
+.card-stats { display: flex; gap: 12px; font-size: 12px; color: var(--color-muted); align-items: center; }
 .card-stats span { display: flex; align-items: center; gap: 3px; }
+.delete-post-btn {
+  background: none; border: none; padding: 2px 4px; cursor: pointer;
+  color: var(--color-muted); border-radius: 4px; display: flex; align-items: center;
+  transition: all 0.2s;
+}
+.delete-post-btn:hover { color: var(--color-red-light, #e63946); background: rgba(230,57,70,0.08); }
 
 /* 弹窗通用 */
 .modal-overlay {
@@ -1108,87 +1070,6 @@ onMounted(() => {
   color: var(--color-red) !important;
 }
 
-.comment-box {
-  margin: 8px 0 18px;
-  border: 1px solid var(--color-border);
-  border-radius: 14px;
-  overflow: hidden;
-}
-
-.comment-toggle {
-  display: inline-flex;
-  width: 100%;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  height: 40px;
-  border: 0;
-  background: var(--color-surface);
-  color: var(--color-body);
-  font-weight: 800;
-  cursor: pointer;
-  font-family: var(--font-family);
-}
-
-.comment-list {
-  padding: 12px;
-}
-
-.comment-item {
-  display: flex;
-  gap: 9px;
-  padding: 8px 0;
-}
-
-.comment-item strong {
-  color: var(--color-title);
-  font-size: 12px;
-}
-
-.comment-item p {
-  margin: 2px 0 0;
-  color: var(--color-secondary);
-  font-size: 13px;
-}
-
-.no-comments {
-  margin: 8px 0 12px;
-  color: var(--color-hint);
-  font-size: 13px;
-  text-align: center;
-}
-
-.comment-input {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-top: 8px;
-}
-
-.comment-input input {
-  flex: 1;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid var(--color-border);
-  border-radius: 999px;
-  background: var(--color-card);
-  color: var(--color-title);
-  outline: 0;
-}
-
-.comment-input button {
-  width: 36px;
-  height: 36px;
-  border: 0;
-  border-radius: 50%;
-  background: var(--color-red);
-  color: #ffffff;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
 .detail-actions {
   display: flex;
   align-items: center;
@@ -1226,6 +1107,17 @@ onMounted(() => {
   border: 1px solid var(--color-border);
   background: var(--color-card);
   color: var(--color-body);
+}
+
+.detail-secondary.danger {
+  color: var(--color-red-light, #e63946);
+  border-color: rgba(230, 57, 70, 0.2);
+}
+
+.detail-secondary.danger:hover {
+  background: var(--color-red-light, #e63946);
+  color: white;
+  border-color: transparent;
 }
 
 @media (max-width: 860px) {
