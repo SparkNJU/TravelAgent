@@ -440,6 +440,8 @@ const navigatingToWorkbench = ref(false)
 // Per-conversation stream state: convId -> { loading, controller, pendingAskUser, activeSuggestions }
 const streamStates = reactive(new Map())
 
+
+
 function getStreamState(convId) {
   if (!streamStates.has(convId)) {
     streamStates.set(convId, {
@@ -1031,7 +1033,7 @@ function toggleInspectorCollapse() {
   inspectorCollapsed.value = !inspectorCollapsed.value
 }
 
-function startStream(query, mode = selectedMode.value, generatePlanFirst = null, file = null) {
+async function startStream(query, mode = selectedMode.value, generatePlanFirst = null, file = null) {
   if (generatePlanFirst === null) {
     generatePlanFirst = false
   }
@@ -1048,7 +1050,8 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
     targetConv.title = query.slice(0, 40) || '新对话'
   }
   targetConv.updatedAt = Date.now()
-  persist()
+  // 立即同步到后端，确保 conversationId 可用于流式持久化
+  await syncActiveToBackend(targetConv)
 
   // Per-conversation stream state
   const state = getStreamState(targetConvId)
@@ -1060,6 +1063,9 @@ function startStream(query, mode = selectedMode.value, generatePlanFirst = null,
   const formData = new FormData()
   formData.append('query', query)
   formData.append('userId', localStorage.getItem('userId') || '1')
+  if (targetConv.backendId) {
+    formData.append('conversationId', String(targetConv.backendId))
+  }
   formData.append('mode', mode)
   formData.append('generatePlanFirst', String(generatePlanFirst))
   formData.append('model', selectedModel.value)

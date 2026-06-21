@@ -26,6 +26,8 @@ import java.util.function.Consumer;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+import org.example.backend.entity.ChatConversation;
+import org.example.backend.repository.ChatConversationRepository;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -56,8 +58,11 @@ public class TripAssistantService {
     @Value("${app.agent.compress-url:http://localhost:8000/api/agent/compress}")
     private String agentCompressUrl;
 
-    public TripAssistantService(RestTemplate restTemplate) {
+    private final ChatConversationRepository conversationRepository;
+
+    public TripAssistantService(RestTemplate restTemplate, ChatConversationRepository conversationRepository) {
         this.restTemplate = restTemplate;
+        this.conversationRepository = conversationRepository;
     }
 
     public Map<String, Object> parsePlanMarkdown(String markdown, String destination) {
@@ -202,6 +207,8 @@ public class TripAssistantService {
                     return;
                 }
 
+                StringBuilder accumulatedAnswer = new StringBuilder();
+
                 try (BufferedReader reader = new BufferedReader(
                         new InputStreamReader(response.body(), StandardCharsets.UTF_8))) {
                     String line;
@@ -216,11 +223,22 @@ public class TripAssistantService {
                                         Map.of("type", "done", "content", "")));
                                 break;
                             }
+                            // 累积 answer 类型事件的内容，用于流式结束后持久化
+                            try {
+                                @SuppressWarnings("unchecked")
+                                Map<String, Object> evt = objectMapper.readValue(data, Map.class);
+                                if ("answer".equals(evt.get("type")) && evt.get("content") != null) {
+                                    accumulatedAnswer.append(evt.get("content").toString());
+                                }
+                            } catch (Exception ignored) {}
                             logger.debug("SSE event: {}", data);
                             emitter.send(SseEmitter.event().name("agent").data(data));
                         }
                     }
                 }
+
+                // 流式结束后，将累积的 answer 内容保存到对话记录
+                saveStreamResult(req, accumulatedAnswer.toString());
 
                 logger.info("SSE stream completed: userId={}", req.getUserId());
                 emitter.complete();
@@ -244,6 +262,49 @@ public class TripAssistantService {
         emitter.onError(t -> emitter.complete());
 
         return emitter;
+    }
+
+    /**
+     * 流式结束后，将累积的 answer 内容保存到对话记录。
+     * 如果请求中包含 conversationId，则更新已有对话；否则创建新对话。
+     */
+    private void saveStreamResult(AgentChatRequest req, String answer) {
+        if (answer == null || answer.isEmpty()) return;
+        try {
+            Long convId = req.getConversationId();
+            Long userId = req.getUserId();
+            ChatConversation conv = null;
+
+            if (convId != null) {
+                conv = conversationRepository.findByIdAndUserId(convId, userId).orElse(null);
+            }
+
+            if (conv == null) {
+                return; // 对话不存在，跳过（可能是 guest 用户）
+            }
+
+            // 更新最后一条 assistant 消息的 content（前端已通过 syncActiveToBackend 创建了空的 assistant 消息）
+            String existingMessages = conv.getMessagesJson();
+            if (existingMessages == null || existingMessages.isEmpty()) return;
+
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> messages = objectMapper.readValue(existingMessages, List.class);
+
+            // 找到最后一条 assistant 消息并更新其 content
+            for (int i = messages.size() - 1; i >= 0; i--) {
+                Map<String, Object> msg = messages.get(i);
+                if ("assistant".equals(msg.get("role"))) {
+                    msg.put("content", answer);
+                    break;
+                }
+            }
+
+            conv.setMessagesJson(objectMapper.writeValueAsString(messages));
+            conversationRepository.save(conv);
+            logger.info("Stream result saved: convId={}, userId={}, answerLen={}", conv.getId(), userId, answer.length());
+        } catch (Exception e) {
+            logger.error("Failed to save stream result: userId={}", req.getUserId(), e);
+        }
     }
 
     public String fetchAgentAnswer(AgentChatRequest req, MultipartFile file) {

@@ -5,6 +5,7 @@ import java.util.List;
 public class AgentChatRequest {
     private String query;
     private Long userId = 1L;
+    private Long conversationId;
     private String mode = "agent";
     private boolean generatePlanFirst = true;
     private boolean arena = false;
@@ -26,6 +27,9 @@ public class AgentChatRequest {
 
     public Long getUserId() { return userId; }
     public void setUserId(Long userId) { this.userId = userId; }
+
+    public Long getConversationId() { return conversationId; }
+    public void setConversationId(Long conversationId) { this.conversationId = conversationId; }
 
     public String getMode() { return mode; }
     public void setMode(String mode) { this.mode = mode; }
