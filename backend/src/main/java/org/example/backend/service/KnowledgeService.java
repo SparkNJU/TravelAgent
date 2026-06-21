@@ -39,6 +39,38 @@ public class KnowledgeService {
         this.httpClient = httpClient;
     }
 
+    public Map<String, Object> createDocument(String title, String content, String sourceType) {
+        Map<String, Object> payload = new LinkedHashMap<>();
+        payload.put("title", title);
+        payload.put("content", content);
+        payload.put("source_type", sourceType != null ? sourceType : "manual_text");
+
+        try {
+            HttpRequest httpRequest = HttpRequest.newBuilder()
+                    .uri(URI.create(knowledgeDocumentsUrl))
+                    .timeout(Duration.ofSeconds(15))
+                    .header("Content-Type", "application/json; charset=utf-8")
+                    .POST(HttpRequest.BodyPublishers.ofString(
+                            objectMapper.writeValueAsString(payload),
+                            StandardCharsets.UTF_8
+                    ))
+                    .build();
+            HttpResponse<String> response = httpClient.send(httpRequest, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
+            if (response.statusCode() < 200 || response.statusCode() >= 300) {
+                throw new IllegalStateException("Knowledge center returned HTTP " + response.statusCode() + ": " + response.body());
+            }
+            if (response.body() == null || response.body().isBlank()) {
+                return Map.of();
+            }
+            return objectMapper.readValue(response.body(), new TypeReference<Map<String, Object>>() {});
+        } catch (IOException e) {
+            throw new IllegalStateException("Knowledge center request failed: " + e.getMessage(), e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("Knowledge center request interrupted", e);
+        }
+    }
+
     public Map<String, Object> syncTurn(KnowledgeSyncTurnRequest request) {
         Map<String, Object> payload = new LinkedHashMap<>();
         payload.put("title", safeTitle(request));

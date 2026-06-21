@@ -39,6 +39,24 @@ public class KnowledgeController {
         }
     }
 
+    @PostMapping("/documents")
+    public ApiResponse<Map<String, Object>> createDocument(@RequestBody Map<String, String> body) {
+        String title = body.get("title");
+        String content = body.get("content");
+        String sourceType = body.get("source_type");
+        if (title == null || title.isBlank()) {
+            return ApiResponse.error("title is required");
+        }
+        if (content == null || content.isBlank()) {
+            return ApiResponse.error("content is required");
+        }
+        try {
+            return ApiResponse.success(knowledgeService.createDocument(title, content, sourceType));
+        } catch (Exception e) {
+            return ApiResponse.error(e.getMessage());
+        }
+    }
+
     @DeleteMapping("/documents/{docId}")
     public ApiResponse<Map<String, Object>> deleteDocument(@PathVariable String docId) {
         try {

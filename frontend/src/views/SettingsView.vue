@@ -426,7 +426,7 @@
             <label>选择文件</label>
             <div class="file-drop-area" @click="$refs.knowledgeFileInput.click()">
               <SvgIcon name="upload" :size="24" color="var(--color-hint)" />
-              <p v-if="!knowledgeForm.fileName">点击选择文件（支持 PDF、DOCX、TXT、MD）</p>
+              <p v-if="!knowledgeForm.fileName">点击选择文件（支持 PDF、DOCX、TXT、MD，最大 5MB）</p>
               <p v-else class="file-selected">已选择：{{ knowledgeForm.fileName }}</p>
               <input ref="knowledgeFileInput" type="file" accept=".pdf,.doc,.docx,.txt,.md" style="display:none" @change="handleKnowledgeFileSelect" />
             </div>
@@ -447,6 +447,7 @@
 
 <script setup>
 import { ref, reactive, computed, onMounted } from 'vue'
+import { ElMessage, ElMessageBox } from 'element-plus'
 import SvgIcon from '../components/SvgIcon.vue'
 import { useAuth } from '../composables/useAuth'
 import { parseMemoryMarkdown, buildMemoryMarkdown, sectionsToCards, cardsToSections, parseMemoryContent } from '../utils/markdownParser.js'
@@ -607,7 +608,7 @@ const toggleSkill = async (skill) => {
     if (data.code === 200) {
       skill.isEnabled = targetStatus
     } else {
-      alert("修改状态失败: " + data.message)
+      ElMessage.error("修改状态失败: " + data.message)
     }
   } catch (e) {
     console.error("切换技能状态失败:", e)
@@ -661,7 +662,13 @@ const closeSkillViewModal = () => {
 }
 
 const confirmDeleteSkill = async (skill) => {
-  if (!confirm(`确认要删除自定义技能 @${skill.name} 吗？此操作无法撤销。`)) {
+  try {
+    await ElMessageBox.confirm(`确认要删除自定义技能 @${skill.name} 吗？此操作无法撤销。`, '删除确认', {
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
     return
   }
   try {
@@ -671,8 +678,9 @@ const confirmDeleteSkill = async (skill) => {
     const data = await res.json()
     if (data.code === 200) {
       customSkills.value = customSkills.value.filter(s => s.id !== skill.id)
+      ElMessage.success('技能已删除')
     } else {
-      alert("删除技能失败: " + data.message)
+      ElMessage.error("删除技能失败: " + data.message)
     }
   } catch (e) {
     console.error("删除技能失败:", e)
@@ -708,7 +716,7 @@ const saveSkill = async () => {
       cancelSkillEdit()
       await loadSkills()
     } else {
-      alert("保存技能失败: " + data.message)
+      ElMessage.error("保存技能失败: " + data.message)
     }
   } catch (e) {
     console.error("保存技能失败:", e)
@@ -773,7 +781,7 @@ const toggleMemory = async (mem) => {
     await syncMemoriesToLongTermMemory()
   } catch (e) {
     mem.isEnabled = !targetStatus
-    alert("修改状态失败: " + e.message)
+    ElMessage.error("修改状态失败: " + e.message)
     console.error("切换记忆状态失败:", e)
   }
   updatingMemory.value = null
@@ -801,14 +809,21 @@ const closeMemoryModal = () => {
 }
 
 const confirmDeleteMemory = async (mem) => {
-  if (!confirm(`确认要删除该条偏好记忆吗？此操作将无法撤销。`)) {
+  try {
+    await ElMessageBox.confirm('确认要删除该条偏好记忆吗？此操作将无法撤销。', '删除确认', {
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
     return
   }
   try {
     memories.value = memories.value.filter(m => m.id !== mem.id)
     await syncMemoriesToLongTermMemory()
+    ElMessage.success('偏好记忆已删除')
   } catch (e) {
-    alert("删除记忆失败: " + e.message)
+    ElMessage.error("删除记忆失败: " + e.message)
     console.error("删除记忆失败:", e)
   }
 }
@@ -843,7 +858,7 @@ const saveMemory = async () => {
     await syncMemoriesToLongTermMemory()
     memoryModalVisible.value = false
   } catch (e) {
-    alert("保存记忆失败: " + e.message)
+    ElMessage.error("保存记忆失败: " + e.message)
     console.error("保存记忆失败:", e)
   }
   savingMemory.value = false
@@ -883,6 +898,12 @@ const closeKnowledgeModal = () => {
 const handleKnowledgeFileSelect = (event) => {
   const file = event.target.files[0]
   if (!file) return
+  const MAX_FILE_SIZE = 5 * 1024 * 1024 // 5MB
+  if (file.size > MAX_FILE_SIZE) {
+    ElMessage.warning('文件大小不能超过 5MB，当前文件为 ' + (file.size / 1024 / 1024).toFixed(1) + 'MB')
+    event.target.value = ''
+    return
+  }
   knowledgeForm.fileName = file.name
   const reader = new FileReader()
   reader.onload = () => {
@@ -894,14 +915,14 @@ const handleKnowledgeFileSelect = (event) => {
 
 const saveKnowledge = async () => {
   if (!knowledgeForm.title.trim()) {
-    alert('请输入文档标题')
+    ElMessage.warning('请输入文档标题')
     return
   }
   savingKnowledge.value = true
   try {
     if (knowledgeUploadMode.value === 'text') {
       if (!knowledgeForm.content.trim()) {
-        alert('请输入知识内容')
+        ElMessage.warning('请输入知识内容')
         savingKnowledge.value = false
         return
       }
@@ -915,15 +936,16 @@ const saveKnowledge = async () => {
         })
       })
       const data = await res.json()
-      if (data.doc_id) {
+      if (data.code === 200 && data.data?.doc_id) {
+        ElMessage.success('知识文档保存成功')
         closeKnowledgeModal()
         await loadKnowledgeDocuments()
       } else {
-        alert('保存失败: ' + (data.detail || '未知错误'))
+        ElMessage.error('保存失败: ' + (data.message || data.detail || '未知错误'))
       }
     } else {
       if (!knowledgeForm.fileBase64) {
-        alert('请选择文件')
+        ElMessage.warning('请选择文件')
         savingKnowledge.value = false
         return
       }
@@ -939,32 +961,42 @@ const saveKnowledge = async () => {
       })
       const data = await res.json()
       if (data.code === 200) {
+        ElMessage.success('知识文档上传成功')
         closeKnowledgeModal()
         await loadKnowledgeDocuments()
       } else {
-        alert('上传失败: ' + (data.message || '未知错误'))
+        ElMessage.error('上传失败: ' + (data.message || '未知错误'))
       }
     }
   } catch (e) {
     console.error("保存知识文档失败:", e)
-    alert('保存失败: ' + e.message)
+    ElMessage.error('保存失败: ' + e.message)
   }
   savingKnowledge.value = false
 }
 
 const confirmDeleteKnowledge = async (doc) => {
-  if (!confirm(`确认要删除知识文档「${doc.title}」吗？该文档的 ${doc.chunk_count} 个片段将被永久移除。`)) return
+  try {
+    await ElMessageBox.confirm(`确认要删除知识文档「${doc.title}」吗？该文档的 ${doc.chunk_count} 个片段将被永久移除。`, '删除确认', {
+      confirmButtonText: '确认删除',
+      cancelButtonText: '取消',
+      type: 'warning',
+    })
+  } catch {
+    return
+  }
   try {
     const res = await fetch(`/api/knowledge/documents/${doc.doc_id}`, { method: 'DELETE' })
     const data = await res.json()
     if (data.code === 200) {
       knowledgeDocuments.value = knowledgeDocuments.value.filter(d => d.doc_id !== doc.doc_id)
+      ElMessage.success('知识文档已删除')
     } else {
-      alert('删除失败: ' + data.message)
+      ElMessage.error('删除失败: ' + data.message)
     }
   } catch (e) {
     console.error("删除知识文档失败:", e)
-    alert('删除失败: ' + e.message)
+    ElMessage.error('删除失败: ' + e.message)
   }
 }
 </script>
